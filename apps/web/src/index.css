@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Noto Sans TC", system-ui, -apple-system, "PingFang TC",
+               "Microsoft JhengHei", sans-serif;
+}
+
+:root { color-scheme: light; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: #f6f7f9;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 拖曳時不要選到文字 */
+.dragging, .dragging * { user-select: none; }
+
+/* ── 甘特圖：關鍵路徑與發文狀態上色 ──
+   dhtmlx-gantt 的自動排程／關鍵路徑是 PRO 功能，
+   我們在後端自己算，前端只負責畫。 */
+.gantt_task_line.critical      { background: #dc2626; border-color: #b91c1c; }
+.gantt_task_line.critical .gantt_task_progress { background: #991b1b; }
+.gantt_task_line.inq-overdue   { box-shadow: 0 0 0 2px #dc2626; }
+.gantt_task_line.inq-awaiting  { box-shadow: 0 0 0 2px #3178c6; }
+.gantt_task_line.milestone-done { background: #2e8b57; }
+.gantt_container { border: none; font-family: var(--font-sans); }

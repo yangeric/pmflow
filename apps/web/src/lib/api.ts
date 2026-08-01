@@ -1,0 +1,195 @@
+const BASE = '/api/v1'
+
+let accessToken: string | null = null
+export const setAccessToken = (t: string | null) => { accessToken = t }
+export const getAccessToken = () => accessToken
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public title: string,
+    public detail?: string,
+    public payload?: Record<string, unknown>
+  ) { super(title) }
+}
+
+let refreshing: Promise<boolean> | null = null
+
+/** access token 過期時自動用 refresh cookie 換一張，只跑一次避免打雷同請求 */
+async function tryRefresh(): Promise<boolean> {
+  refreshing ??= (async () => {
+    try {
+      const r = await fetch(`${BASE}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      if (!r.ok) return false
+      const data = await r.json()
+      accessToken = data.accessToken
+      return true
+    } catch { return false }
+    finally { setTimeout(() => { refreshing = null }, 0) }
+  })()
+  return refreshing
+}
+
+export async function api<T = unknown>(
+  path: string,
+  init: RequestInit & { json?: unknown } = {},
+  retry = true
+): Promise<T> {
+  const headers = new Headers(init.headers)
+  if (accessToken) headers.set('authorization', `Bearer ${accessToken}`)
+  if (init.json !== undefined) headers.set('content-type', 'application/json')
+
+  const res = await fetch(BASE + path, {
+    ...init,
+    headers,
+    credentials: 'include',
+    body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
+  })
+
+  if (res.status === 401 && retry && accessToken) {
+    if (await tryRefresh()) return api<T>(path, init, false)
+  }
+
+  if (res.status === 204) return undefined as T
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+
+  if (!res.ok) {
+    throw new ApiError(res.status, data?.title ?? `HTTP ${res.status}`, data?.detail, data)
+  }
+  return data as T
+}
+
+// ── 型別 ────────────────────────────────────────────────
+export interface User { id: string; email: string; displayName: string }
+export interface Workspace { id: string; name: string; slug: string; role: string }
+
+export interface Project {
+  id: string; workspaceId: string; key: string; name: string
+  description?: string | null; color: string
+  startDate?: string | null; endDate?: string | null
+  role?: string; taskCount?: number; overdueInquiryCount?: number
+}
+
+export interface TaskStatus {
+  id: string; key: string; name: string
+  category: 'TODO' | 'ACTIVE' | 'DONE'; color: string; rank: number
+}
+
+export type InquiryState = 'NONE' | 'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIED'
+
+export interface Task {
+  id: string; projectId: string; ref: string; number: number
+  parentId: string | null; title: string; description?: string | null
+  type: 'TASK' | 'MILESTONE' | 'BUG' | 'EPIC'
+  statusKey: string; priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+  assigneeId: string | null; assigneeName: string | null
+  startDate: string | null; dueDate: string | null
+  estimateHours: string | null; progress: number
+  scheduleMode: 'AUTO' | 'MANUAL'; rank: string
+  inquiryState: InquiryState; earliestDueDate: string | null
+}
+
+export type LinkType = 'FS' | 'SS' | 'FF' | 'SF' | 'RELATES' | 'BLOCKS' | 'DUPLICATES' | 'REQUIRES'
+
+export interface TaskLink {
+  id: string; linkType: LinkType; lagDays: number
+  direction: 'outgoing' | 'incoming'
+  otherId: string; otherRef: string; otherTitle: string
+}
+
+export interface Inquiry {
+  id: string; seq: number
+  askedToUnit: string; askedToPerson: string | null; askedToContact: string | null
+  askedAt: string; dueDate: string | null; question: string | null
+  isReplied: boolean
+  repliedByUnit: string | null; repliedByPerson: string | null
+  repliedAt: string | null; replyNote: string | null
+  status: 'AWAITING' | 'OVERDUE' | 'REPLIED'
+  daysElapsed: number; daysToReply: number | null; daysOverdue: number | null
+}
+
+export interface Activity {
+  id: string; kind: string; body: Record<string, unknown> | null
+  actorName: string | null; createdAt: string
+}
+
+export interface TaskDetail extends Task {
+  links: TaskLink[]
+  children: Array<{ id: string; ref: string; title: string; statusKey: string; progress: number }>
+  inquiries: Inquiry[]
+  activities: Activity[]
+}
+
+export interface ScheduleResult {
+  tasks: Record<string, { start: string | null; finish: string | null; totalFloat: number | null }>
+  criticalPath: string[]
+  conflicts: Array<{ taskId: string; label: string; reason: string }>
+  cyclic: boolean
+}
+
+// ── 端點 ────────────────────────────────────────────────
+export const Api = {
+  login: (email: string, password: string) =>
+    api<{ accessToken: string; user: User }>('/auth/login', { method: 'POST', json: { email, password } }),
+  register: (json: { email: string; password: string; displayName: string }) =>
+    api<{ accessToken: string; user: User; isFirstUser: boolean }>('/auth/register', { method: 'POST', json }),
+  logout: () => api('/auth/logout', { method: 'POST' }),
+  me: () => api<{ user: User; workspaces: Workspace[] }>('/auth/me'),
+
+  projects: () => api<{ projects: Project[] }>('/projects'),
+  project: (id: string) =>
+    api<Project & { statuses: TaskStatus[]; members: Array<{ id: string; displayName: string; role: string }> }>(`/projects/${id}`),
+  createProject: (json: { workspaceId: string; key: string; name: string }) =>
+    api<Project>('/projects', { method: 'POST', json }),
+
+  tasks: (projectId: string, q: Record<string, string> = {}) =>
+    api<{ tasks: Task[] }>(`/projects/${projectId}/tasks?${new URLSearchParams(q)}`),
+  task: (id: string) => api<TaskDetail>(`/tasks/${id}`),
+  createTask: (projectId: string, json: Record<string, unknown>) =>
+    api<Task>(`/projects/${projectId}/tasks`, { method: 'POST', json }),
+  patchTask: (id: string, json: Record<string, unknown>) =>
+    api<Task>(`/tasks/${id}`, { method: 'PATCH', json }),
+  moveTask: (id: string, json: { statusKey?: string; beforeId?: string | null; afterId?: string | null; parentId?: string | null }) =>
+    api<Task>(`/tasks/${id}/move`, { method: 'POST', json }),
+  rescheduleTask: (id: string, json: { startDate: string | null; dueDate: string | null; cascade?: boolean }) =>
+    api<{ task: Task; schedule: ScheduleResult }>(`/tasks/${id}/reschedule`, { method: 'POST', json }),
+  deleteTask: (id: string) => api(`/tasks/${id}`, { method: 'DELETE' }),
+
+  schedule: (projectId: string) => api<ScheduleResult>(`/projects/${projectId}/schedule`),
+  graph: (projectId: string) => api<{
+    nodes: Array<{ id: string; ref: string; title: string; type: string
+                   statusKey: string; progress: number; parentId: string | null
+                   inquiryState: InquiryState }>
+    edges: Array<{ id: string; sourceId: string; targetId: string
+                   linkType: LinkType; lagDays: number }>
+  }>(`/projects/${projectId}/graph`),
+  addLink: (taskId: string, json: { targetId: string; linkType: LinkType; lagDays?: number }) =>
+    api(`/tasks/${taskId}/links`, { method: 'POST', json }),
+  deleteLink: (id: string) => api(`/links/${id}`, { method: 'DELETE' }),
+
+  inquiries: (taskId: string) => api<{ inquiries: Inquiry[] }>(`/tasks/${taskId}/inquiries`),
+  addInquiry: (taskId: string, json: Record<string, unknown>) =>
+    api<Inquiry>(`/tasks/${taskId}/inquiries`, { method: 'POST', json }),
+  patchInquiry: (id: string, json: Record<string, unknown>) =>
+    api<Inquiry>(`/inquiries/${id}`, { method: 'PATCH', json }),
+  markReplied: (id: string, json: Record<string, unknown> = {}) =>
+    api<Inquiry>(`/inquiries/${id}/mark-replied`, { method: 'POST', json }),
+  reopenInquiry: (id: string) => api<Inquiry>(`/inquiries/${id}/reopen`, { method: 'POST' }),
+  deleteInquiry: (id: string) => api(`/inquiries/${id}`, { method: 'DELETE' }),
+
+  unitSuggestions: (workspaceId: string, q = '') =>
+    api<{ units: Array<{ unit: string; usageCount: number; lastUsedOn: string }> }>(
+      `/workspaces/${workspaceId}/unit-suggestions?q=${encodeURIComponent(q)}`),
+  inquiryBoard: (workspaceId: string, state = 'AWAITING,OVERDUE,REPLIED') =>
+    api<{ inquiries: Array<Inquiry & {
+      taskId: string; taskRef: string; taskTitle: string
+      projectId: string; projectName: string; projectColor: string
+    }> }>(`/workspaces/${workspaceId}/inquiry-board?state=${state}`),
+  inquiryStats: (workspaceId: string) =>
+    api<{
+      byUnit: Array<{ unit: string; totalAsked: number; totalReplied: number
+        currentOverdue: number; avgDaysToReply: string | null; lateReplyRate: string | null }>
+      transferred: Array<{ askedToUnit: string; repliedByUnit: string; count: number }>
+    }>(`/workspaces/${workspaceId}/inquiry-stats`),
+}

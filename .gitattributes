@@ -1,0 +1,9 @@
+# 批次檔一定要 CRLF，否則 cmd.exe 會吃掉每行第一個字
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# 這些一定要 LF，否則容器裡的 shell 會壞
+*.sh   text eol=lf
+Dockerfile* text eol=lf
+*.yml  text eol=lf

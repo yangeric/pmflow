@@ -1,0 +1,44 @@
+# PMFlow 前端容器內的 Caddy：提供 SPA 靜態檔 + 把 /api 轉給後端。
+# 只有這個容器對外，api 與 postgres 都留在內部網路，不開任何 port。
+
+:80 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "SAMEORIGIN"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	# 後端 API。同源代理，httpOnly 的 refresh cookie 才送得出去
+	handle /api/* {
+		reverse_proxy {$PMFLOW_API_UPSTREAM:api:8080} {
+			header_up X-Real-IP {remote_host}
+			transport http {
+				read_timeout  300s
+				write_timeout 300s
+			}
+		}
+	}
+
+	handle /health {
+		reverse_proxy {$PMFLOW_API_UPSTREAM:api:8080}
+	}
+
+	# SPA：靜態資源長快取，index.html 不快取，其餘路徑都回 index.html
+	handle {
+		root * /srv
+		@static path *.js *.css *.woff2 *.png *.svg *.jpg *.webp *.ico
+		header @static Cache-Control "public, max-age=31536000, immutable"
+		header /index.html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

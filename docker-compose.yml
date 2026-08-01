@@ -1,0 +1,179 @@
+# PMFlow — NAS / 正式部署（直接拉 GHCR 上打包好的 image，不用原始碼）
+#
+#   1. cp .env.example .env  然後編輯（至少改 POSTGRES_PASSWORD 與 JWT_SECRET）
+#   2. docker compose pull
+#   3. docker compose up -d
+#   4. 瀏覽 http://<NAS_IP>:8480
+#
+# 更新版本：docker compose pull && docker compose up -d
+#
+# ⚠️ Synology / QNAP 的注意事項寫在檔案最下方
+
+name: pmflow
+
+x-common: &common
+  TZ: ${TZ:-Asia/Taipei}
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+
+  # 唯一對外的容器：靜態檔 + 把 /api 轉給後端
+  web:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-your-github-name}/pmflow-web:${PMFLOW_VERSION:-latest}
+    container_name: pmflow-web
+    restart: unless-stopped
+    environment:
+      <<: *common
+    ports:
+      # ⚠️ Synology DSM 佔用 80/443/5000/5001，所以對外用 8480
+      - "${HTTP_PORT:-8480}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [public, internal]
+    mem_limit: 128m
+    logging: *logging
+
+  api:
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-your-github-name}/pmflow-api:${PMFLOW_VERSION:-latest}
+    container_name: pmflow-api
+    restart: unless-stopped
+    user: "${PUID:-1026}:${PGID:-100}"
+    environment:
+      <<: *common
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-pmflow}:${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pmflow}
+      PMFLOW_JWT_SECRET: ${JWT_SECRET:?請在 .env 設定 JWT_SECRET，用 openssl rand -base64 48 產生}
+      PMFLOW_ACCESS_TTL_SEC: ${ACCESS_TTL_SEC:-900}
+      PMFLOW_REFRESH_TTL_SEC: ${REFRESH_TTL_SEC:-604800}
+      PMFLOW_ALLOW_SELF_REGISTRATION: ${ALLOW_SELF_REGISTRATION:-true}
+      PMFLOW_ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      PMFLOW_SEED_DEMO: ${SEED_DEMO:-false}
+      PMFLOW_INQUIRY_DEFAULT_DUE_DAYS: ${INQUIRY_DEFAULT_DUE_DAYS:-7}
+    volumes:
+      - attachments:/data/attachments
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    mem_limit: ${API_MEM_LIMIT:-512m}
+    logging: *logging
+
+  db:
+    image: postgres:17-alpine
+    container_name: pmflow-db
+    restart: unless-stopped
+    environment:
+      <<: *common
+      POSTGRES_DB: ${POSTGRES_DB:-pmflow}
+      POSTGRES_USER: ${POSTGRES_USER:-pmflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE:-768MB}
+      - -c
+      - max_connections=60
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pmflow} -d ${POSTGRES_DB:-pmflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: ${PG_MEM_LIMIT:-1g}
+    logging: *logging
+
+  # 每日備份（不需要就把整段註解掉）
+  backup:
+    image: postgres:17-alpine
+    container_name: pmflow-backup
+    restart: unless-stopped
+    environment:
+      <<: *common
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-pmflow}
+      PGUSER: ${POSTGRES_USER:-pmflow}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?請在 .env 設定 POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_AT_HOUR: ${BACKUP_AT_HOUR:-3}
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[backup] 每日 $${BACKUP_AT_HOUR} 點備份，保留 $${BACKUP_KEEP_DAYS} 份"
+        while true; do
+          if [ "$$(date +%H)" = "$$(printf '%02d' $$BACKUP_AT_HOUR)" ]; then
+            F="/backups/pmflow-$$(date +%Y%m%d-%H%M%S).sql.gz"
+            pg_dump --no-owner --no-acl | gzip -9 > "$$F" \
+              && echo "[backup] ok $$F ($$(du -h $$F | cut -f1))" \
+              || echo "[backup] FAILED"
+            find /backups -name 'pmflow-*.sql.gz' -mtime +$$BACKUP_KEEP_DAYS -delete
+            sleep 3600
+          fi
+          sleep 300
+        done
+    mem_limit: 128m
+    logging: *logging
+
+networks:
+  public:
+    name: pmflow-public
+  internal:
+    name: pmflow-internal
+    internal: true      # 完全不對外，資料庫不可能被外面連到
+
+volumes:
+  pgdata:      { name: pmflow-pgdata }
+  attachments: { name: pmflow-attachments }
+  backups:     { name: pmflow-backups }
+
+# ══════════════════════════════════════════════════════════
+# NAS 實務注意事項
+# ══════════════════════════════════════════════════════════
+#
+# 1) Port 衝突
+#    Synology DSM 佔用 80/443/5000/5001，所以上面預設對外映 8480。
+#    要用網域 + HTTPS 的話，走 DSM 內建反向代理：
+#    控制台 → 登入入口 → 進階 → 反向代理伺服器，
+#    來源 pm.yourdomain.com:443 → 目的地 localhost:8480。
+#
+# 2) PUID / PGID
+#    Synology 第一個使用者通常是 1026:100，QNAP 常是 1000:100。
+#    用 `id 你的帳號` 查出來寫進 .env，不設會 permission denied。
+#
+# 3) PostgreSQL 資料位置
+#    pgdata 一定要落在本機 Btrfs/ext4。指到 SMB/CIFS/NFS 掛載點的話，
+#    fsync 語意不保證，資料庫遲早損毀 —— 這是自架最常見的災難。
+#
+# 4) 時區
+#    TZ 同時作用在 api 與 db（上面用 x-common 統一注入），
+#    不然「逾期未回」的判斷會差 8 小時。
+#
+# 5) ARM NAS
+#    映像有 linux/amd64 與 linux/arm64。驗證：
+#      docker manifest inspect ghcr.io/<owner>/pmflow-api:latest | grep architecture
+#
+# 6) 不要掛 Watchtower 自動更新
+#    半夜自動升級遇到資料庫 migration 失敗會很難救。
+#    改成手動：docker compose pull && docker compose up -d
+#
+# 7) 備份
+#    backups volume（每日 pg_dump）與 attachments volume 都要納入
+#    NAS 的 Hyper Backup / 快照排程。只備資料庫不備附件等於沒備份。

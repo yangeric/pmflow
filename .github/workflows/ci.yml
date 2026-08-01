@@ -1,0 +1,182 @@
+# PR 檢查：型別、測試、授權白名單、弱點掃描
+#
+# 授權掃描是這個專案的命脈。一旦有 GPL 相依混進來，之後很難拆 ——
+# WeKan 就因為甘特函式庫是 GPL，最後只能把甘特功能拆成獨立 repo 分開 build。
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+
+  api:
+    name: 後端：型別 + 測試 + 整合
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: pmflow
+          POSTGRES_USER: pmflow
+          POSTGRES_PASSWORD: pmflow
+        options: >-
+          --health-cmd "pg_isready -U pmflow"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+        ports: ["5432:5432"]
+    defaults:
+      run: { working-directory: apps/api }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: apps/api/package-lock.json }
+      - run: npm ci
+      - name: 型別檢查
+        run: npm run typecheck
+      - name: 排程引擎單元測試（四種依賴 + 關鍵路徑 + 環偵測）
+        run: npx tsx test/schedule.test.ts
+      - name: 端對端 API 測試
+        env:
+          DATABASE_URL: postgres://pmflow:pmflow@localhost:5432/pmflow
+          PMFLOW_JWT_SECRET: ci-secret-at-least-32-characters-long!!
+          PORT: "8080"
+        run: |
+          npx tsx src/index.ts &
+          for i in $(seq 1 40); do
+            sleep 1
+            curl -sf http://127.0.0.1:8080/health >/dev/null && break
+          done
+          bash test/e2e.sh
+
+  web:
+    name: 前端：型別 + 建置
+    runs-on: ubuntu-latest
+    defaults:
+      run: { working-directory: apps/web }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: apps/web/package-lock.json }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  license-scan:
+    name: 🔑 授權白名單
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - name: 後端相依授權
+        working-directory: apps/api
+        run: |
+          npm ci --omit=dev
+          npx license-checker-rseidelsohn@^4 --production \
+            --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;Python-2.0;BlueOak-1.0.0;CC-BY-4.0" \
+            --excludePrivatePackages
+
+      - name: 前端相依授權（會被打包進 bundle，要求最嚴）
+        working-directory: apps/web
+        run: |
+          npm ci --omit=dev
+          npx license-checker-rseidelsohn@^4 --production \
+            --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;Python-2.0;BlueOak-1.0.0;CC-BY-4.0" \
+            --excludePrivatePackages
+
+      - name: 已知授權地雷
+        run: |
+          set -e
+          FAIL=0
+          bad() {
+            if grep -q "\"$1\"" apps/web/package.json apps/api/package.json 2>/dev/null; then
+              echo "::error::授權地雷相依：$1 — $2"; FAIL=1
+            fi
+          }
+          # 1.3.0 是 MIT，1.3.1 起改成 GPLv3，但官網行銷頁至今仍寫「MIT licensed core」
+          bad "wx-react-gantt"                  "SVAR Gantt 自 1.3.1 起為 GPLv3"
+          # 商業 / CC-BY-NC-ND / GPLv3 三選一，沒有寬鬆授權出路
+          bad "@fullcalendar/timeline"          "FullCalendar premium"
+          bad "@fullcalendar/resource-timeline" "FullCalendar premium"
+          bad "@fullcalendar/scrollgrid"        "FullCalendar premium"
+          exit $FAIL
+
+      - name: dhtmlx-gantt 必須 >= 10.0.0（9.x 以前是 GPL-2.0）
+        run: |
+          V=$(node -p "require('./apps/web/package.json').dependencies['dhtmlx-gantt'] || ''")
+          echo "宣告版本：$V"
+          case "$V" in
+            ""|*"^10"*|*"~10"*|*">=10"*|1[0-9].*) echo OK ;;
+            *) echo "::error::dhtmlx-gantt 必須鎖 >=10.0.0，9.1.4 以前是 GPL-2.0"; exit 1 ;;
+          esac
+
+  migration-guard:
+    name: 🔒 migration 只加不改
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      # 已經在 main 上的 migration 一旦被改，已升級過的資料庫不會重跑，
+      # 兩邊 schema 會悄悄分岔 —— 在合併前就擋下來，比在別人的資料庫上爆炸便宜太多。
+      - name: 檢查既有 migration 未被修改或刪除
+        run: |
+          set -e
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+          CHANGED=$(git diff --name-status "$BASE"...HEAD -- 'apps/api/src/migrations/*.sql' || true)
+          [ -z "$CHANGED" ] && { echo "沒有動到 migration"; exit 0; }
+          echo "$CHANGED"
+          BAD=$(echo "$CHANGED" | awk '$1 != "A" { print $2 }')
+          if [ -n "$BAD" ]; then
+            echo "::error::既有 migration 被修改或刪除：$BAD"
+            echo "::error::migration 一律只加不改。請新增一個 migration 來修正，不要改舊的。"
+            echo "::error::原因與作法見 docs/MIGRATIONS.md"
+            exit 1
+          fi
+          echo "只有新增 migration ✅"
+
+      - name: 檢查新 migration 沒有破壞性 DDL
+        run: |
+          set -e
+          BASE="origin/${{ github.base_ref }}"
+          NEW=$(git diff --name-status "$BASE"...HEAD -- 'apps/api/src/migrations/*.sql' \
+                | awk '$1 == "A" { print $2 }')
+          [ -z "$NEW" ] && exit 0
+          FAIL=0
+          for f in $NEW; do
+            # 破壞性動作會讓「上一版程式」立刻爆炸，且回滾救不回資料。
+            # 真的要做就走 expand-contract 的 Contract 階段，並在檔頭寫明理由。
+            if grep -qiE '(DROP[[:space:]]+(COLUMN|TABLE))|RENAME[[:space:]]+(COLUMN|TO)' "$f" \
+               && ! grep -qi 'CONTRACT-PHASE-APPROVED' "$f"; then
+              echo "::error file=$f::偵測到破壞性 DDL（DROP COLUMN / DROP TABLE / RENAME）。"
+              echo "::error file=$f::這會讓尚未汰換的舊版容器立刻出錯，而且回滾救不回資料。"
+              echo "::error file=$f::確定已走完 expand-contract 且沒有版本在用，請在檔頭加註 CONTRACT-PHASE-APPROVED。"
+              FAIL=1
+            fi
+          done
+          exit $FAIL
+
+  security:
+    name: 弱點掃描
+    runs-on: ubuntu-latest
+    permissions: { contents: read, security-events: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy-fs.sarif }

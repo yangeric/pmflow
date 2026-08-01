@@ -1,0 +1,135 @@
+# 全自動發版：push 到 main → 自動決定版本號 → 自動 changelog → 自動打 tag
+#                → 自動 build multi-arch image → 自動推 GHCR
+#
+# 你要準備的東西：一個 GitHub repo。就這樣。
+#   • 不用 Docker Hub 帳號 —— GHCR 內建在 GitHub 裡
+#   • 不用設任何 secret —— GITHUB_TOKEN 本身就有 GHCR 寫入權
+#   • 公開 repo 的 Actions 分鐘數與 GHCR 流量都免費
+#
+# 版本號怎麼決定：看 commit 訊息（Conventional Commits）
+#   fix: 修好某個 bug        → 0.1.0 → 0.1.1
+#   feat: 加了某個功能        → 0.1.0 → 0.2.0
+#   feat!: 破壞相容的改動      → 0.1.0 → 1.0.0
+#   chore: / docs: 不發版
+#
+# release-please 會先開一個「Release PR」累積變更，你 merge 它才真的發版 ——
+# 這一步刻意留給人按，避免每個 commit 都推一個新 image 出去。
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+
+  # ── 1. 自動版本號 + changelog + tag ──
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      version: ${{ steps.rp.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          release-type: simple
+          package-name: pmflow
+
+  # ── 2. 只有真的發版時才 build 並推映像 ──
+  images:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      # 很多 NAS 是 ARM，一定要出 arm64
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # 內建，不用自己開 PAT
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/pmflow-${{ matrix.component }}
+          tags: |
+            type=raw,value=${{ needs.release-please.outputs.version }},enable=${{ needs.release-please.outputs.released == 'true' }}
+            type=raw,value=latest,enable=${{ needs.release-please.outputs.released == 'true' }}
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.licenses=MIT
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/${{ matrix.component }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          provenance: mode=max
+          sbom: true
+
+      # 供應鏈可信度：證明這個 image 真的是從這份原始碼在 CI 裡建出來的
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/pmflow-${{ matrix.component }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  # ── 3. 把部署說明附到 GitHub Release ──
+  notes:
+    needs: [release-please, images]
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag }}
+          append_body: true
+          body: |
+            ## 部署到 NAS
+
+            ```bash
+            REPO=${{ github.repository }}
+            BR=${{ needs.release-please.outputs.tag }}
+            curl -O https://raw.githubusercontent.com/$REPO/$BR/docker-compose.yml
+            curl -O https://raw.githubusercontent.com/$REPO/$BR/.env.example
+
+            cp .env.example .env
+            # 編輯 .env：改 POSTGRES_PASSWORD、JWT_SECRET、IMAGE_OWNER、PUID/PGID
+            openssl rand -base64 48        # 產生 JWT_SECRET
+
+            docker compose pull && docker compose up -d
+            # 打開 http://<NAS_IP>:8480
+            ```
+
+            映像（支援 `linux/amd64` 與 `linux/arm64`）：
+            - `ghcr.io/${{ github.repository_owner }}/pmflow-api:${{ needs.release-please.outputs.version }}`
+            - `ghcr.io/${{ github.repository_owner }}/pmflow-web:${{ needs.release-please.outputs.version }}`

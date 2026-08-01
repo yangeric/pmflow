@@ -1,0 +1,81 @@
+# PMFlow — 本機一鍵啟動（從原始碼建置）
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#   → 打開 http://localhost:8480
+#   → 第一次啟動會自動建立示範資料：demo@pmflow.local / demo1234
+#
+# 你的電腦只需要裝 Docker Desktop。
+# 不用裝 Node、不用裝 PostgreSQL —— 全部都在容器裡建。
+#
+# 停止：docker compose -f docker-compose.dev.yml down
+# 清空資料重來：docker compose -f docker-compose.dev.yml down -v
+
+name: pmflow-dev
+
+services:
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: pmflow-dev-web
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+    ports:
+      - "${HTTP_PORT:-8480}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [pmflow]
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: pmflow-dev-api
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+      NODE_ENV: production
+      DATABASE_URL: postgres://pmflow:pmflow@db:5432/pmflow
+      # 本機開發用固定字串就好；正式部署一定要換成 openssl rand -base64 48
+      PMFLOW_JWT_SECRET: dev-only-secret-please-change-in-production-32+
+      PMFLOW_SEED_DEMO: "true"
+      PMFLOW_ALLOW_SELF_REGISTRATION: "true"
+      PMFLOW_INQUIRY_DEFAULT_DUE_DAYS: "7"
+    volumes:
+      - attachments:/data/attachments
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [pmflow]
+
+  db:
+    image: postgres:17-alpine
+    container_name: pmflow-dev-db
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+      POSTGRES_DB: pmflow
+      POSTGRES_USER: pmflow
+      POSTGRES_PASSWORD: pmflow
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pmflow -d pmflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks: [pmflow]
+    # 想用 DBeaver 連進來看資料的話，把下面這行取消註解
+    # ports: ["15432:5432"]
+
+networks:
+  pmflow:
+
+volumes:
+  pgdata:
+  attachments:

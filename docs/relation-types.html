@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMFlow 任務關聯類型 — 看得懂的版本</title>
+<style>
+  .viz-root{
+    color-scheme: light;
+    --surface-1:#fcfcfb; --plane:#f9f9f7;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --src:#2a78d6;      /* 來源 */
+    --tgt:#eb6834;      /* 目標 */
+    --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+    --code-bg:#f0efec;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      color-scheme: dark;
+      --surface-1:#1a1a19; --plane:#0d0d0d;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+      --src:#3987e5; --tgt:#d95926;
+      --code-bg:#262623;
+    }
+  }
+  :root[data-theme="dark"] .viz-root{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --plane:#0d0d0d;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+    --src:#3987e5; --tgt:#d95926;
+    --code-bg:#262623;
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+    background:var(--plane); color:var(--text-primary);
+    line-height:1.7; -webkit-text-size-adjust:100%;
+  }
+  .viz-root{max-width:940px;margin:0 auto;padding:32px 20px 96px}
+
+  header{margin-bottom:40px}
+  h1{font-size:26px;line-height:1.35;margin:0 0 8px;letter-spacing:-.01em}
+  .sub{color:var(--text-secondary);font-size:15px;margin:0}
+
+  h2{font-size:19px;margin:52px 0 6px;letter-spacing:-.01em}
+  h2 .num{color:var(--muted);font-weight:400;margin-right:8px;font-variant-numeric:tabular-nums}
+  .lede{color:var(--text-secondary);font-size:15px;margin:0 0 20px}
+
+  .card{
+    background:var(--surface-1);border:1px solid var(--border);
+    border-radius:12px;padding:20px;margin:16px 0;
+  }
+
+  /* ── 記憶法 ── */
+  .mnemonic{text-align:center;padding:28px 20px}
+  .mn-row{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap}
+  .mn-letter{
+    font-size:20px;font-weight:700;line-height:1.45;padding:14px 20px;border-radius:10px;
+  }
+  .mn-letter.s{background:color-mix(in srgb,var(--src) 15%,transparent);color:var(--src)}
+  .mn-letter.t{background:color-mix(in srgb,var(--tgt) 15%,transparent);color:var(--tgt)}
+  .mn-arrow{font-size:26px;color:var(--muted)}
+  .mn-cap{display:block;font-size:12.5px;font-weight:500;margin-top:8px;letter-spacing:.02em}
+  .mn-cap.s{color:var(--src)} .mn-cap.t{color:var(--tgt)}
+  .mn-note{margin:22px auto 0;max-width:560px;color:var(--text-secondary);font-size:14.5px}
+
+  /* ── 時間軸 ── */
+  .demo-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+  .demo-title{font-size:17px;font-weight:650;margin:0}
+  .demo-code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;
+    background:var(--code-bg);color:var(--text-secondary);
+    padding:3px 8px;border-radius:5px;white-space:nowrap
+  }
+  .demo-plain{color:var(--text-primary);font-size:15px;margin:6px 0 2px;font-weight:500}
+  .demo-eg{color:var(--text-secondary);font-size:14px;margin:0 0 16px}
+
+  .tl{position:relative;user-select:none;touch-action:pan-y}
+  .tl-axis{position:relative;height:20px;margin-left:74px;border-bottom:1px solid var(--baseline)}
+  .tl-tick{
+    position:absolute;top:0;font-size:11px;color:var(--muted);
+    font-variant-numeric:tabular-nums;transform:translateX(-50%)
+  }
+  .tl-grid{position:absolute;top:20px;bottom:8px;left:74px;right:0;pointer-events:none}
+  .tl-gline{position:absolute;top:0;bottom:0;width:1px;background:var(--grid)}
+  .tl-row{position:relative;height:46px;margin-left:74px}
+  .tl-label{
+    position:absolute;left:-74px;top:11px;width:66px;text-align:right;
+    font-size:13px;font-weight:600
+  }
+  .tl-label.s{color:var(--src)} .tl-label.t{color:var(--tgt)}
+  .bar{
+    position:absolute;top:8px;height:28px;border-radius:4px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;
+    box-shadow:0 0 0 2px var(--surface-1);
+  }
+  .bar.s{background:var(--src);cursor:grab}
+  .bar.s:active{cursor:grabbing}
+  .bar.s:focus-visible{outline:3px solid var(--text-primary);outline-offset:3px}
+  .bar.t{background:var(--tgt)}
+  .bar .grip{
+    position:absolute;right:6px;top:50%;transform:translateY(-50%);
+    opacity:.75;font-size:11px;letter-spacing:-1px
+  }
+  .link{position:absolute;pointer-events:none;overflow:visible}
+  .drag-hint{
+    margin:2px 0 0 74px;font-size:12.5px;color:var(--muted);
+    display:flex;align-items:center;gap:6px
+  }
+  .readout{
+    margin:14px 0 0;padding:11px 13px;border-radius:8px;
+    background:var(--code-bg);font-size:13.5px;color:var(--text-secondary);
+    font-variant-numeric:tabular-nums
+  }
+  .readout b{color:var(--text-primary);font-weight:650}
+  .btn{
+    font:inherit;font-size:13px;padding:5px 12px;border-radius:7px;cursor:pointer;
+    border:1px solid var(--border);background:var(--surface-1);color:var(--text-secondary)
+  }
+  .btn:hover{color:var(--text-primary)}
+
+  /* ── 表格 ── */
+  table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--grid);vertical-align:top}
+  th{font-size:12.5px;color:var(--muted);font-weight:600;letter-spacing:.02em;white-space:nowrap}
+  td code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+    background:var(--code-bg);padding:2px 6px;border-radius:4px;white-space:nowrap
+  }
+  tr:last-child td{border-bottom:none}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+    padding:3px 9px;border-radius:99px;white-space:nowrap
+  }
+  .pill.move{background:color-mix(in srgb,var(--critical) 14%,transparent);color:var(--critical)}
+  .pill.still{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--text-secondary)}
+
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:680px){.cmp{grid-template-columns:1fr}}
+  .cmp .card{margin:0}
+  .cmp h3{font-size:15px;margin:0 0 4px}
+  .cmp p{font-size:14px;color:var(--text-secondary);margin:0 0 10px}
+  .tree{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--text-secondary);line-height:1.85;white-space:pre}
+
+  .callout{
+    border-left:3px solid var(--warning);background:var(--surface-1);
+    border-radius:0 8px 8px 0;padding:14px 16px;margin:16px 0;font-size:14.5px
+  }
+  .callout b{font-weight:650}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--grid);color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="viz-root">
+
+<header>
+  <h1>任務關聯類型 — 看得懂的版本</h1>
+  <p class="sub">PMFlow 的「上下左右關聯」到底在講什麼。藍色的長條可以拖，橘色的會自己跟著動。</p>
+</header>
+
+<!-- ══════════ 1 句型 ══════════ -->
+<h2><span class="num">1</span>四種依賴就是同一個句型換兩個字</h2>
+<p class="lede">介面上不會出現任何英文縮寫。你只要照著這個句型念，四種都成立。</p>
+
+<div class="card mnemonic">
+  <div class="mn-row">
+    <div>
+      <div class="mn-letter s">等待任務<br>完成 / 開始</div>
+      <span class="mn-cap s">對方那一端</span>
+    </div>
+    <div class="mn-arrow">，</div>
+    <div>
+      <div class="mn-letter t">才能<br>開始 / 完成</div>
+      <span class="mn-cap t">我這一端</span>
+    </div>
+  </div>
+  <p class="mn-note">
+    <b>前半講「對方」的哪一端，後半講「我」的哪一端。</b>兩個位置各有「完成 / 開始」兩種選擇，
+    二乘二就是全部四種——沒有第五種要背。<br><br>
+    等待任務<b>完成</b>，才能<b>開始</b>　·　等待任務<b>開始</b>，才能<b>開始</b><br>
+    等待任務<b>完成</b>，才能<b>完成</b>　·　等待任務<b>開始</b>，才能<b>完成</b>
+  </p>
+</div>
+
+<!-- ══════════ 2 四種排程依賴 ══════════ -->
+<h2><span class="num">2</span>四種排程依賴（會推動日期的）</h2>
+<p class="lede">拖藍色長條試試看。橘色長條會依照規則自動跟著跑——這就是甘特圖上拖一條、下游全部連動的原理。</p>
+
+<div class="card" data-demo="FS"></div>
+<div class="card" data-demo="SS"></div>
+<div class="card" data-demo="FF"></div>
+<div class="card" data-demo="SF"></div>
+
+<!-- ══════════ 3 lag ══════════ -->
+<h2><span class="num">3</span>lag：中間要留幾天</h2>
+<p class="lede">每條依賴線都可以帶一個 lag（延遲天數），正數是「中間空幾天」，負數是「可以提前重疊」。</p>
+
+<div class="card" data-demo="FS" data-lag="2" data-title="等待任務完成，才能開始　＋間隔 2 天"
+     data-plain="來源做完之後，還要等 2 天，目標才能開始。"
+     data-eg="例：油漆刷完要陰乾兩天才能進傢俱。"></div>
+
+<div class="card" data-demo="FS" data-lag="-1" data-title="等待任務完成，才能開始　＋間隔 −1 天（負數）"
+     data-plain="來源還沒完全做完，目標就可以提前 1 天插進來重疊。"
+     data-eg="例：規格書還在收尾，前端已經可以先開始切版。"></div>
+
+<div class="callout">
+  <b>負的 lag 是排程壓縮最常用的手段。</b>你不用把任務硬拆成兩半，只要讓下游提前重疊幾天，整個專案的關鍵路徑就縮短了。
+</div>
+
+<!-- ══════════ 4 語意關聯 ══════════ -->
+<h2><span class="num">4</span>語意關聯（<em>不會</em>推動日期的）</h2>
+<p class="lede">另外四種關聯只是「記錄兩件事有關係」，純粹給人看、給搜尋用。拖來源，目標完全不動。</p>
+
+<div class="card" data-demo="RELATES"></div>
+
+<table>
+  <thead>
+    <tr><th>類型</th><th>意思</th><th>反向顯示為</th><th>典型用法</th><th>影響日期</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>相關</td><td>相關（雙向對稱）</td><td>相關</td>
+      <td>兩張單子講同一件事，但沒有先後</td>
+      <td><span class="pill still">不動</span></td>
+    </tr>
+    <tr>
+      <td>阻擋</td><td>阻擋</td><td>被阻擋</td>
+      <td>「這個沒解決，那個就做不下去」——但你還不想動日期</td>
+      <td><span class="pill still">不動</span></td>
+    </tr>
+    <tr>
+      <td>重複於</td><td>重複於</td><td>被重複</td>
+      <td>同一個問題被開了兩張單，留著當索引</td>
+      <td><span class="pill still">不動</span></td>
+    </tr>
+    <tr>
+      <td>需要</td><td>需要</td><td>被需要</td>
+      <td>功能上需要另一個東西存在，但排程各走各的</td>
+      <td><span class="pill still">不動</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <b>「阻擋」和「等待任務完成，才能開始」差在哪？</b>兩個都是「A 沒好，B 不能動」，但後者會<b>真的把 B 的日期往後推</b>，「阻擋」只是掛個標記提醒你。<br>
+  白話判斷法：<b>你希望系統幫你自動改日期嗎？</b>要 → 用「等待任務完成，才能開始」。不要，只想留個記號 → 用「阻擋」。
+</div>
+
+<!-- ══════════ 5 上下 vs 左右 ══════════ -->
+<h2><span class="num">5</span>「上下」和「左右」是兩件不同的事</h2>
+<p class="lede">這是最容易混的一組。它們在資料庫裡也是分開存的。</p>
+
+<div class="cmp">
+  <div class="card">
+    <h3>上下 ＝ 階層（父子）</h3>
+    <p>一件大事拆成幾件小事。父任務的日期和完成率是<b>子任務算出來的</b>，你不用手動填。</p>
+    <div class="tree">機房搬遷（父）
+├─ 盤點設備
+├─ 採購機櫃
+└─ 實際搬運
+
+父任務起日 = 子任務最早的起日
+父任務迄日 = 子任務最晚的迄日
+父任務完成率 = 子任務加權平均</div>
+  </div>
+  <div class="card">
+    <h3>左右 ＝ 依賴（前後）</h3>
+    <p>兩件<b>平輩</b>的事誰先誰後。它們可以在不同父任務底下，甚至跨專案。</p>
+    <div class="tree">盤點設備 ──完成後開始──▶ 採購機櫃
+採購機櫃 ──完成後開始──▶ 實際搬運
+
+拖動「盤點設備」
+  → 採購機櫃 跟著往後
+  → 實際搬運 也跟著往後
+（一路連鎖到底）</div>
+  </div>
+</div>
+
+<div class="callout">
+  <b>系統會擋掉的兩件事：</b>不能在祖先和後代之間建立排程依賴（父子已經隱含關係了，再連會打架）；不能形成循環（A→B→C→A 會被擋下來並告訴你環在哪）。
+</div>
+
+<!-- ══════════ 6 決策表 ══════════ -->
+<h2><span class="num">6</span>實際要用哪一個？</h2>
+<p class="lede">照你心裡想講的那句話去對，不要對英文縮寫。</p>
+
+<table>
+  <thead>
+    <tr><th>你心裡想的是…</th><th>就用</th><th>拖來源時目標</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>「這個做完，那個才能開始」</td><td><b>等待任務完成，才能開始</b><br><span style="color:var(--muted);font-size:13px">九成情況都是這個</span></td><td><span class="pill move">往後推</span></td></tr>
+    <tr><td>「這兩件要一起開工」</td><td><b>等待任務開始，才能開始</b></td><td><span class="pill move">跟著起跑</span></td></tr>
+    <tr><td>「這兩件要一起收尾」</td><td><b>等待任務完成，才能完成</b></td><td><span class="pill move">跟著收尾</span></td></tr>
+    <tr><td>「那個要等這個開工後才能結束」</td><td><b>等待任務開始，才能完成</b><br><span style="color:var(--muted);font-size:13px">很罕見</span></td><td><span class="pill move">結束點跟著動</span></td></tr>
+    <tr><td>「這件事是那件事的一部分」</td><td>父子階層（拖曳縮排）</td><td><span class="pill move">彙總</span></td></tr>
+    <tr><td>「有關係，但我不要它自動改日期」</td><td>相關 / 阻擋</td><td><span class="pill still">不動</span></td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <b>不確定就用「等待任務完成，才能開始」。</b>市面上十套主流開源專案管理系統裡，沒有一套把四種都做完——大家的事實標準就只有這一種。另外三種是留給真的需要的人用的，不用勉強自己記。
+</div>
+
+<footer>
+  PMFlow ｜ 對應規格書 <code>SPEC.md</code> §5.3「任務與上下左右關聯」與 <code>ARCHITECTURE.md</code> §4。
+  資料表是同一張 <code>task_link</code>，差別只在 <code>link_type</code> 這個欄位的值（資料庫仍存 <code>FS</code>/<code>SS</code>/<code>FF</code>/<code>SF</code> 代碼，介面一律只顯示中文）。
+</footer>
+
+</div>
+
+<script>
+(function(){
+  const DAYS = 15, DAY_W = 100/DAY_S(), PAD = 0;
+  function DAY_S(){ return DAYS; }
+
+  const PRESET = {
+    FS: {
+      title:'等待任務完成，才能開始　<span style="color:var(--muted);font-weight:400">（完成後開始）</span>',
+      code:'目標起日 ＝ 來源迄日 ＋ 間隔',
+      plain:'來源做完了，目標才能開始。',
+      eg:'例：規格確認完，才能開始開發。這是最常見的一種，九成的依賴都是它。',
+      src:{s:1,d:4}, tgt:{s:5,d:3}, lag:0
+    },
+    SS: {
+      title:'等待任務開始，才能開始　<span style="color:var(--muted);font-weight:400">（同時開始）</span>',
+      code:'目標起日 ＝ 來源起日 ＋ 間隔',
+      plain:'來源一開工，目標也跟著開工。',
+      eg:'例：施工開始的同時，監工也要同步進場。兩件事平行跑，但不能比對方早開始。',
+      src:{s:1,d:5}, tgt:{s:1,d:3}, lag:0
+    },
+    FF: {
+      title:'等待任務完成，才能完成　<span style="color:var(--muted);font-weight:400">（同時完成）</span>',
+      code:'目標迄日 ＝ 來源迄日 ＋ 間隔',
+      plain:'來源做完的時候，目標也要跟著做完。',
+      eg:'例：系統上線和使用者手冊，要在同一天完成。手冊可以晚點開始寫，但不能比系統晚交。',
+      src:{s:1,d:5}, tgt:{s:3,d:3}, lag:0
+    },
+    SF: {
+      title:'等待任務開始，才能完成　<span style="color:var(--muted);font-weight:400">（開始後完成）</span>',
+      code:'目標迄日 ＝ 來源起日 ＋ 間隔',
+      plain:'來源一開工，目標就要收掉。',
+      eg:'例：新系統上線的那天，舊系統的維護就停止。很罕見，通常用在交接、輪班、系統汰換。',
+      src:{s:6,d:4}, tgt:{s:2,d:4}, lag:0
+    },
+    RELATES: {
+      title:'相關　<span style="color:var(--muted);font-weight:400">（語意關聯）</span>',
+      code:'（不套用任何日期約束）',
+      plain:'只記錄「這兩件事有關係」，日期各走各的。',
+      eg:'拖拖看左邊的藍色長條——橘色的完全不會動。這就是語意關聯和排程依賴最根本的差別。',
+      src:{s:1,d:4}, tgt:{s:7,d:3}, lag:0, semantic:true
+    }
+  };
+
+  function clamp(v,lo,hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  function solve(type, src, tgtDur, lag){
+    // 回傳 target 的起始日
+    switch(type){
+      case 'FS': return src.s + src.d + lag;
+      case 'SS': return src.s + lag;
+      case 'FF': return src.s + src.d + lag - tgtDur;
+      case 'SF': return src.s + lag - tgtDur;
+      default:   return null; // 語意關聯：不動
+    }
+  }
+
+  function build(card){
+    const type = card.dataset.demo;
+    const p = PRESET[type];
+    const lag = card.dataset.lag !== undefined ? parseInt(card.dataset.lag,10) : p.lag;
+    const title = card.dataset.title || p.title;
+    const plain = card.dataset.plain || p.plain;
+    const eg    = card.dataset.eg    || p.eg;
+
+    const src = { s:p.src.s, d:p.src.d };
+    const tgtDur = p.tgt.d;
+    let tgtS = p.semantic ? p.tgt.s : solve(type, src, tgtDur, lag);
+    const semanticFixed = p.tgt.s;
+
+    const codeTxt = card.dataset.lag !== undefined
+      ? p.code.replace('間隔', String(lag))
+      : p.code;
+
+    card.innerHTML = `
+      <div class="demo-head">
+        <p class="demo-title">${title}</p>
+        <span class="demo-code">${codeTxt}</span>
+      </div>
+      <p class="demo-plain">${plain}</p>
+      <p class="demo-eg">${eg}</p>
+      <div class="tl">
+        <div class="tl-axis"></div>
+        <div class="tl-grid"></div>
+        <div class="tl-row">
+          <span class="tl-label s">來源 A</span>
+          <div class="bar s" tabindex="0" role="slider" aria-label="拖曳或用左右方向鍵移動來源任務"
+               aria-valuemin="0" aria-valuemax="${DAYS-1}" aria-valuenow="${src.s}">
+            <span class="txt"></span><span class="grip">⋮⋮</span>
+          </div>
+        </div>
+        <div class="tl-row">
+          <span class="tl-label t">目標 B</span>
+          <div class="bar t"><span class="txt"></span></div>
+        </div>
+      </div>
+      <p class="drag-hint">↔ 拖曳藍色長條，或點一下用方向鍵移動</p>
+      <div class="readout"></div>
+      <p style="margin:12px 0 0"><button class="btn" type="button">回到預設</button></p>
+    `;
+
+    const axis = card.querySelector('.tl-axis');
+    const grid = card.querySelector('.tl-grid');
+    const barS = card.querySelector('.bar.s');
+    const barT = card.querySelector('.bar.t');
+    const read = card.querySelector('.readout');
+    const reset= card.querySelector('.btn');
+
+    for(let i=0;i<DAYS;i+=2){
+      const t=document.createElement('span');
+      t.className='tl-tick'; t.style.left=(i*100/DAYS)+'%'; t.textContent='D'+i;
+      axis.appendChild(t);
+      const g=document.createElement('span');
+      g.className='tl-gline'; g.style.left=(i*100/DAYS)+'%';
+      grid.appendChild(g);
+    }
+
+    function render(){
+      if(!p.semantic) tgtS = solve(type, src, tgtDur, lag);
+      else tgtS = semanticFixed;
+
+      barS.style.left  = (src.s*100/DAYS)+'%';
+      barS.style.width = (src.d*100/DAYS)+'%';
+      barS.querySelector('.txt').textContent = 'D'+src.s+'–D'+(src.s+src.d);
+      barS.setAttribute('aria-valuenow', src.s);
+
+      barT.style.left  = (tgtS*100/DAYS)+'%';
+      barT.style.width = (tgtDur*100/DAYS)+'%';
+      barT.querySelector('.txt').textContent = 'D'+tgtS+'–D'+(tgtS+tgtDur);
+
+      const sF = src.s+src.d, tF = tgtS+tgtDur;
+      let line;
+      if(p.semantic){
+        line = `來源 <b>D${src.s}→D${sF}</b> ｜ 目標 <b>D${tgtS}→D${tF}</b>　—　目標<b>沒有跟著動</b>，語意關聯不套用日期約束。`;
+      }else{
+        const map = {
+          FS:`目標起日 = 來源迄日(<b>D${sF}</b>)${lag?` ${lag>0?'+':'−'} ${Math.abs(lag)}`:''} = <b>D${tgtS}</b>`,
+          SS:`目標起日 = 來源起日(<b>D${src.s}</b>)${lag?` ${lag>0?'+':'−'} ${Math.abs(lag)}`:''} = <b>D${tgtS}</b>`,
+          FF:`目標迄日 = 來源迄日(<b>D${sF}</b>)${lag?` ${lag>0?'+':'−'} ${Math.abs(lag)}`:''} = <b>D${tF}</b>，工期 ${tgtDur} 天 → 起日 <b>D${tgtS}</b>`,
+          SF:`目標迄日 = 來源起日(<b>D${src.s}</b>)${lag?` ${lag>0?'+':'−'} ${Math.abs(lag)}`:''} = <b>D${tF}</b>，工期 ${tgtDur} 天 → 起日 <b>D${tgtS}</b>`
+        };
+        line = map[type];
+      }
+      read.innerHTML = line;
+    }
+
+    // 拖曳
+    let dragging=false, startX=0, startS=0;
+    const track = card.querySelector('.tl-row');
+    function px2day(dx){ return Math.round(dx / (track.clientWidth/DAYS)); }
+
+    barS.addEventListener('pointerdown', e=>{
+      dragging=true; startX=e.clientX; startS=src.s;
+      barS.setPointerCapture(e.pointerId);
+    });
+    barS.addEventListener('pointermove', e=>{
+      if(!dragging) return;
+      src.s = clamp(startS + px2day(e.clientX-startX), 0, DAYS-src.d);
+      render();
+    });
+    barS.addEventListener('pointerup', e=>{ dragging=false; barS.releasePointerCapture(e.pointerId); });
+    barS.addEventListener('pointercancel', ()=>{ dragging=false; });
+
+    barS.addEventListener('keydown', e=>{
+      if(e.key==='ArrowLeft'){ src.s=clamp(src.s-1,0,DAYS-src.d); render(); e.preventDefault(); }
+      if(e.key==='ArrowRight'){ src.s=clamp(src.s+1,0,DAYS-src.d); render(); e.preventDefault(); }
+    });
+
+    reset.addEventListener('click', ()=>{ src.s=p.src.s; src.d=p.src.d; render(); });
+
+    render();
+  }
+
+  document.querySelectorAll('[data-demo]').forEach(build);
+})();
+</script>
+</body>
+</html>
