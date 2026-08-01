@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import { authenticate, requireTaskAccess } from '../lib/auth.js'
 import { assertNoCycle, isScheduling, SYMMETRIC } from '../lib/graph.js'
-import { badRequest, forbidden, notFound } from '../lib/errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 
 const createBody = z.object({
   targetId: z.string().uuid(),
@@ -41,7 +41,7 @@ export default async function linkRoutes(app: FastifyInstance) {
           SELECT 1 AS one FROM task_closure
           WHERE (ancestor_id = ${sourceId} AND descendant_id = ${targetId})
              OR (ancestor_id = ${targetId} AND descendant_id = ${sourceId})`
-        if (anc) throw badRequest('父子任務之間不能建立排程依賴', '父任務的日期已由子任務彙總')
+        if (anc) throw conflict('父子任務之間不能建立排程依賴', '父任務的日期已由子任務彙總')
 
         await assertNoCycle(tx, sourceId, targetId)
       }
