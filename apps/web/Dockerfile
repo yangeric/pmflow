@@ -10,8 +10,9 @@ RUN npm ci
 
 COPY . .
 
-# 授權掃描擋在 build 裡：哪天有人 PR 進 GPL 套件，這裡就會失敗。
-# 專案要維持 MIT，這道關卡比事後才發現便宜太多。
+# 授權白名單掃描刻意不放在這裡，只留在 ci.yml 的 license-scan job。
+# 放進 Dockerfile 的話 amd64 / arm64 兩份映像會各再跑一次同樣的檢查，
+# 而 arm64 是在 QEMU 模擬下建置的，npx 下載加掃描很容易拖到超時。
 RUN npm run build
 
 # ─── Stage 2：執行 ──────────────────────────────────────

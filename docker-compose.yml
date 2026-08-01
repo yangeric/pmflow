@@ -41,7 +41,9 @@ services:
     image: ${REGISTRY:-ghcr.io}/${IMAGE_OWNER:-your-github-name}/pmflow-api:${PMFLOW_VERSION:-latest}
     container_name: pmflow-api
     restart: unless-stopped
-    user: "${PUID:-1026}:${PGID:-100}"
+    # 刻意不設 user:。映像內建以 uid 10001 的非 root 帳號執行，
+    # /data/attachments 也是那個 uid 擁有的；覆寫成 NAS 帳號反而會寫不進去。
+    # 這套全部用具名 volume、沒有 bind mount，本來就不需要對齊 NAS 的 PUID/PGID。
     environment:
       <<: *common
       NODE_ENV: production
@@ -154,9 +156,11 @@ volumes:
 #    控制台 → 登入入口 → 進階 → 反向代理伺服器，
 #    來源 pm.yourdomain.com:443 → 目的地 localhost:8480。
 #
-# 2) PUID / PGID
-#    Synology 第一個使用者通常是 1026:100，QNAP 常是 1000:100。
-#    用 `id 你的帳號` 查出來寫進 .env，不設會 permission denied。
+# 2) 不需要設 PUID / PGID
+#    很多自架教學會叫你查 `id` 再填 PUID/PGID，這套不用。
+#    映像本身以 uid 10001 執行，資料又全放在具名 volume（由 Docker 建立時
+#    就帶對擁有者），沒有任何 bind mount 需要對齊 NAS 帳號。
+#    硬加 user: 覆寫反而會讓附件目錄寫不進去。
 #
 # 3) PostgreSQL 資料位置
 #    pgdata 一定要落在本機 Btrfs/ext4。指到 SMB/CIFS/NFS 掛載點的話，

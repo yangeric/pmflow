@@ -543,7 +543,7 @@ graph TB
 
 **NAS 五大坑**（詳見 SPEC §12.4）：
 1. Synology DSM 佔用 80/443/5000/5001 → 對外改映 8480/8443
-2. PUID/PGID 通常是 `1026:100`，不設會因權限起不來
+2. 不需要設 PUID/PGID —— 全用具名 volume，映像自帶非 root 使用者
 3. PostgreSQL 資料**絕不能**放 SMB/CIFS 掛載點
 4. `TZ=Asia/Taipei` 要同時給 backend 與 postgres，否則逾期判斷差 8 小時
 5. ARM NAS 要確認拉到 `linux/arm64` 映像

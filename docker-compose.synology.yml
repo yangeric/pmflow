@@ -1,0 +1,216 @@
+# PMFlow — Synology Container Manager 專用
+#
+# 這份是「所有設定都直接寫在裡面」的版本，不需要 .env 檔。
+# Container Manager 的專案介面沒辦法建立 .env 這種點開頭的隱藏檔，
+# 原本那份 docker-compose.yml 用了大量 ${變數}，在這裡會全部讀不到而失敗。
+#
+# 使用前要改四個地方，都用「改我」標示了：
+#   1. 兩行 image: 的帳號與版本號
+#   2. POSTGRES_PASSWORD（出現三次，必須一字不差）
+#   3. PMFLOW_JWT_SECRET
+#
+# ⚠️ 版本號沒有開頭的 v。git tag 打 v0.1.1，映像標籤是 0.1.1。
+#
+# Container Manager → 專案 → 新增 → 路徑選 /docker/pmflow
+# → 來源選「建立 docker-compose.yml」→ 把這整份貼進去
+
+name: pmflow
+
+services:
+
+  # 唯一對外的容器：靜態檔 + 把 /api 轉給後端
+  web:
+    image: ghcr.io/你的GitHub帳號/pmflow-web:0.1.1
+    container_name: pmflow-web
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+    ports:
+      # Synology DSM 佔用 80/443/5000/5001，所以對外用 8480
+      - "8480:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [public, internal]
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  api:
+    image: ghcr.io/你的GitHub帳號/pmflow-api:0.1.1
+    container_name: pmflow-api
+    restart: unless-stopped
+    # 刻意不設 user:。映像內建以 uid 10001 的非 root 帳號執行，
+    # /data/attachments 也是那個 uid 擁有。硬改成 NAS 帳號反而會寫不進去。
+    environment:
+      TZ: Asia/Taipei
+      NODE_ENV: production
+
+      # ── 改我 1／2 ─────────────────────────────────────
+      # 下面這行的密碼要跟 db 服務那邊「一字不差」，改一個就要兩個都改
+      DATABASE_URL: postgres://pmflow:改成你的資料庫密碼@db:5432/pmflow
+
+      # ── 改我 2／2 ─────────────────────────────────────
+      # 至少 32 字元的隨機字串。產生方法見檔案最下方。
+      # 這串換掉的話，所有人的登入狀態會全部失效（要重新登入），資料不受影響。
+      PMFLOW_JWT_SECRET: 改成一長串隨機字串至少32字元
+
+      PMFLOW_ACCESS_TTL_SEC: "900"        # access token 15 分鐘
+      PMFLOW_REFRESH_TTL_SEC: "604800"    # refresh token 7 天
+      PMFLOW_ALLOW_SELF_REGISTRATION: "true"
+      PMFLOW_ALLOWED_EMAIL_DOMAINS: ""    # 限制可註冊的信箱網域，逗號分隔；留空 = 不限制
+
+      # 第一次部署建議留 true，才有東西可以看。
+      # 確認正常後改成 false，再把專案「停止 → 清除資料 → 重新啟動」就是乾淨的正式環境。
+      PMFLOW_SEED_DEMO: "true"
+
+      PMFLOW_INQUIRY_DEFAULT_DUE_DAYS: "7"   # 沒填期望回覆日時自動帶「提問日 + 7 天」
+    volumes:
+      - attachments:/data/attachments
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  db:
+    image: postgres:17-alpine
+    container_name: pmflow-db
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+      POSTGRES_DB: pmflow
+      POSTGRES_USER: pmflow
+
+      # ── 改我 1／2（跟上面 DATABASE_URL 裡那段要一模一樣）──
+      POSTGRES_PASSWORD: 改成你的資料庫密碼
+
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - max_connections=60
+      - -c
+      - log_min_duration_statement=1000
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pmflow -d pmflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # 每日凌晨 3 點備份，保留 30 份。不需要就把這整段 backup: 刪掉。
+  backup:
+    image: postgres:17-alpine
+    container_name: pmflow-backup
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+      PGHOST: db
+      PGDATABASE: pmflow
+      PGUSER: pmflow
+
+      # ── 改我 1／2（同上，三個地方的密碼要一致）──
+      PGPASSWORD: 改成你的資料庫密碼
+
+      BACKUP_KEEP_DAYS: "30"
+      BACKUP_AT_HOUR: "3"
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[backup] 每日 $${BACKUP_AT_HOUR} 點備份，保留 $${BACKUP_KEEP_DAYS} 份"
+        while true; do
+          if [ "$$(date +%H)" = "$$(printf '%02d' $$BACKUP_AT_HOUR)" ]; then
+            F="/backups/pmflow-$$(date +%Y%m%d-%H%M%S).sql.gz"
+            pg_dump --no-owner --no-acl | gzip -9 > "$$F" \
+              && echo "[backup] ok $$F ($$(du -h $$F | cut -f1))" \
+              || echo "[backup] FAILED"
+            find /backups -name 'pmflow-*.sql.gz' -mtime +$$BACKUP_KEEP_DAYS -delete
+            sleep 3600
+          fi
+          sleep 300
+        done
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+networks:
+  public:
+    name: pmflow-public
+  internal:
+    name: pmflow-internal
+    internal: true      # 完全不對外，資料庫不可能從 NAS 以外被連到
+
+volumes:
+  pgdata:      { name: pmflow-pgdata }
+  attachments: { name: pmflow-attachments }
+  backups:     { name: pmflow-backups }
+
+# ══════════════════════════════════════════════════════════
+# 產生隨機字串（在你的 Windows PowerShell 打，跑兩次拿兩串）
+# ══════════════════════════════════════════════════════════
+#
+#   [Convert]::ToBase64String((1..48|%{Get-Random -Max 256}))
+#
+# 一串給 POSTGRES_PASSWORD（三個地方都要貼），一串給 PMFLOW_JWT_SECRET。
+#
+# ══════════════════════════════════════════════════════════
+# 使用步驟
+# ══════════════════════════════════════════════════════════
+#
+# 1) File Station 建立資料夾 docker/pmflow
+# 2) Container Manager → 專案 → 新增
+#    專案名稱：pmflow
+#    路徑：/docker/pmflow
+#    來源：建立 docker-compose.yml → 貼上這份（記得先改好那兩個值）
+# 3) 下一步 → 下一步 → 完成。它會自動拉映像並啟動，第一次約 2～5 分鐘
+# 4) 看 api 容器的日誌，出現「migration 已套用」就成功了
+# 5) 瀏覽 http://你的NAS_IP:8480
+#    示範帳號 demo@pmflow.local ／ demo1234
+#
+# ══════════════════════════════════════════════════════════
+# 事後注意
+# ══════════════════════════════════════════════════════════
+#
+# 拉映像失敗：manifest unknown / unauthorized / not found
+#   → 先確認版本號沒有多寫 v（0.1.1 而不是 v0.1.1）。
+#   → 再確認 GHCR 的 package 是不是還私有 —— 預設就是私有，repo 公開也一樣。
+#     GHCR 對看不到的 package 一律回 manifest unknown（不回「沒有權限」，
+#     免得洩漏 package 是否存在），所以症狀跟版本號寫錯一模一樣。
+#     github.com/<你的帳號>?tab=packages → pmflow-api → Package settings
+#     → Danger Zone → Change visibility → Public。pmflow-web 也做一次。
+#
+# 想用網域 + HTTPS
+#   → DSM 控制台 → 登入入口 → 進階 → 反向代理伺服器
+#     來源 pm.yourdomain.com:443 → 目的地 localhost:8480
+#
+# 升級版本
+#   → 把上面兩行 image: 的 v0.1.1 改成新版號，專案按「建置」。
+#     不要裝 Watchtower 自動更新 —— 半夜自動升級遇到 migration 失敗很難救。
+#
+# 備份
+#   → backups 與 attachments 兩個 volume 都要納入 Hyper Backup 排程。
+#     只備資料庫不備附件等於沒備份。

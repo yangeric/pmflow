@@ -155,6 +155,13 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
+      # docker/metadata-action 的 semver 樣板會去掉 tag 開頭的 v，
+      # 所以 registry 上是 0.1.1 而不是 v0.1.1。說明文件必須跟著去掉，
+      # 否則使用者照著複製會拿到 manifest unknown。
+      - name: 取得映像標籤（去掉開頭的 v）
+        id: ver
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: 建立 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -172,8 +179,11 @@ jobs:
             ```
 
             映像（`linux/amd64` + `linux/arm64`）：
-            - `ghcr.io/${{ github.repository_owner }}/pmflow-api:${{ github.ref_name }}`
-            - `ghcr.io/${{ github.repository_owner }}/pmflow-web:${{ github.ref_name }}`
+            - `ghcr.io/${{ github.repository_owner }}/pmflow-api:${{ steps.ver.outputs.tag }}`
+            - `ghcr.io/${{ github.repository_owner }}/pmflow-web:${{ steps.ver.outputs.tag }}`
+
+            （映像標籤沒有開頭的 `v`：git tag 是 `${{ github.ref_name }}`，
+            映像標籤是 `${{ steps.ver.outputs.tag }}`。）
 
             升級時建議先單獨跑 migration，再換 image（兩個動作可分別回滾）：
 

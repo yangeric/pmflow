@@ -95,8 +95,7 @@ curl -O https://raw.githubusercontent.com/<你的帳號>/pmflow/main/.env.exampl
 
 cp .env.example .env
 openssl rand -base64 48        # 產生 JWT_SECRET，貼進 .env
-id <你的NAS帳號>                # 查 PUID / PGID，填進 .env
-nano .env                      # 至少改 POSTGRES_PASSWORD、JWT_SECRET、IMAGE_OWNER、PUID/PGID、PMFLOW_BASE_URL
+nano .env                      # 至少改 POSTGRES_PASSWORD、JWT_SECRET、IMAGE_OWNER
 
 docker compose pull
 docker compose up -d
@@ -116,11 +115,15 @@ IMAGE_OWNER=<你的 Docker Hub 帳號>
 
 ### NAS 上最常卡住的三件事
 
-1. **Port 被佔**：Synology DSM 用掉 80/443/5000/5001，所以預設對外映 8480/8443。
+1. **Port 被佔**：Synology DSM 用掉 80/443/5000/5001，所以預設對外映 8480。
    衝突就改 `.env` 的 `HTTP_PORT`。
-2. **PUID/PGID 沒設**：附件寫不進去。`id 你的帳號` 查，Synology 常是 `1026:100`。
+2. **用 Container Manager 的「專案」介面貼 `docker-compose.yml`**：它建不出 `.env`
+   這種點開頭的隱藏檔，`${變數}` 全部讀不到，`POSTGRES_PASSWORD` 那種
+   `${VAR:?...}` 寫法會直接擋在啟動前。改用 `docker-compose.synology.yml`。
 3. **PostgreSQL 資料放到 SMB/CIFS 掛載點**：fsync 語意不保證，資料庫遲早壞。
    一定要落在本機 Btrfs/ext4。
+4. **映像標籤寫成 `v0.1.2`**：正確的是 `0.1.2`，沒有 `v`（見 README「發版」一節）。
+   拉不到時回的是 `manifest unknown`，看起來像映像不存在。
 
 ---
 

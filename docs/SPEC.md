@@ -900,7 +900,7 @@ backup                 每日 pg_dump cron（可選）
 這些是自架最容易卡住的地方，先寫進文件省得日後查半天：
 
 1. **Port 衝突**：Synology DSM 佔用 80/443/5000/5001。→ compose 把 Caddy 對外映到 `8480:80` / `8443:443`，或走 DSM 內建反向代理（控制台 → 登入入口 → 進階 → 反向代理伺服器）。
-2. **PUID / PGID**：NAS 上的 volume 常是 `1026:100`（Synology 第一個使用者）。所有服務加 `user: "${PUID}:${PGID}"`，`.env` 裡設好，否則 PostgreSQL 會因權限起不來。
+2. **不要覆寫 `user:`**：一般自架教學會叫你查 `id` 再填 `PUID`/`PGID`，那是給有 bind mount 的情況用的。這套全部用具名 volume，API 映像本身以 uid `10001` 執行、`/data/attachments` 也是那個 uid 擁有，硬加 `user: "${PUID}:${PGID}"` 反而會讓附件寫不進去。
 3. **PostgreSQL 資料不要放 CIFS/SMB 掛載點**，一定要用本機 Btrfs/ext4 volume，否則 fsync 語意不對會壞資料。
 4. **時區**：`TZ=Asia/Taipei` 要同時給 backend 與 postgres，不然排程與逾期判斷會差 8 小時。
 5. **記憶體**：低階 NAS 只有 2–4 GB。compose 裡對 backend 設 `JAVA_OPTS=-XX:MaxRAMPercentage=60`，並給每個服務 `mem_limit`。

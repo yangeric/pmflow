@@ -127,8 +127,9 @@ apps/web/           前端
 
 docs/SPEC.md            規格書
 docs/ARCHITECTURE.md    13 張 Mermaid 架構圖
-docker-compose.dev.yml  本機：從原始碼建置
-docker-compose.yml      NAS：拉 GHCR image
+docker-compose.dev.yml       本機：從原始碼建置
+docker-compose.yml           NAS：拉 GHCR image，設定值放 .env
+docker-compose.synology.yml  Synology Container Manager 專用：設定值直接寫死
 ```
 
 ---
@@ -147,26 +148,34 @@ bash test/e2e.sh               # 端對端：30 項（需要 API 跑在 8080）
 
 ## 部署到 NAS
 
+用 SSH 進 NAS 的話：
+
 ```bash
 curl -O https://raw.githubusercontent.com/<你的帳號>/pmflow/main/docker-compose.yml
 curl -O https://raw.githubusercontent.com/<你的帳號>/pmflow/main/.env.example
 
 cp .env.example .env
 openssl rand -base64 48        # 產生 JWT_SECRET，貼進 .env
-# 同時改 POSTGRES_PASSWORD、IMAGE_OWNER、PUID/PGID（用 id <你的帳號> 查）
+# 同時改 POSTGRES_PASSWORD 與 IMAGE_OWNER
 
 docker compose pull && docker compose up -d
 ```
 
+用 **Synology Container Manager** 的圖形介面則改用另一份：Container Manager →
+專案 → 新增 → 來源選「建立 docker-compose.yml」→ 貼上
+`docker-compose.synology.yml` 的內容（照檔案裡「改我」的標示改四個地方）。
+那份不需要 `.env`，因為那個介面建不出點開頭的隱藏檔。
+
 **NAS 最容易踩的三個坑**（完整清單見 `docker-compose.yml` 檔尾）：
 
 1. Synology DSM 佔用 80/443/5000/5001 → 已預設對外映 8480
-2. `PUID`/`PGID` 不設會 permission denied（Synology 常是 `1026:100`）
+2. **Synology Container Manager 的「專案」介面讀不到 `.env`**（建不出點開頭的隱藏檔），
+   要改用 `docker-compose.synology.yml`，那份把所有值直接寫在檔案裡
 3. **PostgreSQL 資料絕不能放 SMB/CIFS 掛載點**，fsync 語意不對，資料庫遲早損毀
 
 ---
 
-## 全自動發版
+## 發版
 
 你要準備的東西：**一個 GitHub repo**。就這樣。
 
@@ -174,18 +183,32 @@ docker compose pull && docker compose up -d
 - **不用設任何 secret** —— `GITHUB_TOKEN` 本身就有 GHCR 寫入權
 - 公開 repo 的 Actions 分鐘數與 GHCR 流量都免費（私人 repo 每月 2000 分鐘也夠用）
 
-流程：push 到 main → release-please 依 commit 訊息自動決定版本號、產 changelog、開一個 Release PR → 你 merge 它 → 自動打 tag、build amd64 + arm64 映像、推 GHCR、附上 SBOM 與 provenance。
+repo 裡有兩個 workflow，觸發條件不同，這是最容易搞混的地方：
 
-版本號規則（Conventional Commits）：
+| workflow | 什麼時候跑 | 做什麼 |
+|---|---|---|
+| `ci.yml` | push 到 main、開 PR | 型別檢查、單元測試、端對端測試、授權白名單掃描。**不產生映像** |
+| `release.yml` | 推 `v*` 開頭的 tag | build amd64 + arm64、推 GHCR（有設 secret 就一併推 Docker Hub）、附 SBOM 與 provenance、開 GitHub Release |
 
+所以「推上 main」只會跑測試。要產生新映像必須打 tag：
+
+```bash
+git push                          # 先讓 CI 跑過，確認沒壞
+git tag v0.1.2
+git push origin v0.1.2            # 這一步才會 build 映像
 ```
-fix: 修好某個 bug      → 0.1.0 → 0.1.1
-feat: 加了某個功能      → 0.1.0 → 0.2.0
-feat!: 破壞相容的改動    → 0.1.0 → 1.0.0
-chore: / docs:         不發版
-```
 
-Release PR 那一步刻意留給人按，避免每個 commit 都推一個新 image 出去。
+⚠️ **映像標籤沒有開頭的 `v`。** `git tag v0.1.2` 產出的映像是
+`ghcr.io/<你的帳號>/pmflow-api:0.1.2` —— `docker/metadata-action` 的 semver
+樣板會把 `v` 去掉，因為 semver 規範裡版本號本身不含 `v`，那只是 git tag 的慣例前綴。
+寫成 `:v0.1.2` 會拿到 `manifest unknown`，而那個訊息看起來像映像不存在，
+很容易往錯的方向查。每次 tag 也會一併更新 `latest`、`0.1`、`0` 這幾個標籤。
+
+**首次發版後必做一次**：GHCR 的 package 預設是私有的，**就算 repo 是公開的也一樣**。
+不改的話 NAS 拉不到，而 GHCR 對看不到的 package 一律回 `manifest unknown`
+（不回「沒有權限」，避免洩漏 package 是否存在），所以症狀跟上面那個坑一模一樣。
+到 `github.com/<你的帳號>?tab=packages` → `pmflow-api` → Package settings →
+Danger Zone → Change visibility → Public，`pmflow-web` 再做一次。只需做這一次。
 
 ---
 
