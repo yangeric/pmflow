@@ -1,0 +1,15 @@
+# COPY . . 會把整個 context 帶進去。node_modules 一定要排除：
+# builder 階段是用 --from=deps 帶進乾淨的 node_modules，
+# 若 context 裡也有一份（本機開發時一定有），會直接把它蓋掉，
+# 可能是不同平台編的、也可能含 devDependencies，行為變得不可預測。
+node_modules
+dist
+*.tsbuildinfo
+
+.git
+.env
+.env.*
+!.env.example
+*.log
+Dockerfile
+.dockerignore

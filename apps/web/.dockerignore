@@ -1,0 +1,12 @@
+# 同 api：排除 node_modules，避免本機那份蓋掉 builder 裝好的
+node_modules
+dist
+*.tsbuildinfo
+
+.git
+.env
+.env.*
+!.env.example
+*.log
+Dockerfile
+.dockerignore
