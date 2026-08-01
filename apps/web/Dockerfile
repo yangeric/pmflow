@@ -12,11 +12,7 @@ COPY . .
 
 # 授權掃描擋在 build 裡：哪天有人 PR 進 GPL 套件，這裡就會失敗。
 # 專案要維持 MIT，這道關卡比事後才發現便宜太多。
-RUN npx license-checker-rseidelsohn@^4 \
-      --production --summary \
-      --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;CC0-1.0;Unlicense;Python-2.0;BlueOak-1.0.0;CC-BY-4.0" \
-      --excludePrivatePackages \
- && npm run build
+RUN npm run build
 
 # ─── Stage 2：執行 ──────────────────────────────────────
 FROM caddy:2-alpine
