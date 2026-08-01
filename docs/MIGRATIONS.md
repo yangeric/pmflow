@@ -129,10 +129,10 @@ CREATE TABLE task_assignee (...);
 
 ```bash
 # 0. 先備份（backup 服務每天做，但升級前手動再做一次）
-docker compose exec -T postgres pg_dump -U pmflow --no-owner pmflow | gzip > pre-upgrade.sql.gz
+docker compose exec -T db pg_dump -U pmflow --no-owner pmflow | gzip > pre-upgrade.sql.gz
 
 # 1. 只跑 migration，不換程式
-docker compose run --rm backend npm run migrate
+docker compose run --rm api npm run migrate
 
 # 2. 確認沒問題後才換 image
 docker compose pull && docker compose up -d
