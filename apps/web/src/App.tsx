@@ -11,14 +11,16 @@ import ListView from './pages/List'
 // dhtmlx-gantt 有 700KB+，只在真的切到甘特頁時才載入，
 // 不要讓只想看看板的人也付這個代價
 const GanttView = lazy(() => import('./pages/Gantt'))
+import CalendarView from './pages/Calendar'
 import InquiryBoard from './pages/InquiryBoard'
 import ProjectPicker from './pages/ProjectPicker'
 
-type View = 'list' | 'board' | 'gantt' | 'inquiry'
+type View = 'list' | 'board' | 'calendar' | 'gantt' | 'inquiry'
 
 const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'list', label: '清單' },
   { key: 'board', label: '看板' },
+  { key: 'calendar', label: '行事曆' },
   { key: 'gantt', label: '甘特圖' },
 ]
 
@@ -289,6 +291,11 @@ function ProjectWorkspace({
                   {view === 'board' && (
                     <Board projectId={projectId} tasks={visible}
                            statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+                  )}
+                  {view === 'calendar' && (
+                    <CalendarView projectId={projectId} workspaceId={workspaceId}
+                                  tasks={visible} statuses={project?.statuses ?? []}
+                                  onOpen={setOpenTask} />
                   )}
                   {view === 'gantt' && (
                     <Suspense fallback={<Spinner label="載入甘特圖…" />}>
