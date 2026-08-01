@@ -127,7 +127,8 @@ jobs:
           push-to-registry: true
 
       - name: Trivy 弱點掃描
-        uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true      # 掃描只回報，不擋發佈
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/pmflow-${{ matrix.component }}:${{ steps.meta.outputs.version }}
           format: sarif
@@ -136,6 +137,7 @@ jobs:
           exit-code: "0"        # 先只回報不擋，穩定後改成 1
 
       - name: 上傳掃描結果
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
