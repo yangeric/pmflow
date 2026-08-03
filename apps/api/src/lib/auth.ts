@@ -105,6 +105,55 @@ export async function requireProjectRole(
 }
 
 /**
+ * 只有專案創立者能做的事：放人進來、核准或婉拒申請、把人移出去。
+ *
+ * 刻意不接受 MANAGER —— 使用者要的是「這個專案是誰開的，誰才能決定誰進得來」。
+ * MANAGER 是能改專案內容的角色，可以有很多個，跟「開專案的人」不是同一件事。
+ */
+export async function requireProjectCreator(
+  userId: string, projectId: string
+): Promise<{ workspaceId: string }> {
+  const rows = await sql<{ workspace_id: string; created_by: string | null }[]>`
+    SELECT workspace_id, created_by FROM project WHERE id = ${projectId}`
+  if (!rows.length) throw forbidden('找不到專案，或你沒有權限')
+  if (rows[0].created_by !== userId) {
+    throw forbidden('只有專案的建立者可以管理成員')
+  }
+  return { workspaceId: rows[0].workspace_id }
+}
+
+/** 同一個工作區的成員才看得到、才申請得了這個工作區裡的專案 */
+export async function requireWorkspaceMember(
+  userId: string, workspaceId: string
+): Promise<{ role: string }> {
+  const rows = await sql<{ role: string }[]>`
+    SELECT role FROM workspace_member
+    WHERE workspace_id = ${workspaceId} AND user_id = ${userId}`
+  if (!rows.length) throw forbidden('你不是這個工作區的成員')
+  return rows[0]
+}
+
+/** 工作區層級的角色。OWNER 是開站的人，ADMIN 是他指定的幫手 */
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'GUEST'
+
+/**
+ * 站台管理者才能做的事：開帳號、停用帳號、調整別人的工作區角色。
+ *
+ * 跟專案的權限是兩件事 —— 專案裡誰能進來由專案建立者決定（requireProjectCreator），
+ * 但「這個人能不能登入這個站」是工作區管理者的事。管理者不會因此自動看得到
+ * 每個專案的內容，那仍然要專案建立者放行。
+ */
+export async function requireWorkspaceAdmin(
+  userId: string, workspaceId: string
+): Promise<{ role: WorkspaceRole }> {
+  const { role } = await requireWorkspaceMember(userId, workspaceId)
+  if (role !== 'OWNER' && role !== 'ADMIN') {
+    throw forbidden('這個操作需要工作區管理者權限')
+  }
+  return { role: role as WorkspaceRole }
+}
+
+/**
  * 由 task id 反查專案再驗權限。
  * 子資源端點（/tasks/:id、/inquiries/:id、/links/:id）一定要走這條，
  * 不能因為前端拿得到 id 就放行 —— 這正是 Vikunja 2026 那個關聯 IDOR 的成因。

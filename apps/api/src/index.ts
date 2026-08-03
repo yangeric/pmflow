@@ -7,6 +7,8 @@ import { registerErrorHandler } from './lib/errors.js'
 import { sweepOverdue } from './lib/inquiry.js'
 import authRoutes from './routes/auth.js'
 import projectRoutes from './routes/projects.js'
+import memberRoutes from './routes/members.js'
+import accountRoutes from './routes/account.js'
 import taskRoutes from './routes/tasks.js'
 import linkRoutes from './routes/links.js'
 import inquiryRoutes from './routes/inquiries.js'
@@ -34,6 +36,8 @@ app.get('/health', async () => {
 await app.register(async api => {
   await api.register(authRoutes)
   await api.register(projectRoutes)
+  await api.register(memberRoutes)
+  await api.register(accountRoutes)
   await api.register(taskRoutes)
   await api.register(linkRoutes)
   await api.register(inquiryRoutes)
