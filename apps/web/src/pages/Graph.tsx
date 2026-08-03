@@ -148,6 +148,66 @@ type ParallelPeers = { sameStart: string[]; sameFinish: string[]; overlap: strin
 const NO_PARALLEL: ParallelPeers = { sameStart: [], sameFinish: [], overlap: [] }
 type TaskNode = Node<TaskNodeData, 'task'>
 
+// ── 最下面那兩排說明的文字 ──────────────────────────────
+// 同一段文字要給兩個地方用：游標停著出現的 title，以及點一下釘在列上方的說明。
+// 寫成常數才不會兩邊各寫一份、改一邊忘另一邊。
+
+const OPERATION_HELP =
+  '・點節點：只留亮它的鄰居，其餘淡出。再點一次取消\n' +
+  '・雙擊節點：開啟那張任務\n' +
+  '・從節點右側的圓點拉到另一張任務：建立關聯（種類用上面的「拉線建立」選）\n' +
+  '・點線：刪除那條關聯\n' +
+  '・拖節點可以自己排版，按「重新排列」放回自動位置\n' +
+  '・「框選」開著時左鍵拉出範圍選多張，一起拖曳；右鍵平移畫面\n' +
+  '・滾輪縮放，或用左上角的＋／－'
+
+const SCHEDULING_HELP: Record<LinkType, string> = {
+  FS: '等待任務完成，才能開始。上游做完的隔天下游才動得了 —— 最常見的一種',
+  SS: '等待任務開始，才能開始。兩張要在同一天起跑，人力得同時到位',
+  FF: '等待任務完成，才能完成。兩張要在同一天收尾，驗收會撞在一起',
+  SF: '等待任務開始，才能完成。少見，通常用在交接：新的開始了，舊的才能結束',
+  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
+}
+
+const SEMANTIC_HELP =
+  '相關／阻擋／重複於／需要。\n' +
+  '虛線＝只是註記兩張任務的關係，改其中一張的日期不會推動另一張。'
+
+const HIERARCHY_HELP =
+  '大項目與它底下的小項目。\n' +
+  '這不是先後關係 —— 大項目的日期是由底下那些任務彙總出來的。\n' +
+  '點任務時，它的上層／下層會標成紫框，跟依賴分得開。'
+
+const JUNCTION_HELP =
+  '「同時開始」與「同時完成」不是兩張任務之間的一支箭頭，而是一個時間點。\n' +
+  '橘＝同時開始（一支箭頭進、多支出）\n' +
+  '紫＝同時完成（多支進、一支出）'
+
+const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
+  { label: '🚧 卡住',
+    text: '這張任務現在動不了：上游還沒完成，或同時開始的那一張還沒開始。\n' +
+          '滑到節點上的紅色徽章可以看它在等誰 —— 會直接指到真正的源頭，\n' +
+          '不是中間那一張。' },
+  { label: '⇉ 同時開始', className: 'text-amber-700',
+    text: '跟別的任務同一天開始。排人力時這幾張要一起看，同一天都得到位。' },
+  { label: '⇥ 同時完成', className: 'text-purple-700',
+    text: '跟別的任務同一天完成。驗收、結案會撞在同一天。' },
+  { label: '⇉ 並行', className: 'text-teal-700',
+    text: '期間重疊、彼此沒有先後，可以同時派不同的人做。\n' +
+          '預設不顯示，要在上面的「並行」打勾。' },
+  { label: '大項目', className: 'text-violet-700',
+    text: '底下還掛著別的任務。它的日期與進度是由底下那些任務彙總出來的。' },
+  { label: '里程碑', className: 'text-amber-700',
+    text: '只有一個時間點的任務，用來標「這天要交出什麼」。' },
+]
+
+const INQUIRY_HELP: Record<'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIED', string> = {
+  AWAITING: '發文追蹤：發出去了，還在等對方回覆，也還沒到期望回覆日。',
+  OVERDUE:  '發文追蹤：過了期望回覆日還沒回。逾期是查詢時算出來的，不是存下來的狀態。',
+  PARTIAL:  '發文追蹤：問了好幾個單位，有的回了、有的還沒。',
+  REPLIED:  '發文追蹤：都回覆了。回覆的單位可能跟提問的單位不同（轉單位）。',
+}
+
 /** 節點上那排小徽章的共同樣式。一律 shrink-0＋不換行，擠不下就被裁掉，不折行 */
 const BADGE = 'shrink-0 whitespace-nowrap rounded px-1 text-[10px]'
 
@@ -1326,22 +1386,69 @@ function GraphCanvas({
  * 一排放得下的字數有限，而且大部分時候使用者只是要確認「這條線是哪一種」。
  */
 function LegendBar() {
+  /**
+   * 點開的那一則說明。
+   *
+   * 每一項的說明本來只掛在 `title` 上，游標要停著不動一秒才會出現，
+   * 而且在觸控螢幕上根本叫不出來。點一下就把同一段文字釘在列的上方，
+   * 再點一次（或點別的地方）收起來。
+   */
+  const [tip, setTip] = useState<{ label: string; text: string } | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!tip) return
+    const close = (e: MouseEvent) => {
+      if (!barRef.current?.contains(e.target as globalThis.Node)) setTip(null)
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setTip(null) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [tip])
+
+  const show = (label: string, text: string) =>
+    setTip(t => (t?.label === label ? null : { label, text }))
+
   return (
-    <div className="flex items-stretch border-t border-slate-200 bg-white text-[11px] text-slate-500">
-      {/* 「？說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
-          「線 ？說明」，看起來像在說明線的一種 */}
+    <div ref={barRef}
+         className="relative flex items-stretch border-t border-slate-200 bg-white
+                    text-[11px] text-slate-500">
+      {tip && (
+        <div className="absolute bottom-full left-0 right-0 z-20 border-t border-slate-200
+                        bg-slate-50 px-4 py-2">
+          <div className="flex items-start gap-2">
+            <span className="shrink-0 font-medium text-slate-700">{tip.label}</span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap leading-5 text-slate-600">
+              {tip.text}
+            </span>
+            <button onClick={() => setTip(null)}
+                    className="shrink-0 text-slate-400 hover:text-slate-600"
+                    aria-label="關閉說明">✕</button>
+          </div>
+        </div>
+      )}
+      {/* 「操作說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
+          「線 說明」，看起來像在說明線的一種。
+          裡面只放「怎麼操作」，線與圖示各自的意思在右邊那兩排上滑過去就有。 */}
       <div className="flex shrink-0 items-center border-r border-slate-200 px-3">
         <span
           className="cursor-help rounded bg-slate-100 px-2 py-1 font-medium text-slate-600
                      hover:bg-slate-200"
           title={
-            '操作說明\n' +
-            '・點節點：只留亮它的鄰居，其餘淡出\n' +
+            '怎麼操作\n' +
+            '・點節點：只留亮它的鄰居，其餘淡出。再點一次取消\n' +
             '・雙擊節點：開啟那張任務\n' +
             '・從節點右側的圓點拉到另一張任務：建立關聯（種類用上面的「拉線建立」選）\n' +
             '・點線：刪除那條關聯\n' +
-            '・拖節點可以自己排版；按「重新排列」放回自動位置'
-          }>？說明</span>
+            '・拖節點可以自己排版，按「重新排列」放回自動位置\n' +
+            '・「框選」開著時左鍵拉出範圍選多張，一起拖曳；右鍵平移畫面\n' +
+            '・滾輪縮放，或用左上角的＋／－'
+          }
+          onClick={() => show('怎麼操作', OPERATION_HELP)}>操作說明</span>
       </div>
 
       {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
@@ -1349,7 +1456,8 @@ function LegendBar() {
       <LegendRowStrip label="線">
         {SCHEDULING.map(t => (
           <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
-                      title={`${LINK_LABEL[t]}（實線＝會推動日期，上游一動下游跟著被推）`} />
+                      title={SCHEDULING_HELP[t]}
+                      onClick={() => show(LINK_CHIP[t], SCHEDULING_HELP[t])} />
         ))}
         <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label="語意關聯"
                     title="相關／阻擋／重複於／需要（虛線＝只是註記關係，改日期不影響對方）" />
@@ -1368,22 +1476,16 @@ function LegendBar() {
       </LegendRowStrip>
 
       <LegendRowStrip label="圖示">
-        <LegendChip title="這張任務現在動不了：上游還沒完成（或還沒開始）。滑到節點上的紅色徽章可以看是在等誰">
-          🚧 卡住
-        </LegendChip>
-        <LegendChip className="text-amber-700"
-                    title="跟別的任務同一天開始，人力要在同一天到位">⇉ 同時開始</LegendChip>
-        <LegendChip className="text-purple-700"
-                    title="跟別的任務同一天完成，驗收會撞在同一天">⇥ 同時完成</LegendChip>
-        <LegendChip className="text-teal-700"
-                    title="期間重疊、彼此沒有先後，可以同時派人做">⇉ 並行</LegendChip>
-        <LegendChip className="text-violet-700"
-                    title="大項目：底下還掛著別的任務。聚焦時它的上層／下層會標紫框">大項目</LegendChip>
-        <LegendChip className="text-amber-700"
-                    title="里程碑：只有一個時間點的任務">里程碑</LegendChip>
-        {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(s => (
-          <LegendChip key={s} title={`發文追蹤：${INQUIRY_META[s].label}`}>
-            {INQUIRY_META[s].icon} {INQUIRY_META[s].label}
+        {ICON_HELP.map(h => (
+          <LegendChip key={h.label} className={h.className} title={h.text}
+                      onClick={() => show(h.label, h.text)}>
+            {h.label}
+          </LegendChip>
+        ))}
+        {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
+          <LegendChip key={st} title={INQUIRY_HELP[st]}
+                      onClick={() => show(INQUIRY_META[st].label, INQUIRY_HELP[st])}>
+            {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
           </LegendChip>
         ))}
       </LegendRowStrip>
@@ -1405,24 +1507,30 @@ function LegendRowStrip({ label, children }: { label: string; children: ReactNod
   )
 }
 
-function LegendChip({ title, className, children }: {
-  title: string; className?: string; children: ReactNode
-}) {
-  return <span className={cx('shrink-0 cursor-help', className)} title={title}>{children}</span>
-}
-
-function LegendLine({ color, label, dash, title }: {
-  color: string; label: string; dash?: string; title: string
+function LegendChip({ title, className, children, onClick }: {
+  title: string; className?: string; children: ReactNode; onClick?: () => void
 }) {
   return (
-    <span className="flex shrink-0 cursor-help items-center gap-1.5" title={title}>
+    <button type="button" onClick={onClick} title={title}
+            className={cx('shrink-0 cursor-help hover:text-slate-800', className)}>
+      {children}
+    </button>
+  )
+}
+
+function LegendLine({ color, label, dash, title, onClick }: {
+  color: string; label: string; dash?: string; title: string; onClick?: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} title={title}
+            className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
       {/* 用 svg 而不是 border-style，才能跟畫面上的線用同一組 strokeDasharray */}
       <svg width="20" height="2" className="shrink-0" aria-hidden>
         <line x1="0" y1="1" x2="20" y2="1"
               stroke={color} strokeWidth="2" strokeDasharray={dash} />
       </svg>
       {label}
-    </span>
+    </button>
   )
 }
 

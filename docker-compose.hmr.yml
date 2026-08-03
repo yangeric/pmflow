@@ -1,0 +1,46 @@
+# PMFlow — 前端熱更新（改一行就看得到，不用重建容器）
+#
+#   docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
+#   → 一樣打開 http://localhost:8480
+#
+# 跟 docker-compose.dev.yml 的差別只有 web：那邊是「build 成靜態檔交給 Caddy」，
+# 這邊是直接跑 Vite dev server，把 apps/web 掛進容器。存檔就更新，不必
+# 每改一次就 npm ci + tsc + vite build 一輪（一輪要一分鐘上下）。
+#
+# 後端還是用建好的映像。改 apps/api 的話仍然要：
+#   docker compose -f docker-compose.dev.yml up --build -d api
+#
+# 要回到跟正式一樣的靜態檔版本（發版前驗一次），就用原本那條指令：
+#   docker compose -f docker-compose.dev.yml up --build -d
+#
+# 注意：這個檔只給本機開發用，不要拿去部署 —— Vite dev server 沒有做壓縮，
+# 也不該對外開。
+
+services:
+
+  web:
+    image: node:22-alpine
+    container_name: pmflow-dev-web
+    working_dir: /app
+    # node_modules 用具名 volume 蓋掉掛進來的那份 ——
+    # Windows 主機上的 node_modules 給 Linux 容器用會出事（原生模組、路徑大小寫）
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    environment:
+      TZ: Asia/Taipei
+      # dev server 的 /api 要打到同一個網路裡的 api，不是容器自己的 localhost
+      PMFLOW_API_PROXY: http://api:8080
+      # 掛載進來的檔案在某些主機上不會觸發 inotify，開輪詢比較保險
+      CHOKIDAR_USEPOLLING: "true"
+    # --host 讓它聽 0.0.0.0，容器外才連得到
+    command: sh -c "npm ci && npm run dev -- --host --port 80"
+    ports:
+      - "${HTTP_PORT:-8480}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [pmflow]
+
+volumes:
+  web_node_modules:
