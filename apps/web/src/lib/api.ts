@@ -121,6 +121,27 @@ export interface JoinableProject {
   myRequestStatus: string | null; myRequestId: string | null
 }
 
+/**
+ * 通知。刻意不叫 Notification —— 那是瀏覽器的全域型別，同名會蓋掉。
+ *
+ * 四種事件共用同一個型別，各自需要的細節放在 body：
+ *   TASK_LINKED     有人建立了一條指向我負責的任務的關聯 → body.linkType / otherRef
+ *   TASK_ASSIGNED   有人把任務指派給我
+ *   JOIN_REQUESTED  有人申請加入我開的專案 → body.message
+ *   JOIN_APPROVED   我的申請被核准，或被建立者直接加入 → body.role / direct
+ */
+export type NotificationKind =
+  'TASK_LINKED' | 'TASK_ASSIGNED' | 'JOIN_REQUESTED' | 'JOIN_APPROVED'
+
+export interface AppNotification {
+  id: string; kind: NotificationKind
+  actorName: string | null
+  projectId: string | null; projectKey: string | null; projectName: string | null
+  taskId: string | null; taskRef: string | null; taskTitle: string | null
+  body: Record<string, unknown> | null
+  readAt: string | null; createdAt: string
+}
+
 export interface TaskStatus {
   id: string; key: string; name: string
   category: 'TODO' | 'ACTIVE' | 'DONE'; color: string; rank: number
@@ -219,6 +240,14 @@ export const Api = {
     api(`/projects/${projectId}/join-requests/${reqId}/reject`, { method: 'POST', json: { note } }),
   cancelJoinRequest: (reqId: string) =>
     api(`/join-requests/${reqId}`, { method: 'DELETE' }),
+
+  // ── 通知。沒有 WebSocket，前端自己輪詢 ──
+  notifications: (limit = 30) =>
+    api<{ items: AppNotification[]; unread: number }>(`/notifications?limit=${limit}`),
+  markNotificationRead: (id: string) =>
+    api<{ unread: number }>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () =>
+    api<{ unread: number }>('/notifications/read-all', { method: 'POST' }),
 
   // ── 自己的帳號 ──
   myProfile: () =>

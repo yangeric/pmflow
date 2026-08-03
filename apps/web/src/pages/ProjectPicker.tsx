@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type Project } from '../lib/api'
 import { Button, Input, cx } from '../components/ui'
@@ -10,7 +10,7 @@ import { Button, Input, cx } from '../components/ui'
  * 進去之後想換專案，走側欄頂端的「切換專案」再回到這一頁。
  */
 export default function ProjectPicker({
-  projects, workspaceId, userName, onPick, onInquiryBoard, onLogout, onAccount,
+  projects, workspaceId, userName, onPick, onInquiryBoard, onLogout, onAccount, bell,
 }: {
   projects: Project[]
   workspaceId: string
@@ -19,6 +19,8 @@ export default function ProjectPicker({
   onInquiryBoard: () => void
   onLogout: () => void
   onAccount: () => void
+  /** 通知鈴鐺。被核准加入哪個專案，就是在這一頁才看得到差別 */
+  bell?: ReactNode
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -79,6 +81,7 @@ export default function ProjectPicker({
           <span className="text-xl font-semibold text-slate-800">PMFlow</span>
           <span className="text-sm text-slate-400">選一個專案開始</span>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            {bell}
             <span className="text-slate-500">{userName}</span>
             <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">帳號設定</button>
             <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">登出</button>

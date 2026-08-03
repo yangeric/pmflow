@@ -1,10 +1,11 @@
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Api, type Task } from './lib/api'
+import { Api, type AppNotification, type Task } from './lib/api'
 import { useAuth } from './lib/auth'
 import { Button, Input, Spinner, cx } from './components/ui'
 import { TaskDrawer } from './components/TaskDrawer'
 import { EpicSidebar } from './components/EpicSidebar'
+import { NotificationBell } from './components/NotificationBell'
 import Login from './pages/Login'
 import Board from './pages/Board'
 import ListView from './pages/List'
@@ -71,6 +72,22 @@ export default function App() {
   if (!ready) return <Spinner label="啟動中…" />
   if (!user) return <Login />
 
+  /**
+   * 點通知就跳到那件事發生的地方 —— 通知只是入口，看不到內容的話等於沒通知。
+   *
+   * 導覽狀態都在這一層，所以鈴鐺不管畫在哪裡（選擇頁、側欄、帳號設定），
+   * 都把選中的那一則交回來由這裡處理。
+   */
+  const openNotification = (n: AppNotification) => {
+    setAccount(null)
+    if (!n.projectId) return
+    setProjectId(n.projectId)
+    setOpenTask(n.taskId)
+    // 有人來敲門要在「成員」頁籤才處理得了；其他都回到任務清單
+    setView(n.kind === 'JOIN_REQUESTED' ? 'members' : 'list')
+  }
+  const bell = <NotificationBell onOpen={openNotification} />
+
   const workspaceId = workspaces[0]?.id ?? projects[0]?.workspaceId ?? ''
   const totalOverdue = projects.reduce((n, p) => n + (p.overdueInquiryCount ?? 0), 0)
   // 「系統管理」只給工作區的擁有者與管理者看到。後端也會再擋一次，
@@ -90,6 +107,7 @@ export default function App() {
             <AccountTab active={account === 'admin'}
                         onClick={() => setAccount('admin')}>系統管理</AccountTab>
           )}
+          <div className="ml-auto">{bell}</div>
         </header>
         <div className="min-h-0 flex-1">
           {account === 'profile'
@@ -111,6 +129,7 @@ export default function App() {
         onInquiryBoard={() => setView('inquiry')}
         onAccount={() => setAccount('profile')}
         onLogout={logout}
+        bell={bell}
       />
     )
   }
@@ -121,6 +140,7 @@ export default function App() {
       <div className="flex h-full flex-col">
         <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
           <Button variant="ghost" onClick={() => setView('list')}>← 回專案選擇</Button>
+          <div className="ml-auto">{bell}</div>
         </header>
         <div className="min-h-0 flex-1">
           <InquiryBoard
@@ -145,6 +165,7 @@ export default function App() {
       onLogout={logout}
       onAccount={() => setAccount('profile')}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
+      bell={<NotificationBell onOpen={openNotification} placement="up" />}
     />
   )
 }
@@ -167,7 +188,7 @@ function AccountTab({ active, onClick, children }: {
  */
 function ProjectWorkspace({
   projectId, workspaceId, view, setView, openTask, setOpenTask,
-  totalOverdue, pendingJoins, userName, onLogout, onAccount, onSwitchProject,
+  totalOverdue, pendingJoins, userName, onLogout, onAccount, onSwitchProject, bell,
 }: {
   projectId: string
   workspaceId: string
@@ -182,6 +203,8 @@ function ProjectWorkspace({
   onLogout: () => void
   onAccount: () => void
   onSwitchProject: () => void
+  /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
+  bell: ReactNode
 }) {
   const qc = useQueryClient()
   const [newTitle, setNewTitle] = useState('')
@@ -251,6 +274,7 @@ function ProjectWorkspace({
         userName={userName}
         onLogout={onLogout}
         onAccount={onAccount}
+        bell={bell}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">

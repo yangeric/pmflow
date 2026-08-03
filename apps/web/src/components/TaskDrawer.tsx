@@ -1,32 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type LinkType, type Task, type TaskStatus } from '../lib/api'
+import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
 import { Button, Input, Field, Spinner, InquiryBadge, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
-
-/**
- * 關聯類型的中文說法。
- *
- * 資料庫存的仍是 FS / SS / FF / SF 這些代碼（migration 與 API 契約不動），
- * 這裡只負責「講人話」—— 使用者不該需要知道那四個縮寫是什麼意思。
- *
- *   等待任務【完成】，才能【開始】   ← 前半講來源那一端，後半講自己這一端
- */
-const LINK_LABEL: Record<LinkType, string> = {
-  FS: '等待任務完成，才能開始',
-  SS: '等待任務開始，才能開始',
-  FF: '等待任務完成，才能完成',
-  SF: '等待任務開始，才能完成',
-  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
-}
-
-/** 清單上的短標籤，空間有限時用 */
-const LINK_CHIP: Record<LinkType, string> = {
-  FS: '完成後開始', SS: '同時開始', FF: '同時完成', SF: '開始後完成',
-  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
-}
-
-const SCHEDULING: LinkType[] = ['FS', 'SS', 'FF', 'SF']
 
 const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
   EPIC: '大項目', MILESTONE: '里程碑', BUG: '缺陷',
@@ -35,24 +12,6 @@ const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
 const PRIORITY_LABEL = {
   LOW: '低', NORMAL: '普通', HIGH: '高', URGENT: '緊急',
 } as const
-
-/**
- * 把一條關聯講成一句完整的話，而且分方向講。
- * 同樣是 FS，站在上游和下游看到的句子不一樣 —— 這是最容易看錯的地方。
- */
-function linkSentence(type: LinkType, direction: 'outgoing' | 'incoming', ref: string): string {
-  const out = direction === 'outgoing'
-  switch (type) {
-    case 'FS': return out ? `${ref} 要等我完成，才能開始` : `要等 ${ref} 完成，我才能開始`
-    case 'SS': return out ? `${ref} 要等我開始，才能開始` : `要等 ${ref} 開始，我才能開始`
-    case 'FF': return out ? `${ref} 要等我完成，才能完成` : `要等 ${ref} 完成，我才能完成`
-    case 'SF': return out ? `${ref} 要等我開始，才能完成` : `要等 ${ref} 開始，我才能完成`
-    case 'RELATES':    return `與 ${ref} 相關`
-    case 'BLOCKS':     return out ? `阻擋 ${ref}` : `被 ${ref} 阻擋`
-    case 'DUPLICATES': return out ? `重複於 ${ref}` : `被 ${ref} 重複`
-    case 'REQUIRES':   return out ? `需要 ${ref}` : `被 ${ref} 需要`
-  }
-}
 
 /**
  * 任務詳情。
@@ -245,8 +204,7 @@ export function TaskDrawer({
                           {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
                         </optgroup>
                         <optgroup label="語意（不影響排程）">
-                          {(['RELATES', 'BLOCKS', 'DUPLICATES', 'REQUIRES'] as LinkType[])
-                            .map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
+                          {SEMANTIC.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
                         </optgroup>
                       </select>
                     </Field>

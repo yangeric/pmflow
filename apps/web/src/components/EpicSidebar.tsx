@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Project, type Task } from '../lib/api'
 import { rollup } from '../lib/rollup'
@@ -18,7 +18,7 @@ import { Button, Input, cx } from './ui'
 export function EpicSidebar({
   project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
   onSwitchProject, onInquiryBoard, inquiryActive, overdueTotal,
-  userName, onLogout, onAccount,
+  userName, onLogout, onAccount, bell,
 }: {
   project?: Project
   tasks: Task[]
@@ -36,6 +36,8 @@ export function EpicSidebar({
   userName: string
   onLogout: () => void
   onAccount: () => void
+  /** 通知鈴鐺。放在最底下那排，因為專案裡的每個畫面都看得到側欄 */
+  bell?: ReactNode
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -287,17 +289,20 @@ export function EpicSidebar({
         )}
       </nav>
 
-      <div className="border-t border-slate-200 px-3 py-2.5">
-        <div className="truncate text-xs text-slate-500">{userName}</div>
-        <div className="mt-0.5 flex items-center gap-2 text-xs">
-          <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">
-            帳號設定
-          </button>
-          <span className="text-slate-200">|</span>
-          <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">
-            登出
-          </button>
+      <div className="flex items-center gap-2 border-t border-slate-200 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs text-slate-500">{userName}</div>
+          <div className="mt-0.5 flex items-center gap-2 text-xs">
+            <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">
+              帳號設定
+            </button>
+            <span className="text-slate-200">|</span>
+            <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">
+              登出
+            </button>
+          </div>
         </div>
+        {bell}
       </div>
     </aside>
   )
