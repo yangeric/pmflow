@@ -1,11 +1,11 @@
 @echo off
 setlocal
 REM ============================================================
-REM  PMFlow - release v0.1.3
+REM  PMFlow - release v0.1.4
 REM
 REM  Just double click this file. It will:
 REM    1. push main
-REM    2. create tag v0.1.3
+REM    2. create tag v0.1.4
 REM    3. push the tag  -> GitHub Actions builds and publishes
 REM
 REM  The version is baked in. There is one of these per release;
@@ -15,7 +15,7 @@ REM  Pure ASCII + CRLF on purpose - cmd.exe eats the first
 REM  character of every line otherwise.
 REM ============================================================
 
-set "VERSION=0.1.3"
+set "VERSION=0.1.4"
 set "TAG=v%VERSION%"
 
 cd /d "%~dp0"
