@@ -2,7 +2,16 @@
 # 只暴露這一個容器對外，後端與資料庫留在內部網路。
 
 # ─── Stage 1：建置 ──────────────────────────────────────
-FROM node:22-alpine AS builder
+#
+# `--platform=$BUILDPLATFORM`＝**永遠用建置機器自己的架構跑這一段**，不要模擬。
+#
+# 沒有這行的話，建 arm64 映像時整個 npm ci 會在 QEMU 底下跑，
+# 而 Node 在 QEMU 模擬的 arm64 上會直接 `uncaught target signal 4
+# (Illegal instruction) - core dumped`，release workflow 就卡在那裡。
+#
+# 可以這樣做是因為**這一段的產出跟架構無關**：vite build 出來的是 HTML／CSS／JS
+# 靜態檔，amd64 上編出來的跟 arm64 上編出來的一模一樣。
+FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./

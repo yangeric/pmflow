@@ -3,20 +3,32 @@
 # 最終映像只留 production 相依與編譯結果。
 
 # ─── Stage 1：安裝相依 ───────────────────────────────────
-FROM node:22-alpine AS deps
+#
+# `--platform=$BUILDPLATFORM`＝**永遠用建置機器自己的架構跑這一段**，不要模擬。
+#
+# 沒有這行的話，建 arm64 映像時 npm ci 會在 QEMU 底下跑，而 Node 在模擬的
+# arm64 上會直接 `uncaught target signal 4 (Illegal instruction) - core dumped`，
+# release workflow 就停在那裡不動。
+#
+# 前提：**相依全部是純 JavaScript**（fastify / postgres / jose / zod），
+# 沒有原生模組，所以裝出來的 node_modules 兩種架構通用。
+# 哪天加了會編 C 的套件（bcrypt、sharp、better-sqlite3…），這裡就不能再跨架構裝，
+# 得改成在目標架構上安裝，或改用預編好的 binary。
+FROM --platform=$BUILDPLATFORM node:24-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev && cp -R node_modules /prod_node_modules && npm ci
 
 # ─── Stage 2：編譯 ──────────────────────────────────────
-FROM node:22-alpine AS builder
+# 同上：tsc 產出的是 JavaScript，跟架構無關
+FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
 # ─── Stage 3：執行 ──────────────────────────────────────
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 RUN apk add --no-cache tzdata wget \

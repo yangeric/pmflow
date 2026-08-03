@@ -19,7 +19,7 @@
 services:
 
   web:
-    image: node:22-alpine
+    image: node:24-alpine
     container_name: pmflow-dev-web
     working_dir: /app
     # node_modules 用具名 volume 蓋掉掛進來的那份 ——
