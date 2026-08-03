@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task } from './lib/api'
 import { useAuth } from './lib/auth'
@@ -17,8 +17,16 @@ import CalendarView from './pages/Calendar'
 import InquiryBoard from './pages/InquiryBoard'
 import ProjectPicker from './pages/ProjectPicker'
 import MembersPanel from './components/MembersPanel'
+import AccountPanel from './components/AccountPanel'
+import AdminPanel from './components/AdminPanel'
 
 type View = 'list' | 'board' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'members'
+
+/**
+ * 帳號設定與系統管理不是專案底下的視圖 —— 沒選專案也要進得去，
+ * 所以獨立成一層蓋在最上面，離開就回到原本看到的畫面。
+ */
+type AccountView = 'profile' | 'admin' | null
 
 const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'list', label: '清單' },
@@ -37,6 +45,7 @@ export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [view, setView] = useState<View>('list')
   const [openTask, setOpenTask] = useState<string | null>(null)
+  const [account, setAccount] = useState<AccountView>(null)
 
   /**
    * 換人登入就回到選擇頁。
@@ -51,6 +60,7 @@ export default function App() {
     setProjectId(null)
     setView('list')
     setOpenTask(null)
+    setAccount(null)
   }
 
   const { data: projectsData } = useQuery({
@@ -63,6 +73,32 @@ export default function App() {
 
   const workspaceId = workspaces[0]?.id ?? projects[0]?.workspaceId ?? ''
   const totalOverdue = projects.reduce((n, p) => n + (p.overdueInquiryCount ?? 0), 0)
+  // 「系統管理」只給工作區的擁有者與管理者看到。後端也會再擋一次，
+  // 這裡收起來只是不要讓人按了才被拒絕
+  const isWorkspaceAdmin = ['OWNER', 'ADMIN'].includes(workspaces[0]?.role ?? '')
+
+  // ── 帳號設定／系統管理：蓋在最上面，離開就回到原本的畫面 ──
+  if (account) {
+    return (
+      <div className="flex h-full flex-col">
+        <header className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2.5">
+          <Button variant="ghost" onClick={() => setAccount(null)}>← 返回</Button>
+          <span className="mx-2 text-slate-200">|</span>
+          <AccountTab active={account === 'profile'}
+                      onClick={() => setAccount('profile')}>帳號設定</AccountTab>
+          {isWorkspaceAdmin && (
+            <AccountTab active={account === 'admin'}
+                        onClick={() => setAccount('admin')}>系統管理</AccountTab>
+          )}
+        </header>
+        <div className="min-h-0 flex-1">
+          {account === 'profile'
+            ? <AccountPanel />
+            : <AdminPanel workspaceId={workspaceId} />}
+        </div>
+      </div>
+    )
+  }
 
   // ── 還沒選專案 → 選擇頁 ──
   if (!projectId && view !== 'inquiry') {
@@ -73,6 +109,7 @@ export default function App() {
         userName={user.displayName}
         onPick={id => { setProjectId(id); setView('list') }}
         onInquiryBoard={() => setView('inquiry')}
+        onAccount={() => setAccount('profile')}
         onLogout={logout}
       />
     )
@@ -106,8 +143,21 @@ export default function App() {
       pendingJoins={projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0}
       userName={user.displayName}
       onLogout={logout}
+      onAccount={() => setAccount('profile')}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
     />
+  )
+}
+
+function AccountTab({ active, onClick, children }: {
+  active: boolean; onClick: () => void; children: ReactNode
+}) {
+  return (
+    <button onClick={onClick}
+            className={cx('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                          active ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:text-slate-700')}>
+      {children}
+    </button>
   )
 }
 
@@ -117,7 +167,7 @@ export default function App() {
  */
 function ProjectWorkspace({
   projectId, workspaceId, view, setView, openTask, setOpenTask,
-  totalOverdue, pendingJoins, userName, onLogout, onSwitchProject,
+  totalOverdue, pendingJoins, userName, onLogout, onAccount, onSwitchProject,
 }: {
   projectId: string
   workspaceId: string
@@ -130,6 +180,7 @@ function ProjectWorkspace({
   pendingJoins: number
   userName: string
   onLogout: () => void
+  onAccount: () => void
   onSwitchProject: () => void
 }) {
   const qc = useQueryClient()
@@ -199,6 +250,7 @@ function ProjectWorkspace({
         overdueTotal={totalOverdue}
         userName={userName}
         onLogout={onLogout}
+        onAccount={onAccount}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">

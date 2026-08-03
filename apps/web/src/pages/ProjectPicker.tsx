@@ -10,7 +10,7 @@ import { Button, Input, cx } from '../components/ui'
  * 進去之後想換專案，走側欄頂端的「切換專案」再回到這一頁。
  */
 export default function ProjectPicker({
-  projects, workspaceId, userName, onPick, onInquiryBoard, onLogout,
+  projects, workspaceId, userName, onPick, onInquiryBoard, onLogout, onAccount,
 }: {
   projects: Project[]
   workspaceId: string
@@ -18,6 +18,7 @@ export default function ProjectPicker({
   onPick: (id: string) => void
   onInquiryBoard: () => void
   onLogout: () => void
+  onAccount: () => void
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -79,6 +80,7 @@ export default function ProjectPicker({
           <span className="text-sm text-slate-400">選一個專案開始</span>
           <div className="ml-auto flex items-center gap-3 text-sm">
             <span className="text-slate-500">{userName}</span>
+            <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">帳號設定</button>
             <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">登出</button>
           </div>
         </div>

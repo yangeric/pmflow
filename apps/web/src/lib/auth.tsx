@@ -9,6 +9,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string) => Promise<void>
   logout: () => Promise<void>
+  /** 自己改了名字或 email 之後，把側欄上的稱呼換掉，不必重新登入 */
+  refreshUser: () => Promise<void>
 }
 
 const Ctx = createContext<AuthState | null>(null)
@@ -70,6 +72,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
         setWorkspaces([])
         resetCache()
+      },
+      refreshUser: async () => {
+        // 不動快取 —— 還是同一個人，只是名字換了
+        const me = await Api.me()
+        setUser(me.user)
+        setWorkspaces(me.workspaces)
       },
     }}>{children}</Ctx.Provider>
   )

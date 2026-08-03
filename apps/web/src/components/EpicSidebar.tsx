@@ -18,7 +18,7 @@ import { Button, Input, cx } from './ui'
 export function EpicSidebar({
   project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
   onSwitchProject, onInquiryBoard, inquiryActive, overdueTotal,
-  userName, onLogout,
+  userName, onLogout, onAccount,
 }: {
   project?: Project
   tasks: Task[]
@@ -35,6 +35,7 @@ export function EpicSidebar({
   overdueTotal: number
   userName: string
   onLogout: () => void
+  onAccount: () => void
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -288,9 +289,15 @@ export function EpicSidebar({
 
       <div className="border-t border-slate-200 px-3 py-2.5">
         <div className="truncate text-xs text-slate-500">{userName}</div>
-        <button onClick={onLogout} className="mt-0.5 text-xs text-slate-400 hover:text-slate-600">
-          登出
-        </button>
+        <div className="mt-0.5 flex items-center gap-2 text-xs">
+          <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">
+            帳號設定
+          </button>
+          <span className="text-slate-200">|</span>
+          <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">
+            登出
+          </button>
+        </div>
       </div>
     </aside>
   )
