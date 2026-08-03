@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Api, type Project } from '../lib/api'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Api, ApiError, type Project } from '../lib/api'
 import { Button, Input, cx } from '../components/ui'
 
 /**
@@ -36,6 +36,39 @@ export default function ProjectPicker({
   })
 
   const totalOverdue = projects.reduce((n, p) => n + (p.overdueInquiryCount ?? 0), 0)
+
+  // ── 還沒加入的專案 ──────────────────────────────────────
+  /**
+   * 同工作區、自己還不是成員的專案。只看得到門面（代碼、名稱、誰開的、幾個人），
+   * 看不到裡面有什麼任務 —— 還沒獲准的人不該看到內容。
+   */
+  const { data: joinable } = useQuery({
+    queryKey: ['joinableProjects', workspaceId],
+    queryFn: () => Api.joinableProjects(workspaceId),
+    enabled: !!workspaceId,
+  })
+  const others = joinable?.projects ?? []
+  /** 正在填申請理由的專案 id */
+  const [applyingTo, setApplyingTo] = useState<string | null>(null)
+  const [applyMsg, setApplyMsg] = useState('')
+  /** 申請的錯誤跟建立專案的錯誤分開，不然會顯示在錯的卡片上 */
+  const [joinErr, setJoinErr] = useState<string | null>(null)
+
+  const refreshJoin = () => {
+    qc.invalidateQueries({ queryKey: ['joinableProjects', workspaceId] })
+    qc.invalidateQueries({ queryKey: ['projects'] })
+  }
+  const apply = useMutation({
+    mutationFn: (projectId: string) => Api.applyToJoin(projectId, applyMsg.trim() || undefined),
+    onSuccess: () => { setApplyingTo(null); setApplyMsg(''); setJoinErr(null); refreshJoin() },
+    onError: (e: unknown) => setJoinErr(
+      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '申請失敗'
+    ),
+  })
+  const cancelApply = useMutation({
+    mutationFn: (reqId: string) => Api.cancelJoinRequest(reqId),
+    onSuccess: () => { setJoinErr(null); refreshJoin() },
+  })
 
   return (
     <div className="h-full overflow-auto bg-slate-50">
@@ -103,6 +136,12 @@ export default function ProjectPicker({
                       ⚠️ {p.overdueInquiryCount} 件逾期未回
                     </span>
                   )}
+                  {/* 只有建立者拿得到這個數字（後端擋著），所以出現就是「有人在等你核准」 */}
+                  {(p.pendingJoinRequestCount ?? 0) > 0 && (
+                    <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">
+                      🙋 {p.pendingJoinRequestCount} 人申請加入
+                    </span>
+                  )}
                 </div>
               </div>
             </button>
@@ -136,6 +175,72 @@ export default function ProjectPicker({
             </button>
           )}
         </div>
+
+        {/* ── 其他專案：看得到門面，但要申請才進得去 ── */}
+        {others.length > 0 && (
+          <>
+            <div className="mb-2 mt-8 flex items-center gap-2">
+              <span className="text-xs font-medium tracking-wide text-slate-400">其他專案</span>
+              <span className="text-xs text-slate-400">
+                你還不是成員。要進去得由專案的建立者同意。
+              </span>
+            </div>
+
+            {joinErr && (
+              <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                {joinErr}
+              </div>
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {others.map(p => (
+                <div key={p.id}
+                     className="flex items-start gap-3 rounded-xl bg-white/60 p-4 ring-1 ring-slate-200">
+                  <span className="mt-1 h-3 w-3 shrink-0 rounded-full opacity-60"
+                        style={{ background: p.color }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">
+                        {p.key}
+                      </span>
+                      <span className="min-w-0 truncate font-medium text-slate-600">{p.name}</span>
+                    </div>
+                    <div className="mt-1.5 text-xs text-slate-400">
+                      {p.createdByName ? `${p.createdByName} 建立` : '建立者不明'}．{p.memberCount} 位成員
+                    </div>
+
+                    {p.myRequestStatus === 'PENDING' ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs">
+                        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-800">
+                          審核中
+                        </span>
+                        <button
+                          onClick={() => p.myRequestId && cancelApply.mutate(p.myRequestId)}
+                          className="text-slate-400 hover:text-slate-600">撤回申請</button>
+                      </div>
+                    ) : applyingTo === p.id ? (
+                      <div className="mt-2 space-y-2">
+                        <Input value={applyMsg} onChange={e => setApplyMsg(e.target.value)}
+                               placeholder="想說明一下原因嗎？（可留白）" maxLength={500} autoFocus
+                               onKeyDown={e => { if (e.key === 'Enter') apply.mutate(p.id) }} />
+                        <div className="flex gap-2">
+                          <Button variant="primary" disabled={apply.isPending}
+                                  onClick={() => apply.mutate(p.id)}>送出申請</Button>
+                          <Button onClick={() => { setApplyingTo(null); setApplyMsg('') }}>取消</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button className="mt-2"
+                              onClick={() => { setApplyingTo(p.id); setApplyMsg(''); setJoinErr(null) }}>
+                        申請加入
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
       </div>
     </div>

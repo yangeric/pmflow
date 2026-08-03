@@ -69,6 +69,56 @@ export interface Project {
   description?: string | null; color: string
   startDate?: string | null; endDate?: string | null
   role?: string; taskCount?: number; overdueInquiryCount?: number
+  isCreator?: boolean; pendingJoinRequestCount?: number
+}
+
+export type ProjectRole = 'MANAGER' | 'EDITOR' | 'COMMENTER' | 'VIEWER'
+
+/** 同工作區的帳號，給建立者挑人加進專案用 */
+export interface WorkspaceUser {
+  id: string; displayName: string; email: string; role: string
+}
+
+/** 工作區層級的角色。跟專案角色（ProjectRole）是兩回事 */
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'GUEST'
+
+export interface MyProfile {
+  id: string; email: string; displayName: string
+  locale: string; timezone: string; createdAt: string
+}
+
+/** 管理者看到的帳號一覽 */
+export interface AdminUser {
+  id: string; email: string; displayName: string
+  status: 'PENDING' | 'ACTIVE' | 'SUSPENDED'
+  role: WorkspaceRole; joinedAt: string
+  projectCount: string; createdCount: string
+}
+
+export interface ProjectMember {
+  id: string; displayName: string; email: string
+  role: ProjectRole; joinedAt: string; isCreator: boolean
+}
+
+/** 別人送來的加入申請（只有建立者看得到） */
+export interface JoinRequest {
+  id: string; userId: string; displayName: string; email: string
+  message: string | null; status: string; createdAt: string
+}
+
+/** 自己送出去的加入申請 */
+export interface MyJoinRequest {
+  id: string; projectId: string; projectKey: string; projectName: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+  message: string | null; decidedNote: string | null
+  createdAt: string; decidedAt: string | null
+}
+
+/** 同工作區、自己還不是成員的專案 */
+export interface JoinableProject {
+  id: string; key: string; name: string; description: string | null; color: string
+  createdByName: string | null; memberCount: number
+  myRequestStatus: string | null; myRequestId: string | null
 }
 
 export interface TaskStatus {
@@ -142,6 +192,57 @@ export const Api = {
     api<Project & { statuses: TaskStatus[]; members: Array<{ id: string; displayName: string; role: string }> }>(`/projects/${id}`),
   createProject: (json: { workspaceId: string; key: string; name: string }) =>
     api<Project>('/projects', { method: 'POST', json }),
+
+  // ── 成員與加入申請。放人進來只有建立者做得到 ──
+  workspaceUsers: (workspaceId: string) =>
+    api<{ users: WorkspaceUser[] }>(`/workspace-users?workspaceId=${workspaceId}`),
+  members: (projectId: string) =>
+    api<{ members: ProjectMember[]; createdBy: string | null; canManage: boolean }>(
+      `/projects/${projectId}/members`),
+  addMember: (projectId: string, json: { userId: string; role?: ProjectRole }) =>
+    api(`/projects/${projectId}/members`, { method: 'POST', json }),
+  setMemberRole: (projectId: string, userId: string, role: ProjectRole) =>
+    api(`/projects/${projectId}/members/${userId}`, { method: 'PATCH', json: { role } }),
+  removeMember: (projectId: string, userId: string) =>
+    api(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+
+  joinableProjects: (workspaceId: string) =>
+    api<{ projects: JoinableProject[] }>(`/projects/joinable?workspaceId=${workspaceId}`),
+  applyToJoin: (projectId: string, message?: string) =>
+    api<{ id: string }>(`/projects/${projectId}/join-requests`, { method: 'POST', json: { message } }),
+  joinRequests: (projectId: string) =>
+    api<{ requests: JoinRequest[] }>(`/projects/${projectId}/join-requests`),
+  myJoinRequests: () => api<{ requests: MyJoinRequest[] }>('/join-requests/mine'),
+  approveJoin: (projectId: string, reqId: string, json: { role?: ProjectRole; note?: string } = {}) =>
+    api(`/projects/${projectId}/join-requests/${reqId}/approve`, { method: 'POST', json }),
+  rejectJoin: (projectId: string, reqId: string, note?: string) =>
+    api(`/projects/${projectId}/join-requests/${reqId}/reject`, { method: 'POST', json: { note } }),
+  cancelJoinRequest: (reqId: string) =>
+    api(`/join-requests/${reqId}`, { method: 'DELETE' }),
+
+  // ── 自己的帳號 ──
+  myProfile: () =>
+    api<{ user: MyProfile; workspaces: Array<{ id: string; name: string; role: WorkspaceRole }> }>(
+      '/me/profile'),
+  updateProfile: (json: { displayName?: string; email?: string }) =>
+    api<{ user: { id: string; email: string; displayName: string } }>(
+      '/me/profile', { method: 'PATCH', json }),
+  changePassword: (json: { currentPassword: string; newPassword: string }) =>
+    api('/me/password', { method: 'POST', json }),
+
+  // ── 工作區管理者：站台上的帳號 ──
+  adminUsers: (workspaceId: string) =>
+    api<{ users: AdminUser[]; myRole: WorkspaceRole; roles: WorkspaceRole[] }>(
+      `/admin/users?workspaceId=${workspaceId}`),
+  adminCreateUser: (json: {
+    workspaceId: string; email: string; displayName: string
+    password: string; role?: WorkspaceRole
+  }) => api<{ user: { id: string; email: string; displayName: string } }>(
+    '/admin/users', { method: 'POST', json }),
+  adminPatchUser: (workspaceId: string, userId: string, json: {
+    role?: WorkspaceRole; status?: 'ACTIVE' | 'SUSPENDED'
+    displayName?: string; newPassword?: string
+  }) => api(`/admin/users/${userId}?workspaceId=${workspaceId}`, { method: 'PATCH', json }),
 
   tasks: (projectId: string, q: Record<string, string> = {}) =>
     api<{ tasks: Task[] }>(`/projects/${projectId}/tasks?${new URLSearchParams(q)}`),

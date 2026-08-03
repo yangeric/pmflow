@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Api, setAccessToken, type User, type Workspace, api } from './api'
 
 interface AuthState {
@@ -32,7 +33,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })()
   }, [])
 
+  const qc = useQueryClient()
+
+  /**
+   * 換帳號時把整份查詢快取丟掉。
+   *
+   * 少了這一步，登出再用另一個帳號登入，畫面上還是前一個人的專案與任務 ——
+   * TanStack Query 的快取是跟著 queryKey 走的，不會因為換人就失效，而
+   * ['projects']、['tasks', id] 這些鍵裡沒有使用者。伺服器那邊擋得住
+   * （拿新 token 去要就是 403），但在重新抓到之前，畫面已經把上一個人的
+   * 東西顯示出來了。共用電腦上這是不能接受的。
+   */
+  const resetCache = () => qc.clear()
+
   const afterAuth = async (accessToken: string, u: User) => {
+    resetCache()
     setAccessToken(accessToken)
     setUser(u)
     setWorkspaces((await Api.me()).workspaces)
@@ -54,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAccessToken(null)
         setUser(null)
         setWorkspaces([])
+        resetCache()
       },
     }}>{children}</Ctx.Provider>
   )

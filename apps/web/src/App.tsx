@@ -11,17 +11,23 @@ import ListView from './pages/List'
 // dhtmlx-gantt 有 700KB+，只在真的切到甘特頁時才載入，
 // 不要讓只想看看板的人也付這個代價
 const GanttView = lazy(() => import('./pages/Gantt'))
+// React Flow 同理，只有關聯圖用得到
+const GraphView = lazy(() => import('./pages/Graph'))
 import CalendarView from './pages/Calendar'
 import InquiryBoard from './pages/InquiryBoard'
 import ProjectPicker from './pages/ProjectPicker'
+import MembersPanel from './components/MembersPanel'
 
-type View = 'list' | 'board' | 'calendar' | 'gantt' | 'inquiry'
+type View = 'list' | 'board' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'members'
 
 const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'list', label: '清單' },
   { key: 'board', label: '看板' },
   { key: 'calendar', label: '行事曆' },
   { key: 'gantt', label: '甘特圖' },
+  { key: 'graph', label: '關聯圖' },
+  // 成員不是任務視圖，但放同一排頁籤最好找 —— 而且待審申請的紅點要有地方掛
+  { key: 'members', label: '成員' },
 ]
 
 export default function App() {
@@ -31,6 +37,21 @@ export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [view, setView] = useState<View>('list')
   const [openTask, setOpenTask] = useState<string | null>(null)
+
+  /**
+   * 換人登入就回到選擇頁。
+   *
+   * 快取由 AuthProvider 清掉了，但「現在開著哪個專案」是這裡的 state，
+   * 不歸零的話新登入的人會停在前一個人的專案上，然後對著一堆 403 發呆。
+   * 這是 React 文件講的「render 期間依變化調整 state」，比 effect 少一次繪製。
+   */
+  const [seenUserId, setSeenUserId] = useState<string | null>(user?.id ?? null)
+  if ((user?.id ?? null) !== seenUserId) {
+    setSeenUserId(user?.id ?? null)
+    setProjectId(null)
+    setView('list')
+    setOpenTask(null)
+  }
 
   const { data: projectsData } = useQuery({
     queryKey: ['projects'], queryFn: Api.projects, enabled: !!user,
@@ -82,6 +103,7 @@ export default function App() {
       view={view} setView={setView}
       openTask={openTask} setOpenTask={setOpenTask}
       totalOverdue={totalOverdue}
+      pendingJoins={projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0}
       userName={user.displayName}
       onLogout={logout}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
@@ -95,7 +117,7 @@ export default function App() {
  */
 function ProjectWorkspace({
   projectId, workspaceId, view, setView, openTask, setOpenTask,
-  totalOverdue, userName, onLogout, onSwitchProject,
+  totalOverdue, pendingJoins, userName, onLogout, onSwitchProject,
 }: {
   projectId: string
   workspaceId: string
@@ -104,6 +126,8 @@ function ProjectWorkspace({
   openTask: string | null
   setOpenTask: (id: string | null) => void
   totalOverdue: number
+  /** 待審的加入申請數。不是建立者的話後端一律回 0 */
+  pendingJoins: number
   userName: string
   onLogout: () => void
   onSwitchProject: () => void
@@ -262,11 +286,20 @@ function ProjectWorkspace({
                 {VIEWS.map(v => (
                   <button key={v.key} onClick={() => { setView(v.key); setOpenTask(null) }}
                           className={cx(
-                            'rounded-t-md px-3 py-1.5 text-sm font-medium transition-colors',
+                            'flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-sm font-medium',
+                            'transition-colors',
                             view === v.key
                               ? 'border-b-2 border-blue-600 text-blue-700'
                               : 'text-slate-500 hover:text-slate-700'
-                          )}>{v.label}</button>
+                          )}>
+                    {v.label}
+                    {/* 沒有通知信，有人敲門就只靠這個紅點被看見 */}
+                    {v.key === 'members' && pendingJoins > 0 && (
+                      <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+                        {pendingJoins}
+                      </span>
+                    )}
+                  </button>
                 ))}
               </nav>
             </header>
@@ -301,6 +334,15 @@ function ProjectWorkspace({
                     <Suspense fallback={<Spinner label="載入甘特圖…" />}>
                       <GanttView projectId={projectId} tasks={visible} onOpen={setOpenTask} />
                     </Suspense>
+                  )}
+                  {view === 'graph' && (
+                    <Suspense fallback={<Spinner label="載入關聯圖…" />}>
+                      <GraphView projectId={projectId} tasks={visible}
+                                 statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+                    </Suspense>
+                  )}
+                  {view === 'members' && (
+                    <MembersPanel projectId={projectId} workspaceId={workspaceId} />
                   )}
                 </>
               )}

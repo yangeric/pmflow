@@ -29,11 +29,16 @@ export default async function projectRoutes(app: FastifyInstance) {
       SELECT p.id, p.workspace_id AS "workspaceId", p.key, p.name, p.description,
              p.color, p.status, p.start_date AS "startDate", p.end_date AS "endDate",
              p.rank, pm.role,
+             (p.created_by = ${user.id}) AS "isCreator",
              (SELECT count(*) FROM task t
                WHERE t.project_id = p.id AND t.deleted_at IS NULL)::int AS "taskCount",
              (SELECT count(*) FROM task t
                WHERE t.project_id = p.id AND t.deleted_at IS NULL
-                 AND t.inquiry_state = 'OVERDUE')::int AS "overdueInquiryCount"
+                 AND t.inquiry_state = 'OVERDUE')::int AS "overdueInquiryCount",
+             -- 待審的加入申請。不是建立者就一律 0，免得別人也看到有人在敲門
+             (SELECT count(*) FROM project_join_request r
+               WHERE r.project_id = p.id AND r.status = 'PENDING'
+                 AND p.created_by = ${user.id})::int AS "pendingJoinRequestCount"
       FROM project p
       JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${user.id}
       WHERE p.archived_at IS NULL
@@ -55,14 +60,16 @@ export default async function projectRoutes(app: FastifyInstance) {
 
     const project = await sql.begin(async tx => {
       const [p] = await tx<{ id: string }[]>`
-        INSERT INTO project (workspace_id, key, name, description, color, start_date, end_date, rank)
+        INSERT INTO project (workspace_id, key, name, description, color, start_date, end_date,
+                             rank, created_by)
         VALUES (${body.workspaceId}, ${body.key}, ${body.name},
                 ${body.description ?? null}, ${body.color ?? '#3178c6'},
                 ${body.startDate ?? null}, ${body.endDate ?? null},
-                (SELECT coalesce(max(rank), 0) + 1000 FROM project WHERE workspace_id = ${body.workspaceId}))
+                (SELECT coalesce(max(rank), 0) + 1000 FROM project WHERE workspace_id = ${body.workspaceId}),
+                ${user.id})
         RETURNING id`
-      await tx`INSERT INTO project_member (project_id, user_id, role)
-               VALUES (${p.id}, ${user.id}, 'MANAGER')`
+      await tx`INSERT INTO project_member (project_id, user_id, role, added_by)
+               VALUES (${p.id}, ${user.id}, 'MANAGER', ${user.id})`
       for (const s of DEFAULT_STATUSES) {
         await tx`INSERT INTO task_status (project_id, key, name, category, color, rank)
                  VALUES (${p.id}, ${s.key}, ${s.name}, ${s.category}, ${s.color}, ${s.rank})`
@@ -82,7 +89,8 @@ export default async function projectRoutes(app: FastifyInstance) {
     await requireProjectRole(user.id, req.params.id, 'VIEWER')
     const [p] = await sql`
       SELECT id, workspace_id AS "workspaceId", key, name, description, color, status,
-             start_date AS "startDate", end_date AS "endDate"
+             start_date AS "startDate", end_date AS "endDate",
+             created_by AS "createdBy", (created_by = ${user.id}) AS "isCreator"
       FROM project WHERE id = ${req.params.id}`
     if (!p) throw notFound('找不到專案')
     const statuses = await sql`
