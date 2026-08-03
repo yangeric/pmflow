@@ -42,10 +42,14 @@ export async function seedDemo(): Promise<boolean> {
     ]
 
     for (const [pi, meta] of projects.entries()) {
+      // created_by 一定要填。0002 只回填了它之前就存在的專案，
+      // 全新安裝的示範專案是在那之後才建的 —— 漏了這一欄，示範帳號就不是
+      // 自己專案的建立者，成員管理與加入申請整條流程都會 403。
       const [p] = await tx<{ id: string }[]>`
-        INSERT INTO project (workspace_id, key, name, color, start_date, end_date, rank)
+        INSERT INTO project (workspace_id, key, name, color, start_date, end_date, rank,
+                             created_by)
         VALUES (${ws.id}, ${meta.key}, ${meta.name}, ${meta.color},
-                ${day(-7)}, ${day(45)}, ${(pi + 1) * 1000})
+                ${day(-7)}, ${day(45)}, ${(pi + 1) * 1000}, ${user.id})
         RETURNING id`
       await tx`INSERT INTO project_member (project_id, user_id, role)
                VALUES (${p.id}, ${user.id}, 'MANAGER')`
