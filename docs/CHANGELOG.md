@@ -8,6 +8,9 @@
 
 | 日期 | 主題 | 主要檔案 | 狀態 |
 |---|---|---|---|
+| 2026-08-04 | [建置：arm64 在 QEMU 下掛掉，Node 升到 24](#2026-08-04--建置arm64-在-qemu-下掛掉node-升到-24) | `apps/api/Dockerfile`、`apps/web/Dockerfile`、`ci.yml` | 已驗證 |
+| 2026-08-04 | [關聯圖：大項目改成把子項目框起來](#2026-08-04--關聯圖大項目改成把子項目框起來) | `apps/web/src/pages/Graph.tsx` | 已驗證 |
+| 2026-08-04 | [前端熱更新，改一行不用重建容器](#2026-08-04--前端熱更新改一行不用重建容器) | `docker-compose.hmr.yml`（新）、`apps/web/vite.config.ts` | 已驗證 |
 | 2026-08-03 | [關聯圖：下層往右排、階層鄰居不再看起來像依賴、卡住追到源頭](#2026-08-03--關聯圖下層往右排階層鄰居不再看起來像依賴卡住追到源頭) | `apps/web/src/pages/Graph.tsx` | 已驗證 |
 | 2026-08-03 | [通知：鈴鐺與四種事件](#2026-08-03--通知鈴鐺與四種事件) | `migrations/0003_notification.sql`（新）、`lib/notify.ts`（新）、`routes/notifications.ts`（新）、`components/NotificationBell.tsx`（新） | 已驗證 |
 | 2026-08-03 | [環偵測把每一條排程依賴都判成環](#2026-08-03--環偵測把每一條排程依賴都判成環) | `apps/api/src/lib/graph.ts`、`test/e2e.sh` | 已驗證 |
@@ -28,6 +31,69 @@
 ---
 
 ## 詳細條目
+
+### 2026-08-04 — 建置：arm64 在 QEMU 下掛掉，Node 升到 24
+
+**症狀**：推 tag 之後 release workflow 卡住不動，log 停在
+`qemu: uncaught target signal 4 (Illegal instruction) - core dumped`，
+發生在 `[linux/arm64 builder] RUN npm ci`。amd64 那一份順利做完。
+
+**原因**：GitHub runner 是 amd64，建 arm64 映像時整包在 QEMU 模擬下跑，
+而 Node 在模擬的 arm64 上執行某些指令會直接崩掉。這不是專案的程式有問題。
+
+**改了什麼**：兩個 Dockerfile 的建置階段都加上 `--platform=$BUILDPLATFORM`，
+讓它們用 runner 自己的架構跑，不進模擬層。**成立的前提是那幾個階段的產出跟架構無關**：
+`vite build` 出來是靜態檔、`tsc` 出來是 JavaScript，兩種架構完全一樣。
+API 的 runtime `node_modules` 也一起跨架構安裝 —— 這一項只在「相依全部是純 JS」時成立
+（目前是 fastify / postgres / jose / zod）。哪天加了會編 C 的套件就要改回去。
+
+順手把 Node 從 22 升到 24（現行 LTS），映像與 CI 一起。
+本機用 `docker buildx --platform linux/amd64,linux/arm64` 兩個架構都建過，API 容器也啟得起來。
+
+**另外**：workflow log 裡的「Node 20 is being deprecated」跟專案無關，
+那是 GitHub Actions 執行 action 本身用的 Node，它已自動改用 Node 24。
+
+### 2026-08-04 — 關聯圖：大項目改成把子項目框起來
+
+**為什麼**：使用者連問三次階層看不懂 ——「我點 MRG-7，那 MRG-1 在亮什麼」
+「虛線整個看不懂」「或許可以變成一個大框，內部是子項目？」。
+一條「包含」虛線得先看懂圖例才知道是階層，框不用：東西在框裡面就是它的一部分。
+而且他要的還有一項 ——「大項目是很重要的依賴，他的大框還能指向其他後續任務」，
+框本身仍是一張任務，一支從框拉出去的箭頭就是「這一整包做完才能接下去」。
+
+**改了什麼**（`apps/web/src/pages/Graph.tsx`）：
+- 版面改成遞迴的：最外層與每個框的裡面各自跑同一套排法（併欄 → 分層 → 排序）。
+  框的大小是裡面排完之後才知道的，所以是先量再放。
+- 有小孩的任務畫成 `box` 節點，子任務掛 `parentId` 交給 React Flow 管座標與整包拖曳。
+- **「包含」線整條拿掉**，`階層（上下）` 開關也一併移除 —— 框已經在說同一件事。
+- 框的標題列不再寫「大項目」（使用者說「不是很明確」），改成 **「內含 N 張」**。
+
+**踩到的三個坑**：
+1. **React Flow 要求父節點排在子節點前面**，不然子節點的座標會對不上，所以節點陣列
+   最後要依深度排序。
+2. **框的 `measured` 不能被量到的值蓋掉**。`styledNodes` 原本無條件寫
+   `measured: measured[n.id]`，框的尺寸是我們自己算的、還沒被量過，於是被蓋成
+   `undefined` —— 整張圖停在 `visibility:hidden`，跟之前那個節點不顯示的坑同一個成因。
+3. **子節點的座標是相對於父節點的左上角**，不是相對於框的內容區。排版是照內容區算的，
+   要把標題列與內距補回去，否則第一張子任務會直接蓋在框的標題上。
+
+### 2026-08-04 — 前端熱更新，改一行不用重建容器
+
+**為什麼**：使用者問「前端改檔案不是直接生效嗎？後端改了才需要重啟啊」。
+原本的 dev 環境是「`npm ci` + `tsc` + `vite build` 成靜態檔交給 Caddy」，
+所以每改一行前端都要重建整個容器，一輪一分鐘上下 —— 那天光這件事就跑了十幾次。
+
+**改了什麼**：新增 `docker-compose.hmr.yml`，web 換成直接跑 Vite dev server 並把
+`apps/web` 掛進容器：
+
+```
+docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
+```
+
+網址一樣是 8480。`vite.config.ts` 的 proxy 目標改成可以用環境變數指定 ——
+這個模式下後端不在 localhost，而是同一個網路裡的 `api:8080`。
+
+改 `apps/api` 仍然要重建 api 容器；發版前用原本那條指令驗一次靜態檔版本。
 
 ### 2026-08-03 — 關聯圖：下層往右排、階層鄰居不再看起來像依賴、卡住追到源頭
 

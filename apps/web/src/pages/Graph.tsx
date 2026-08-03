@@ -128,6 +128,8 @@ type TaskNodeData = {
   progress: number
   inquiryState: InquiryState
   isEpic: boolean
+  /** 框裡直接放著幾張任務。0＝不是框 */
+  childCount: number
   isMilestone: boolean
   dimmed: boolean
   focused: boolean
@@ -149,7 +151,7 @@ type TaskNodeData = {
 /** 同時開始／同時完成／期間重疊，各自列出對方的任務編號 */
 type ParallelPeers = { sameStart: string[]; sameFinish: string[]; overlap: string[] }
 const NO_PARALLEL: ParallelPeers = { sameStart: [], sameFinish: [], overlap: [] }
-type TaskNode = Node<TaskNodeData, 'task'>
+type TaskNode = Node<TaskNodeData, 'task' | 'box'>
 
 // ── 最下面那兩排說明的文字 ──────────────────────────────
 // 同一段文字要給兩個地方用：游標停著出現的 title，以及點一下釘在列上方的說明。
@@ -176,10 +178,12 @@ const SEMANTIC_HELP =
   '相關／阻擋／重複於／需要。\n' +
   '虛線＝只是註記兩張任務的關係，改其中一張的日期不會推動另一張。'
 
-const HIERARCHY_HELP =
-  '大項目與它底下的小項目。\n' +
-  '這不是先後關係 —— 大項目的日期是由底下那些任務彙總出來的。\n' +
-  '點任務時，它的上層／下層會標成紫框，跟依賴分得開。'
+const BOX_HELP =
+  '大項目畫成一個框，底下的任務就排在框裡面。\n' +
+  '框裡面是「這一包」的內容，不是先後關係 ——\n' +
+  '大項目的日期與進度由裡面那些任務彙總出來。\n' +
+  '框本身也是一張任務，可以指向後續任務：\n' +
+  '一支從框拉出去的箭頭＝「這一整包做完，才能接下去」。'
 
 const JUNCTION_HELP =
   '「同時開始」與「同時完成」不是兩張任務之間的一支箭頭，而是一個時間點。\n' +
@@ -198,8 +202,9 @@ const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
   { label: '⇉ 並行', className: 'text-teal-700',
     text: '期間重疊、彼此沒有先後，可以同時派不同的人做。\n' +
           '預設不顯示，要在上面的「並行」打勾。' },
-  { label: '大項目', className: 'text-violet-700',
-    text: '底下還掛著別的任務。它的日期與進度是由底下那些任務彙總出來的。' },
+  { label: '內含 N 張', className: 'text-violet-700',
+    text: '框的標題列上寫的數字＝這個框裡直接放著幾張任務。\n' +
+          '框的日期與進度由裡面那些任務彙總出來。' },
   { label: '里程碑', className: 'text-amber-700',
     text: '只有一個時間點的任務，用來標「這天要交出什麼」。' },
 ]
@@ -215,23 +220,84 @@ const INQUIRY_HELP: Record<'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIED', strin
 const BADGE = 'shrink-0 whitespace-nowrap rounded px-1 text-[10px]'
 
 // ── 節點 ────────────────────────────────────────────────
+
+/**
+ * 外框的樣式。一般任務與大項目的框共用一套，只差在大小與底色 ——
+ * 兩者都是任務，被卡住、被聚焦、只因階層而亮，三種狀態的畫法都要一致。
+ */
+function frameClass(data: TaskNodeData): string {
+  return cx(
+    'rounded-lg border shadow-sm transition-opacity',
+    data.focused ? 'border-blue-500 ring-2 ring-blue-500/30'
+      // 卡住＝現在動不了，是圖上最該被看到的狀態，給整圈紅框加紅暈
+      : data.blockedBy.length ? 'border-red-500 ring-2 ring-red-500/25'
+      // 紫框＝只是階層上的鄰居（上層或下層），不是依賴。
+      // 原本用灰虛線，使用者看不出那是什麼意思，改成跟「大項目」徽章同色系
+      : data.kin ? 'border-violet-400 ring-2 ring-violet-200'
+      : 'border-slate-300',
+    data.dimmed && 'opacity-20'
+  )
+}
+
+/**
+ * 大項目＝一個框，底下的任務排在框裡面（它們是 React Flow 的子節點，畫在框上面）。
+ *
+ * 框裡面刻意留空、只有很淡的底色：真正的內容是那些子節點，框只負責圈範圍。
+ * 標題列做成一整條可以點的區域，點它就是點這張任務（聚焦、雙擊開啟都照舊）。
+ */
+function BoxNodeView({ data }: NodeProps<TaskNode>) {
+  const meta = INQUIRY_META[data.inquiryState]
+  return (
+    <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40')}>
+      <Handle id="in" type="target" position={Position.Left}
+              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+      <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
+      <div className="flex items-center gap-1.5 px-3 py-2">
+        <span className="shrink-0 font-mono text-[10px] text-slate-500">{data.ref}</span>
+        {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
+            這裡改成講數量，一眼知道這一包有多大 */}
+        <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
+              title="這個框裡直接放著幾張任務。框的日期與進度由裡面那些任務彙總出來">
+          內含 {data.childCount} 張
+        </span>
+        {data.kin && (
+          <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
+                title={data.kin === 'parent'
+                  ? '這是選中任務的上層，兩者之間沒有依賴關係'
+                  : '這是選中任務底下的任務，兩者之間沒有依賴關係'}>
+            {data.kin === 'parent' ? '這張的上層' : '這張的下層'}
+          </span>
+        )}
+        {data.blockedBy.length > 0 && (
+          <span className={BADGE + ' bg-red-50 font-medium text-red-700'}
+                title={`卡住：要等 ${data.blockedBy.join('、')}`}>卡住</span>
+        )}
+        <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
+          {data.title}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {data.inquiryState !== 'NONE' && (
+            <span className="text-[11px]" title={meta.label} aria-label={meta.label}>
+              {meta.icon}
+            </span>
+          )}
+          <span className="h-1 w-14 overflow-hidden rounded bg-white">
+            <span className="block h-1 rounded"
+                  style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+          </span>
+          <span className="text-[10px] tabular-nums text-slate-500">{data.progress}%</span>
+        </span>
+      </div>
+      <Handle id="out" type="source" position={Position.Right}
+              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+    </div>
+  )
+}
+
 function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
-    <div
-      className={cx(
-        'w-64 rounded-lg border bg-white shadow-sm transition-opacity',
-        data.focused ? 'border-blue-500 ring-2 ring-blue-500/30'
-          // 卡住＝現在動不了，是圖上最該被看到的狀態，給整圈紅框加紅暈
-          : data.blockedBy.length ? 'border-red-500 ring-2 ring-red-500/25'
-          // 虛線＝只是階層上的鄰居，不是依賴。跟實線的依賴鄰居分得開
-          // 紫框＝只是階層上的鄰居（上層或下層），不是依賴。
-          // 原本用灰虛線，使用者看不出那是什麼意思，改成跟「大項目」徽章同色系
-          : data.kin ? 'border-violet-400 ring-2 ring-violet-200'
-          : 'border-slate-300',
-        data.dimmed && 'opacity-20'
-      )}
-    >
+    <div className={cx(frameClass(data), 'w-64 bg-white')}>
       <Handle id="in" type="target" position={Position.Left}
               className="!h-2 !w-2 !border !border-white !bg-slate-400" />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
@@ -250,7 +316,8 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
             </span>
           )}
           {data.isEpic && (
-            <span className={BADGE + ' bg-violet-50 text-violet-700'}>大項目</span>
+            <span className={BADGE + ' bg-violet-50 text-violet-700'}
+                  title="這張任務底下還可以掛別的任務">大項目</span>
           )}
           {data.isMilestone && (
             <span className={BADGE + ' bg-amber-50 text-amber-700'}>里程碑</span>
@@ -349,7 +416,7 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
   )
 }
 
-const nodeTypes = { task: TaskNodeView, junction: JunctionNodeView }
+const nodeTypes = { task: TaskNodeView, box: BoxNodeView, junction: JunctionNodeView }
 
 type FlowNode = TaskNode | JunctionNode
 
@@ -359,88 +426,69 @@ function pad(ref: string): string {
 }
 
 /**
- * 最長路徑分層：排程類依賴由左往右流。
- * 階層與語意關聯不參與分層 —— 它們不推動日期，讓它們影響 X 座標
- * 只會把「誰卡住誰」這件事弄糊。
+ * 版面：大項目是一個框，它底下的任務排在框裡面。
  *
- * 四種排程依賴裡只有兩種真的有先後。「同時開始」「同時完成」講的是
- * 兩張任務貼在時間軸的同一個點，把它們也算成往右一欄，畫出來會變成
- * 一條假的接力賽 —— 示範資料裡機櫃配置施工與系統遷移測試同一天開始，
- * 卻被排成一前一後隔了一整欄。所以先把「同時」連起來的任務併成同一欄，
- * 再拿「完成後開始」「開始後完成」去排欄與欄之間的先後。
+ * 為什麼是框而不是連一條「包含」線：使用者連問三次「這兩張到底什麼關係」。
+ * 一條灰虛線得先看懂圖例才知道是階層，框不用 —— 東西在框裡面就是它的一部分。
+ * 而且框本身還是一張任務，可以指向後續任務，「這一整包做完才能接下去」
+ * 就變成一支從框拉出去的箭頭，那正是使用者要的表達方式。
+ *
+ * 每一層（最外層、以及每個框的裡面）都各自跑同一套排法：
+ *
+ *   最長路徑分層：排程類依賴由左往右流。語意關聯不參與分層 ——
+ *   它們不推動日期，讓它們影響 X 座標只會把「誰卡住誰」弄糊。
+ *
+ *   四種排程依賴裡只有兩種真的有先後。「同時開始」「同時完成」講的是
+ *   兩張任務貼在時間軸的同一個點，把它們也算成往右一欄，畫出來會變成
+ *   一條假的接力賽。所以先把「同時」連起來的任務併成同一欄，
+ *   再拿「完成後開始」「開始後完成」去排欄與欄之間的先後。
+ *
+ * 跨層的依賴（框裡的任務指到框外面）不參與內層排序，但線照畫 ——
+ * React Flow 的邊本來就跨得過父子邊界。
  */
+
+/** 一般任務的尺寸。高度用固定值而不是量到的，量到的值會讓版面在第一次繪製後跳一下 */
+const LEAF_W = NODE_W
+const LEAF_H = 92
+/** 框的內距與標題列高度 */
+const BOX_PAD = 18
+const BOX_HEADER = 52
+
+type Box = { w: number; h: number }
+
+type LayoutResult = {
+  /** 相對於「父框內容區」的位置。沒有父框的就是畫布座標 */
+  rel: Map<string, { x: number; y: number }>
+  /** 每個節點佔多大。框的尺寸是裡面排完之後算出來的 */
+  size: Map<string, Box>
+  /** 畫布上的絕對位置。匯合點要用（它掛在最外層） */
+  abs: Map<string, { x: number; y: number }>
+  /** 有小孩的任務＝框 */
+  boxes: Set<string>
+  /** 框裡直接放著幾張任務 */
+  childCount: Map<string, number>
+}
+
 function layout(
   ids: string[],
   parentOf: Map<string, string | null>,
   refOf: Map<string, string>,
   schedEdges: Array<{ sourceId: string; targetId: string; linkType: LinkType }>
-): Map<string, { x: number; y: number }> {
+): LayoutResult {
   const present = new Set(ids)
   const usable = schedEdges.filter(e => present.has(e.sourceId) && present.has(e.targetId))
-  /** 同時開始／同時完成：不推先後，只把兩張任務綁在同一欄 */
   const isSimultaneous = (t: LinkType) => t === 'SS' || t === 'FF'
 
-  // ── 併欄（union-find）──
-  const uf = new Map(ids.map(id => [id, id]))
-  const find = (id: string): string => {
-    let root = id
-    while (uf.get(root) !== root) root = uf.get(root)!
-    for (let cur = id; uf.get(cur) !== root;) {
-      const nx = uf.get(cur)!
-      uf.set(cur, root)
-      cur = nx
-    }
-    return root
-  }
-  for (const e of usable) {
-    if (!isSimultaneous(e.linkType)) continue
-    const a = find(e.sourceId)
-    const b = find(e.targetId)
-    if (a !== b) uf.set(a, b)
-  }
-
-  // ── 欄與欄之間的先後 ──
-  const cols = [...new Set(ids.map(find))]
-  const next = new Map<string, string[]>()
-  const indeg = new Map<string, number>()
-  for (const c of cols) { next.set(c, []); indeg.set(c, 0) }
-  const order = (fromId: string, toId: string) => {
-    const from = find(fromId)
-    const to = find(toId)
-    // 併欄之後兩端落在同一欄（例如 A 同時開始 B、又 B 完成後開始 A）——
-    // 這種矛盾在後端擋環時擋不掉，畫面上就當它沒有先後
-    if (from === to) return
-    next.get(from)!.push(to)
-    indeg.set(to, indeg.get(to)! + 1)
-  }
-  for (const e of usable) {
-    if (isSimultaneous(e.linkType)) continue
-    order(e.sourceId, e.targetId)
-  }
-  // 階層也往右推：大項目在左，它底下的任務在右邊那一欄。
-  // 本來階層只影響同一層內的排序，於是子任務全部疊在大項目正下方 ——
-  // 那個排法看起來像「一串沒有關係的任務」，看不出誰是誰的下層。
+  /** 每個框底下有哪些任務。父層不在畫面上的（被篩掉了）算最外層 */
+  const kidsOf = new Map<string | null, string[]>()
   for (const id of ids) {
     const p = parentOf.get(id)
-    if (p && present.has(p)) order(p, id)
+    const key = p && present.has(p) ? p : null
+    kidsOf.set(key, [...(kidsOf.get(key) ?? []), id])
   }
+  const boxes = new Set(ids.filter(id => (kidsOf.get(id) ?? []).length > 0))
 
-  const layerOf = new Map<string, number>()
-  const queue = cols.filter(c => indeg.get(c) === 0)
-  for (const c of queue) layerOf.set(c, 0)
-  for (let i = 0; i < queue.length; i++) {
-    const c = queue[i]
-    for (const to of next.get(c)!) {
-      layerOf.set(to, Math.max(layerOf.get(to) ?? 0, layerOf.get(c)! + 1))
-      indeg.set(to, indeg.get(to)! - 1)
-      if (indeg.get(to) === 0) queue.push(to)
-    }
-  }
-  // 後端建立排程依賴前會擋環，所以這裡照理不會有剩。真的有的話統一放第 0 層
-  // —— 畫得出來比畫不出來重要，環本身在甘特頁會另外報。
-  for (const c of cols) if (!layerOf.has(c)) layerOf.set(c, 0)
-
-  // 同一層內把同一個大項目底下的任務排在一起，不然看起來像散沙
+  /** 任務編號補零之後的完整路徑，同一個框底下的排在一起 */
   const sortKey = new Map<string, string>()
   for (const id of ids) {
     const chain: string[] = []
@@ -452,61 +500,190 @@ function layout(
     sortKey.set(id, chain.join('/'))
   }
 
-  // 併成同一欄的任務要上下相鄰，不然「同時開始」的兩張會被別人插在中間，
-  // 看起來就不像同時。整欄一起用欄內最前面的那把鑰匙去排。
-  const colKey = new Map<string, string>()
-  for (const id of ids) {
-    const c = find(id)
-    const k = sortKey.get(id) ?? ''
-    if (!colKey.has(c) || k < colKey.get(c)!) colKey.set(c, k)
+  const rel = new Map<string, { x: number; y: number }>()
+  const size = new Map<string, Box>()
+
+  /** 這個節點多大：一般任務是固定尺寸，框要先把裡面排完才知道 */
+  const measure = (id: string): Box => {
+    const cached = size.get(id)
+    if (cached) return cached
+    const kids = kidsOf.get(id) ?? []
+    let box: Box
+    if (kids.length) {
+      const inner = place(kids)
+      box = {
+        w: Math.max(inner.w + BOX_PAD * 2, LEAF_W),
+        h: inner.h + BOX_HEADER + BOX_PAD,
+      }
+    } else {
+      box = { w: LEAF_W, h: LEAF_H }
+    }
+    size.set(id, box)
+    return box
   }
+
+  /** 一個子欄裡最寬的那個 */
+  const colWidth = (col: string[]) =>
+    col.reduce((w, id) => Math.max(w, measure(id).w), LEAF_W)
 
   /**
-   * 跟誰都沒關係的任務排到那一層的最下面。
-   *
-   * 沒有依賴、沒有上下層的任務會全部落在第 0 層，跟「這條鏈的起點」混在一起。
-   * 照編號排的話它們常常插在最上面，看起來像整張圖的開頭 —— 其實它們只是還沒被接上。
-   * 有關係的先，孤立的後，第 0 層就會是「真正的起點」而不是一堆散兵。
+   * 把一組同層的任務排好，回傳它們佔掉的範圍。
+   * 位置寫進 rel，相對於這一層的左上角。
    */
-  const connected = new Set<string>()
-  for (const e of usable) { connected.add(e.sourceId); connected.add(e.targetId) }
-  for (const id of ids) {
-    const p = parentOf.get(id)
-    if (p && present.has(p)) { connected.add(id); connected.add(p) }
-  }
+  function place(members: string[]): Box {
+    for (const id of members) measure(id)
+    const inLevel = new Set(members)
 
-  const byLayer = new Map<number, string[]>()
-  for (const id of ids) {
-    const l = layerOf.get(find(id))!
-    const bucket = byLayer.get(l) ?? []
-    bucket.push(id)
-    byLayer.set(l, bucket)
-  }
+    // ── 併欄（union-find）：同時開始／同時完成的併成一欄 ──
+    const uf = new Map(members.map(id => [id, id]))
+    const find = (id: string): string => {
+      let root = id
+      while (uf.get(root) !== root) root = uf.get(root)!
+      for (let cur = id; uf.get(cur) !== root;) {
+        const nx = uf.get(cur)!
+        uf.set(cur, root)
+        cur = nx
+      }
+      return root
+    }
+    for (const e of usable) {
+      if (!isSimultaneous(e.linkType)) continue
+      if (!inLevel.has(e.sourceId) || !inLevel.has(e.targetId)) continue
+      const a = find(e.sourceId)
+      const b = find(e.targetId)
+      if (a !== b) uf.set(a, b)
+    }
 
-  const pos = new Map<string, { x: number; y: number }>()
-  let x = 0
-  for (const l of [...byLayer.keys()].sort((a, b) => a - b)) {
-    const members = byLayer.get(l)!.sort((a, b) => {
-      // 孤立的一律沉到最下面，不管編號多小
-      const la = connected.has(a) ? 0 : 1
-      const lb = connected.has(b) ? 0 : 1
-      if (la !== lb) return la - lb
-      const ca = colKey.get(find(a)) ?? ''
-      const cb = colKey.get(find(b)) ?? ''
-      return ca !== cb
-        ? ca.localeCompare(cb)
-        : (sortKey.get(a) ?? '').localeCompare(sortKey.get(b) ?? '')
-    })
-    const cols = Math.max(1, Math.ceil(members.length / MAX_PER_COL))
-    members.forEach((id, i) => {
-      pos.set(id, {
-        x: x + Math.floor(i / MAX_PER_COL) * COL_GAP,
-        y: (i % MAX_PER_COL) * ROW_GAP,
+    // ── 欄與欄之間的先後 ──
+    const cols = [...new Set(members.map(find))]
+    const next = new Map<string, string[]>()
+    const indeg = new Map<string, number>()
+    for (const c of cols) { next.set(c, []); indeg.set(c, 0) }
+    for (const e of usable) {
+      if (isSimultaneous(e.linkType)) continue
+      if (!inLevel.has(e.sourceId) || !inLevel.has(e.targetId)) continue
+      const from = find(e.sourceId)
+      const to = find(e.targetId)
+      // 併欄之後兩端落在同一欄（A 同時開始 B、又 B 完成後開始 A）——
+      // 這種矛盾後端擋環時擋不掉，畫面上就當它沒有先後
+      if (from === to) continue
+      next.get(from)!.push(to)
+      indeg.set(to, indeg.get(to)! + 1)
+    }
+
+    const layerOf = new Map<string, number>()
+    const queue = cols.filter(c => indeg.get(c) === 0)
+    for (const c of queue) layerOf.set(c, 0)
+    for (let i = 0; i < queue.length; i++) {
+      const c = queue[i]
+      for (const to of next.get(c)!) {
+        layerOf.set(to, Math.max(layerOf.get(to) ?? 0, layerOf.get(c)! + 1))
+        indeg.set(to, indeg.get(to)! - 1)
+        if (indeg.get(to) === 0) queue.push(to)
+      }
+    }
+    // 後端擋過環，照理不會有剩。真的有就統一放第 0 層 ——
+    // 畫得出來比畫不出來重要，環本身在甘特頁會另外報
+    for (const c of cols) if (!layerOf.has(c)) layerOf.set(c, 0)
+
+    // 同一欄的要上下相鄰，不然「同時開始」的兩張會被別人插在中間
+    const colKey = new Map<string, string>()
+    for (const id of members) {
+      const c = find(id)
+      const k = sortKey.get(id) ?? ''
+      if (!colKey.has(c) || k < colKey.get(c)!) colKey.set(c, k)
+    }
+
+    // 這一層裡跟誰都沒關係的沉到最下面：它們全部落在第 0 層，
+    // 照編號排會插在最上面，看起來像整張圖的開頭，其實只是還沒被接上
+    const connected = new Set<string>()
+    for (const e of usable) {
+      if (!inLevel.has(e.sourceId) || !inLevel.has(e.targetId)) continue
+      connected.add(e.sourceId)
+      connected.add(e.targetId)
+    }
+
+    const byLayer = new Map<number, string[]>()
+    for (const id of members) {
+      const l = layerOf.get(find(id))!
+      byLayer.set(l, [...(byLayer.get(l) ?? []), id])
+    }
+
+    let x = 0
+    let maxBottom = 0
+    for (const l of [...byLayer.keys()].sort((a, b) => a - b)) {
+      const bucket = byLayer.get(l)!.sort((a, b) => {
+        const la = connected.has(a) ? 0 : 1
+        const lb = connected.has(b) ? 0 : 1
+        if (la !== lb) return la - lb
+        const ca = colKey.get(find(a)) ?? ''
+        const cb = colKey.get(find(b)) ?? ''
+        return ca !== cb
+          ? ca.localeCompare(cb)
+          : (sortKey.get(a) ?? '').localeCompare(sortKey.get(b) ?? '')
       })
-    })
-    x += cols * COL_GAP
+
+      // 這一層折成幾個子欄。框比一般任務高很多，所以按高度收，不是按張數
+      const columns: string[][] = [[]]
+      let used = 0
+      for (const id of bucket) {
+        const h = measure(id).h
+        const cur = columns[columns.length - 1]
+        if (cur.length >= MAX_PER_COL || (used > 0 && used + h > MAX_PER_COL * ROW_GAP)) {
+          columns.push([])
+          used = 0
+        }
+        columns[columns.length - 1].push(id)
+        used += h + (ROW_GAP - LEAF_H)
+      }
+
+      let widest = 0
+      let colX = x
+      for (const col of columns) {
+        let y = 0
+        for (const id of col) {
+          rel.set(id, { x: colX, y })
+          y += measure(id).h + (ROW_GAP - LEAF_H)
+        }
+        maxBottom = Math.max(maxBottom, y - (ROW_GAP - LEAF_H))
+        const w = colWidth(col)
+        widest = Math.max(widest, colX - x + w)
+        colX += w + (COL_GAP - LEAF_W)
+      }
+      x += Math.max(widest, LEAF_W) + (COL_GAP - LEAF_W)
+    }
+
+    return { w: Math.max(x - (COL_GAP - LEAF_W), 0), h: maxBottom }
   }
-  return pos
+
+  place(kidsOf.get(null) ?? [])
+
+  // React Flow 的子節點座標是「相對於父節點的左上角」，不是相對於框的內容區。
+  // 排版時是照內容區算的，所以這裡把標題列與內距補回去 ——
+  // 少了這一步，第一張子任務會直接蓋在框的標題上。
+  for (const [parent, kids] of kidsOf) {
+    if (!parent) continue
+    for (const k of kids) {
+      const r = rel.get(k)
+      if (r) rel.set(k, { x: r.x + BOX_PAD, y: r.y + BOX_HEADER })
+    }
+  }
+
+  // 匯合點掛在最外層，要的是畫布座標 —— 把每一層的位移一路加上來
+  const abs = new Map<string, { x: number; y: number }>()
+  const walk = (id: string, ox: number, oy: number) => {
+    const r = rel.get(id) ?? { x: 0, y: 0 }
+    const x = ox + r.x
+    const y = oy + r.y
+    abs.set(id, { x, y })
+    for (const k of kidsOf.get(id) ?? []) walk(k, x, y)
+  }
+  for (const id of kidsOf.get(null) ?? []) walk(id, 0, 0)
+
+  const childCount = new Map<string, number>()
+  for (const id of boxes) childCount.set(id, (kidsOf.get(id) ?? []).length)
+
+  return { rel, size, abs, boxes, childCount }
 }
 
 export default function GraphView(props: {
@@ -548,7 +725,6 @@ function GraphCanvas({
    */
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [focusId, setFocusId] = useState<string | null>(null)
-  const [showHierarchy, setShowHierarchy] = useState(true)
   const [showSemantic, setShowSemantic] = useState(true)
   /** 標出「還不能動手」的任務。預設開著 —— 這是進來最想先看到的一件事 */
   const [showBlocked, setShowBlocked] = useState(true)
@@ -662,31 +838,58 @@ function GraphCanvas({
    * statuses 是 `project?.statuses ?? []`，每次 render 都是新陣列，放進相依
    * 等於「父層一 render 就把版面洗掉」。所以顏色改在 styledNodes 那邊算。
    */
-  const baseNodes = useMemo<TaskNode[]>(() => {
+  const { baseNodes, layoutAbs } = useMemo(() => {
+    const present = new Set(shownNodes.map(n => n.id))
     const parentOf = new Map(shownNodes.map(n => [n.id, n.parentId]))
     const refOf = new Map(shownNodes.map(n => [n.id, n.ref]))
-    const pos = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges)
+    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges)
 
-    return shownNodes.map(n => ({
-      id: n.id,
-      type: 'task' as const,
-      position: pos.get(n.id) ?? { x: 0, y: 0 },
-      data: {
-        ref: n.ref,
-        title: n.title,
-        statusKey: n.statusKey,
-        color: '#94a3b8',        // 佔位，實際顏色在 styledNodes 補
-        progress: n.progress ?? 0,
-        inquiryState: n.inquiryState,
-        isEpic: n.type === 'EPIC',
-        isMilestone: n.type === 'MILESTONE',
-        dimmed: false,
-        focused: false,
-        kin: null,
-        blockedBy: [],           // 佔位，實際內容在 styledNodes 補
-        parallel: NO_PARALLEL,
-      },
-    }))
+    const nodes: TaskNode[] = shownNodes.map(n => {
+      const isBox = L.boxes.has(n.id)
+      const parent = n.parentId && present.has(n.parentId) ? n.parentId : undefined
+      const size = L.size.get(n.id)
+      return {
+        id: n.id,
+        type: (isBox ? 'box' : 'task') as 'box' | 'task',
+        position: L.rel.get(n.id) ?? { x: 0, y: 0 },
+        // 有父框就交給 React Flow 處理座標原點與整包拖曳
+        ...(parent ? { parentId: parent } : {}),
+        // 框的大小是算出來的，直接告訴 React Flow，不要等它量
+        ...(isBox && size
+          ? {
+              style: { width: size.w, height: size.h },
+              measured: { width: size.w, height: size.h },
+            }
+          : {}),
+        data: {
+          ref: n.ref,
+          title: n.title,
+          statusKey: n.statusKey,
+          color: '#94a3b8',        // 佔位，實際顏色在 styledNodes 補
+          progress: n.progress ?? 0,
+          inquiryState: n.inquiryState,
+          isEpic: isBox,
+          childCount: L.childCount.get(n.id) ?? 0,
+          isMilestone: n.type === 'MILESTONE',
+          dimmed: false,
+          focused: false,
+          kin: null,
+          blockedBy: [],           // 佔位，實際內容在 styledNodes 補
+          parallel: NO_PARALLEL,
+        },
+      }
+    })
+
+    // React Flow 要求父節點排在子節點前面，不然子節點的座標會對不上
+    const depth = (id: string) => {
+      let d = 0
+      let cur = parentOf.get(id)
+      while (cur && present.has(cur) && d < 20) { d++; cur = parentOf.get(cur) }
+      return d
+    }
+    nodes.sort((a, b) => depth(a.id) - depth(b.id))
+
+    return { baseNodes: nodes, layoutAbs: L.abs }
   }, [shownNodes, schedEdges])
 
   const nodeKey = useMemo(() => baseNodes.map(n => n.id).join(','), [baseNodes])
@@ -970,7 +1173,9 @@ function GraphCanvas({
     () => baseNodes.map(n => ({
       ...n,
       position: dragged[n.id] ?? n.position,
-      measured: measured[n.id],
+      // 框的尺寸是我們自己算的（見 layout），量到的值不要蓋掉它 ——
+      // 蓋成 undefined 的話 React Flow 會認為它還沒量好，整張圖停在 visibility:hidden
+      measured: n.measured ?? measured[n.id],
       data: {
         ...n.data,
         color: statusColor(n.data.statusKey),
@@ -995,7 +1200,15 @@ function GraphCanvas({
    * 省掉「先量再顯示」那一輪（見上面 measured 的說明）。
    */
   const junctionNodes = useMemo<JunctionNode[]>(() => {
-    const pos = new Map(baseNodes.map(n => [n.id, dragged[n.id] ?? n.position]))
+    // 匯合點沒有父框，用的是畫布座標；框裡的任務位置是相對的，要換算過。
+    // 使用者拖過的位置同樣是相對的，所以只把差值疊上去。
+    const pos = new Map(baseNodes.map(n => {
+      const base = layoutAbs.get(n.id) ?? n.position
+      const d = dragged[n.id]
+      return [n.id, d
+        ? { x: base.x + (d.x - n.position.x), y: base.y + (d.y - n.position.y) }
+        : base]
+    }))
     const heightOf = (id: string) => measured[id]?.height ?? NODE_H_FALLBACK
 
     return simul.groups.flatMap(g => {
@@ -1024,7 +1237,7 @@ function GraphCanvas({
         },
       }]
     })
-  }, [simul, baseNodes, dragged, measured, neighbours])
+  }, [simul, baseNodes, layoutAbs, dragged, measured, neighbours])
 
   const allNodes = useMemo<FlowNode[]>(
     () => [...styledNodes, ...junctionNodes], [styledNodes, junctionNodes]
@@ -1036,37 +1249,8 @@ function GraphCanvas({
     const dim = (a: string, b: string) =>
       !!neighbours && !(neighbours.has(a) && neighbours.has(b))
 
-    if (showHierarchy) {
-      for (const n of shownNodes) {
-        if (!n.parentId || !visibleIds.has(n.parentId)) continue
-        out.push({
-          id: `parent:${n.id}`,
-          source: n.parentId,
-          target: n.id,
-          sourceHandle: 'out',
-          targetHandle: 'in',
-          type: 'smoothstep',
-          selectable: false,
-          // 階層線本來沒有字，畫面上就變成一條沒人看得懂的灰虛線 ——
-          // 而且跟語意關聯的虛線只差在深淺與虛線間距，根本分不出來。
-          // 這個模組的規矩是「每條線上都有中文短句，圖例只是輔助」，這裡補上。
-          label: '包含',
-          labelShowBg: false,
-          labelStyle: labelText(
-            dim(n.parentId, n.id) ? '#94a3b8' : HIERARCHY_FOCUS_COLOR,
-            dim(n.parentId, n.id)
-          ),
-          style: {
-            // 聚焦時這條線改成實線的紫色並加粗 —— 大項目跟它底下那幾張的關係
-            // 是使用者最常問的「這兩張到底是什麼關係」，灰虛線太含蓄，看不出來
-            stroke: dim(n.parentId, n.id) ? HIERARCHY_COLOR : HIERARCHY_FOCUS_COLOR,
-            strokeWidth: dim(n.parentId, n.id) ? 1.5 : 2.5,
-            strokeDasharray: dim(n.parentId, n.id) ? HIERARCHY_DASH : undefined,
-            opacity: dim(n.parentId, n.id) ? 0.12 : 1,
-          },
-        })
-      }
-    }
+    // 階層不再畫線 —— 大項目直接把底下的任務框起來（見 layout 的說明）。
+    // 一條「包含」虛線得先看懂圖例才知道是什麼，框不用。
 
     // ── 匯合點的扇形：分岔點射向群裡每一張，群裡每一張射進合流點 ──
     for (const g of simul.groups) {
@@ -1147,7 +1331,7 @@ function GraphCanvas({
       })
     }
     return out
-  }, [graph, shownNodes, visibleIds, showHierarchy, showSemantic, neighbours, simul])
+  }, [graph, shownNodes, visibleIds, showSemantic, neighbours, simul])
 
   // ── 建立 / 刪除關聯 ──────────────────────────────────────
   const invalidate = () => {
@@ -1177,11 +1361,6 @@ function GraphCanvas({
   }, [addLink])
 
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
-    // 階層不是 task_link，沒有可刪的那一列 —— 要改父子關係得去清單拖曳
-    if (edge.id.startsWith('parent:')) {
-      setError('階層（上下）不是關聯，要改父子關係請到清單視圖拖曳。')
-      return
-    }
     if (window.confirm(`要刪除這條關聯嗎？（${String(edge.label ?? '')}）`)) {
       delLink.mutate(edge.id)
     }
@@ -1226,12 +1405,6 @@ function GraphCanvas({
         </Button>
 
         <div className="ml-3 flex items-center gap-3 text-sm">
-          <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
-            <input type="checkbox" checked={showHierarchy}
-                   onChange={e => setShowHierarchy(e.target.checked)}
-                   className="rounded border-slate-300" />
-            階層（上下）
-          </label>
           <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
             <input type="checkbox" checked={showSemantic}
                    onChange={e => setShowSemantic(e.target.checked)}
@@ -1397,7 +1570,9 @@ function LegendBar() {
    * 長相跟系統的提示框一樣（深色小方框），再點一次或點別的地方收起來。
    * 刻意不做成橫跨整列的長條 —— 那看起來像另一塊面板，不像「這一項的說明」。
    */
-  const [tip, setTip] = useState<{ label: string; text: string; x: number } | null>(null)
+  const [tip, setTip] = useState<
+    { label: string; text: string; x: number; pinned: boolean } | null
+  >(null)
   const barRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -1408,18 +1583,38 @@ function LegendBar() {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setTip(null) }
     document.addEventListener('mousedown', close)
     document.addEventListener('keydown', esc)
+    // 點開的說明看完就該自己消失 —— 沒有人想為了看一句話再回去按一次關閉。
+    // 滑過去顯示的那種本來就會在移開時收掉，不用計時。
+    const timer = tip.pinned ? window.setTimeout(() => setTip(null), 6000) : undefined
     return () => {
       document.removeEventListener('mousedown', close)
       document.removeEventListener('keydown', esc)
+      if (timer) window.clearTimeout(timer)
     }
   }, [tip])
 
-  /** 提示框對齊被點的那一項，所以要記下它在列上的水平位置 */
-  const show = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
+  /**
+   * 提示框對齊被指到的那一項，所以要記下它在列上的水平位置。
+   *
+   * 滑過去就顯示、移開就收；點一下則「釘住」，移開也不收，
+   * 要再點一次或點別的地方才關。同一個框兩種用法，不用瀏覽器原生的 title ——
+   * 原生的要停住不動一秒才出現，而且觸控螢幕根本叫不出來。
+   */
+  const at = (e: ReactMouseEvent<HTMLElement>) => {
     const bar = barRef.current?.getBoundingClientRect()
     const item = e.currentTarget.getBoundingClientRect()
-    const x = bar ? item.left + item.width / 2 - bar.left : 0
-    setTip(t => (t?.label === label ? null : { label, text, x }))
+    return bar ? item.left + item.width / 2 - bar.left : 0
+  }
+  const hover = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
+    // 位置一定要在呼叫 setTip 之前算好。放進 updater 裡的話 React 可能晚一點才執行它，
+    // 那時 event.currentTarget 已經被清成 null，整個元件就炸了。
+    const x = at(e)
+    setTip(t => (t?.pinned ? t : { label, text, x, pinned: false }))
+  }
+  const unhover = () => setTip(t => (t?.pinned ? t : null))
+  const show = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
+    const x = at(e)
+    setTip(t => (t?.pinned && t.label === label ? null : { label, text, x, pinned: true }))
   }
 
   return (
@@ -1434,7 +1629,10 @@ function LegendBar() {
           /* 貼齊左右邊界：靠最左或最右的項目，置中之後會有一半跑到列外面 */
           style={{ left: `clamp(0.5rem, ${tip.x}px, calc(100% - 0.5rem))` }}
           role="tooltip">
-          <div className="font-medium text-white">{tip.label}</div>
+          <div className="font-medium text-white">
+            {tip.label}
+            {tip.pinned && <span className="ml-2 text-[10px] text-slate-400">會自動關閉</span>}
+          </div>
           <div className="whitespace-pre-wrap text-slate-200">{tip.text}</div>
         </div>
       )}
@@ -1445,16 +1643,8 @@ function LegendBar() {
         <span
           className="cursor-help rounded bg-slate-100 px-2 py-1 font-medium text-slate-600
                      hover:bg-slate-200"
-          title={
-            '怎麼操作\n' +
-            '・點節點：只留亮它的鄰居，其餘淡出。再點一次取消\n' +
-            '・雙擊節點：開啟那張任務\n' +
-            '・從節點右側的圓點拉到另一張任務：建立關聯（種類用上面的「拉線建立」選）\n' +
-            '・點線：刪除那條關聯\n' +
-            '・拖節點可以自己排版，按「重新排列」放回自動位置\n' +
-            '・「框選」開著時左鍵拉出範圍選多張，一起拖曳；右鍵平移畫面\n' +
-            '・滾輪縮放，或用左上角的＋／－'
-          }
+          onMouseEnter={hover('怎麼操作', OPERATION_HELP)}
+          onMouseLeave={unhover}
           onClick={show('怎麼操作', OPERATION_HELP)}>操作說明</span>
       </div>
 
@@ -1463,34 +1653,46 @@ function LegendBar() {
       <LegendRowStrip label="線">
         {SCHEDULING.map(t => (
           <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
-                      title={SCHEDULING_HELP[t]}
+                      onMouseEnter={hover(LINK_CHIP[t], SCHEDULING_HELP[t])}
+                      onMouseLeave={unhover}
                       onClick={show(LINK_CHIP[t], SCHEDULING_HELP[t])} />
         ))}
         <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label="語意關聯"
-                    title="相關／阻擋／重複於／需要（虛線＝只是註記關係，改日期不影響對方）" />
-        <LegendLine color={HIERARCHY_COLOR} dash={HIERARCHY_DASH} label="包含"
-                    title="大項目與它底下的小項目。聚焦時會變成紫色實線" />
-        <span className="flex shrink-0 cursor-help items-center gap-1"
-              title={'匯合點：「同時開始」與「同時完成」不是兩張任務之間的箭頭，\n' +
-                     '而是一個時間點。橘＝同時開始（一支箭頭進、多支出），\n' +
-                     '紫＝同時完成（多支進、一支出）'}>
+                    onMouseEnter={hover('語意關聯', SEMANTIC_HELP)}
+                    onMouseLeave={unhover}
+                    onClick={show('語意關聯', SEMANTIC_HELP)} />
+        {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
+        <button type="button"
+                onMouseEnter={hover('大項目的框', BOX_HELP)} onMouseLeave={unhover}
+                onClick={show('大項目的框', BOX_HELP)}
+                className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
+          <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50" />
+          大項目的框
+        </button>
+        <button type="button"
+                onMouseEnter={hover('匯合點', JUNCTION_HELP)} onMouseLeave={unhover}
+                onClick={show('匯合點', JUNCTION_HELP)}
+                className="flex shrink-0 cursor-help items-center gap-1 hover:text-slate-800">
           <span className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: SCHEDULING_COLOR.SS }} />
           <span className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: SCHEDULING_COLOR.FF }} />
           匯合點
-        </span>
+        </button>
       </LegendRowStrip>
 
       <LegendRowStrip label="圖示">
         {ICON_HELP.map(h => (
-          <LegendChip key={h.label} className={h.className} title={h.text}
+          <LegendChip key={h.label} className={h.className}
+                      onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}
                       onClick={show(h.label, h.text)}>
             {h.label}
           </LegendChip>
         ))}
         {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
-          <LegendChip key={st} title={INQUIRY_HELP[st]}
+          <LegendChip key={st}
+                      onMouseEnter={hover(INQUIRY_META[st].label, INQUIRY_HELP[st])}
+                      onMouseLeave={unhover}
                       onClick={show(INQUIRY_META[st].label, INQUIRY_HELP[st])}>
             {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
           </LegendChip>
@@ -1514,22 +1716,34 @@ function LegendRowStrip({ label, children }: { label: string; children: ReactNod
   )
 }
 
-function LegendChip({ title, className, children, onClick }: {
-  title: string; className?: string; children: ReactNode; onClick?: MouseEventHandler<HTMLButtonElement>
+/**
+ * 說明列上的一項。
+ *
+ * 刻意不用瀏覽器原生的 `title` —— 它要停住不動一秒才出現、樣子不能控制、
+ * 觸控螢幕也叫不出來。滑過去與點一下都走自己畫的那個提示框。
+ */
+type LegendItemProps = {
+  onClick?: MouseEventHandler<HTMLButtonElement>
+  onMouseEnter?: MouseEventHandler<HTMLButtonElement>
+  onMouseLeave?: () => void
+}
+
+function LegendChip({ className, children, ...h }: LegendItemProps & {
+  className?: string; children: ReactNode
 }) {
   return (
-    <button type="button" onClick={onClick} title={title}
+    <button type="button" {...h}
             className={cx('shrink-0 cursor-help hover:text-slate-800', className)}>
       {children}
     </button>
   )
 }
 
-function LegendLine({ color, label, dash, title, onClick }: {
-  color: string; label: string; dash?: string; title: string; onClick?: MouseEventHandler<HTMLButtonElement>
+function LegendLine({ color, label, dash, ...h }: LegendItemProps & {
+  color: string; label: string; dash?: string
 }) {
   return (
-    <button type="button" onClick={onClick} title={title}
+    <button type="button" {...h}
             className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
       {/* 用 svg 而不是 border-style，才能跟畫面上的線用同一組 strokeDasharray */}
       <svg width="20" height="2" className="shrink-0" aria-hidden>
