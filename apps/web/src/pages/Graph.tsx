@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback, useEffect, useMemo, useRef, useState,
+  type MouseEvent as ReactMouseEvent, type MouseEventHandler, type ReactNode,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Background, BackgroundVariant, Handle, MarkerType, Panel, Position, ReactFlow,
@@ -1390,10 +1393,11 @@ function LegendBar() {
    * 點開的那一則說明。
    *
    * 每一項的說明本來只掛在 `title` 上，游標要停著不動一秒才會出現，
-   * 而且在觸控螢幕上根本叫不出來。點一下就把同一段文字釘在列的上方，
-   * 再點一次（或點別的地方）收起來。
+   * 而且在觸控螢幕上根本叫不出來。點一下就在那一項的正上方跳出同一段文字，
+   * 長相跟系統的提示框一樣（深色小方框），再點一次或點別的地方收起來。
+   * 刻意不做成橫跨整列的長條 —— 那看起來像另一塊面板，不像「這一項的說明」。
    */
-  const [tip, setTip] = useState<{ label: string; text: string } | null>(null)
+  const [tip, setTip] = useState<{ label: string; text: string; x: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -1410,25 +1414,28 @@ function LegendBar() {
     }
   }, [tip])
 
-  const show = (label: string, text: string) =>
-    setTip(t => (t?.label === label ? null : { label, text }))
+  /** 提示框對齊被點的那一項，所以要記下它在列上的水平位置 */
+  const show = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
+    const bar = barRef.current?.getBoundingClientRect()
+    const item = e.currentTarget.getBoundingClientRect()
+    const x = bar ? item.left + item.width / 2 - bar.left : 0
+    setTip(t => (t?.label === label ? null : { label, text, x }))
+  }
 
   return (
     <div ref={barRef}
          className="relative flex items-stretch border-t border-slate-200 bg-white
                     text-[11px] text-slate-500">
       {tip && (
-        <div className="absolute bottom-full left-0 right-0 z-20 border-t border-slate-200
-                        bg-slate-50 px-4 py-2">
-          <div className="flex items-start gap-2">
-            <span className="shrink-0 font-medium text-slate-700">{tip.label}</span>
-            <span className="min-w-0 flex-1 whitespace-pre-wrap leading-5 text-slate-600">
-              {tip.text}
-            </span>
-            <button onClick={() => setTip(null)}
-                    className="shrink-0 text-slate-400 hover:text-slate-600"
-                    aria-label="關閉說明">✕</button>
-          </div>
+        <div
+          className="pointer-events-none absolute bottom-full z-20 mb-1 w-max max-w-sm
+                     -translate-x-1/2 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px]
+                     leading-5 text-white shadow-lg"
+          /* 貼齊左右邊界：靠最左或最右的項目，置中之後會有一半跑到列外面 */
+          style={{ left: `clamp(0.5rem, ${tip.x}px, calc(100% - 0.5rem))` }}
+          role="tooltip">
+          <div className="font-medium text-white">{tip.label}</div>
+          <div className="whitespace-pre-wrap text-slate-200">{tip.text}</div>
         </div>
       )}
       {/* 「操作說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
@@ -1448,7 +1455,7 @@ function LegendBar() {
             '・「框選」開著時左鍵拉出範圍選多張，一起拖曳；右鍵平移畫面\n' +
             '・滾輪縮放，或用左上角的＋／－'
           }
-          onClick={() => show('怎麼操作', OPERATION_HELP)}>操作說明</span>
+          onClick={show('怎麼操作', OPERATION_HELP)}>操作說明</span>
       </div>
 
       {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
@@ -1457,7 +1464,7 @@ function LegendBar() {
         {SCHEDULING.map(t => (
           <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
                       title={SCHEDULING_HELP[t]}
-                      onClick={() => show(LINK_CHIP[t], SCHEDULING_HELP[t])} />
+                      onClick={show(LINK_CHIP[t], SCHEDULING_HELP[t])} />
         ))}
         <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label="語意關聯"
                     title="相關／阻擋／重複於／需要（虛線＝只是註記關係，改日期不影響對方）" />
@@ -1478,13 +1485,13 @@ function LegendBar() {
       <LegendRowStrip label="圖示">
         {ICON_HELP.map(h => (
           <LegendChip key={h.label} className={h.className} title={h.text}
-                      onClick={() => show(h.label, h.text)}>
+                      onClick={show(h.label, h.text)}>
             {h.label}
           </LegendChip>
         ))}
         {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
           <LegendChip key={st} title={INQUIRY_HELP[st]}
-                      onClick={() => show(INQUIRY_META[st].label, INQUIRY_HELP[st])}>
+                      onClick={show(INQUIRY_META[st].label, INQUIRY_HELP[st])}>
             {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
           </LegendChip>
         ))}
@@ -1508,7 +1515,7 @@ function LegendRowStrip({ label, children }: { label: string; children: ReactNod
 }
 
 function LegendChip({ title, className, children, onClick }: {
-  title: string; className?: string; children: ReactNode; onClick?: () => void
+  title: string; className?: string; children: ReactNode; onClick?: MouseEventHandler<HTMLButtonElement>
 }) {
   return (
     <button type="button" onClick={onClick} title={title}
@@ -1519,7 +1526,7 @@ function LegendChip({ title, className, children, onClick }: {
 }
 
 function LegendLine({ color, label, dash, title, onClick }: {
-  color: string; label: string; dash?: string; title: string; onClick?: () => void
+  color: string; label: string; dash?: string; title: string; onClick?: MouseEventHandler<HTMLButtonElement>
 }) {
   return (
     <button type="button" onClick={onClick} title={title}
