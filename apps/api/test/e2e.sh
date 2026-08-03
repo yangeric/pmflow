@@ -1,5 +1,7 @@
 set -u
-API=http://127.0.0.1:8080/api/v1
+# CI 是直接對著剛啟動的 API 跑；本機要對容器裡的那一套跑時用
+#   API=http://localhost:8481/api/v1 bash test/e2e.sh
+API=${API:-http://127.0.0.1:8080/api/v1}
 J=/tmp/cookies.txt; rm -f $J
 pass=0; fail=0
 ok(){ pass=$((pass+1)); echo "  ✅ $1"; }
@@ -94,19 +96,33 @@ chk "無循環" "$CYC" "False"
 CP=$(echo "$SCH" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["criticalPath"]))')
 [ "$CP" -ge 1 ] && ok "算出關鍵路徑（$CP 個節點）" || no "關鍵路徑" "$SCH"
 
-echo "── 13. 循環依賴要被擋下 ──"
+echo "── 13. 不成環的排程依賴要建得起來 ──"
+# 這一項是為了守住「只有真的成環才擋」。少了它，環偵測寫成永遠回報成環
+# 也一樣看不出來 —— 下一項本來就預期 409，兩種錯法給的結果一模一樣。
+NEWA=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/projects/$PID/tasks \
+  -d '{"title":"環偵測用－上游"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+NEWB=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/projects/$PID/tasks \
+  -d '{"title":"環偵測用－下游"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -H 'content-type: application/json' \
+  -X POST $API/tasks/$NEWA/links -d "{\"targetId\":\"$NEWB\",\"linkType\":\"FS\"}")
+chk "兩張無關的任務建 FS → 201" "$C" "201"
+C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -H 'content-type: application/json' \
+  -X POST $API/tasks/$NEWB/links -d "{\"targetId\":\"$NEWA\",\"linkType\":\"FS\"}")
+chk "反向再建一條 → 409（真的成環）" "$C" "409"
+
+echo "── 14. 循環依賴要被擋下 ──"
 R=$(curl -s -w '\n%{http_code}' -H "$AUTH" -H 'content-type: application/json' \
   -X POST $API/tasks/$T_BUY/links -d "{\"targetId\":\"$T_REQ\",\"linkType\":\"FS\"}")
 CODE=$(echo "$R" | tail -1); BODY=$(echo "$R" | head -n -1)
 chk "反向 FS 造成環 → 409" "$CODE" "409"
 echo "$BODY" | grep -q "cycle" && ok "回傳環的路徑：$(echo "$BODY" | python3 -c 'import sys,json;print(" → ".join(json.load(sys.stdin)["cycle"]))')" || no "環路徑" "$BODY"
 
-echo "── 14. 父子任務之間不能建排程依賴 ──"
+echo "── 15. 父子任務之間不能建排程依賴 ──"
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -H 'content-type: application/json' \
   -X POST $API/tasks/$T_EPIC/links -d "{\"targetId\":\"$T_NET\",\"linkType\":\"FS\"}")
 chk "父→子 建依賴被擋 (409，規格 §5.3)" "$C" "409"
 
-echo "── 15. 看板拖曳：換欄 + 排序 ──"
+echo "── 16. 看板拖曳：換欄 + 排序 ──"
 MV=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/tasks/$T_BUY/move \
   -d "{\"statusKey\":\"doing\",\"beforeId\":\"$T_REQ\"}")
 NS=$(echo "$MV" | python3 -c 'import sys,json;print(json.load(sys.stdin)["statusKey"])')
@@ -114,7 +130,7 @@ chk "拖到「進行中」欄" "$NS" "doing"
 NR=$(echo "$MV" | python3 -c 'import sys,json;print(json.load(sys.stdin)["rank"])')
 ok "新 rank = $NR（fractional，只 UPDATE 一列）"
 
-echo "── 16. 拖甘特長條，下游跟著動 ──"
+echo "── 17. 拖甘特長條，下游跟著動 ──"
 TASKS=$(curl -s -H "$AUTH" "$API/projects/$PID/tasks"); BEFORE=$(tid "機櫃配置施工" startDate | cut -c1-10)
 # 從採購與到貨目前的日期往後推 40 天，保證一定有變化，
 # 這支腳本才能對同一個資料庫重複執行
@@ -126,17 +142,17 @@ curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/tasks/$T_BUY
 TASKS=$(curl -s -H "$AUTH" "$API/projects/$PID/tasks"); AFTER=$(tid "機櫃配置施工" startDate | cut -c1-10)
 [ "$BEFORE" != "$AFTER" ] && ok "採購與到貨改期 → 下游機櫃配置施工 由 $BEFORE 推到 $AFTER" || no "連動" "沒有推動下游"
 
-echo "── 17. 關聯網路圖資料 ──"
+echo "── 18. 關聯網路圖資料 ──"
 G=$(curl -s -H "$AUTH" $API/projects/$PID/graph)
 GN=$(echo "$G" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d["nodes"]),len(d["edges"]))')
 ok "關聯圖：$GN（節點 邊）"
 
-echo "── 18. 發文追蹤看板（跨專案）──"
+echo "── 19. 發文追蹤看板（跨專案）──"
 BD=$(curl -s -H "$AUTH" "$API/workspaces/$WSID/inquiry-board?state=AWAITING,OVERDUE")
 BN=$(echo "$BD" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["inquiries"]))')
 [ "$BN" -ge 1 ] && ok "追蹤看板列出 $BN 筆待回/逾期" || no "看板" "$BD"
 
-echo "── 19. 單位統計 ──"
+echo "── 20. 單位統計 ──"
 ST=$(curl -s -H "$AUTH" "$API/workspaces/$WSID/inquiry-stats")
 echo "$ST" | python3 -c '
 import sys, json
@@ -148,7 +164,7 @@ for t in d["transferred"]:
     print("     轉單位: %s -> %s (%s 次)" % (t["askedToUnit"], t["repliedByUnit"], t["count"]))'
 ok "單位統計查得出來"
 
-echo "── 20. 新使用者註冊 ──"
+echo "── 21. 新使用者註冊 ──"
 # 用隨機信箱，讓這支腳本可以對同一個資料庫重複執行
 NEWMAIL="jack-$RANDOM$RANDOM@example.com"
 REG=$(curl -s -w '\n%{http_code}' -X POST $API/auth/register -H 'content-type: application/json' \
@@ -158,7 +174,7 @@ DUP=$(curl -s -o /dev/null -w '%{http_code}' -X POST $API/auth/register -H 'cont
   -d "{\"email\":\"$NEWMAIL\",\"password\":\"hunter2024\",\"displayName\":\"Jack\"}")
 chk "重複 email 被擋" "$DUP" "400"
 
-echo "── 21. 越權存取要被擋（IDOR）──"
+echo "── 22. 越權存取要被擋（IDOR）──"
 JT=$(curl -s -X POST $API/auth/login -H 'content-type: application/json' \
   -d "{\"email\":\"$NEWMAIL\",\"password\":\"hunter2024\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $JT" $API/tasks/$T_BUY)
@@ -166,6 +182,62 @@ chk "非專案成員讀別人的任務 → 403" "$C" "403"
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $JT" -H 'content-type: application/json' \
   -X POST $API/inquiries/$QID/mark-replied -d '{}')
 chk "非成員改別人的詢問單 → 403" "$C" "403"
+
+echo "── 23. 通知：四種事件都要送到對的人 ──"
+# 沿用第 21 項註冊出來的 Jack（$JT），他跟 demo 是不同人，
+# 才驗得出「自己做的事不通知自己」以外的那一半。
+# 一律比「做了動作之後多了幾則」，不是比總數 ——
+# 這支腳本要能對同一個資料庫重複執行，總數會一直累加。
+UNREAD(){ curl -s -H "Authorization: Bearer $1" $API/notifications \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['unread'])"; }
+KIND(){ curl -s -H "Authorization: Bearer $1" $API/notifications \
+  | python3 -c "import sys,json;print(len([x for x in json.load(sys.stdin)['items'] if x['kind']=='$2' and x['readAt'] is None]))"; }
+
+curl -s -o /dev/null -X POST -H "$AUTH" $API/notifications/read-all
+curl -s -o /dev/null -X POST -H "Authorization: Bearer $JT" $API/notifications/read-all
+chk "全部標為已讀之後未讀歸零" "$(UNREAD "$TOK")" "0"
+
+# 這一輪要用到的兩張任務，現開現用，才不會被前幾項改過的狀態干擾
+NT_A=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/projects/$PID/tasks \
+  -d '{"title":"通知測試－甲"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+NT_B=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/projects/$PID/tasks \
+  -d '{"title":"通知測試－乙"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+
+# 申請加入 → 專案建立者收到
+curl -s -o /dev/null -H "Authorization: Bearer $JT" -H 'content-type: application/json' \
+  -X POST $API/projects/$PID/join-requests -d '{"message":"我想幫忙"}'
+chk "有人申請加入 → 建立者收到 JOIN_REQUESTED" "$(KIND "$TOK" JOIN_REQUESTED)" "1"
+
+# 核准 → 申請人收到
+RID=$(curl -s -H "$AUTH" $API/projects/$PID/join-requests \
+  | python3 -c 'import sys,json;r=json.load(sys.stdin)["requests"];print(r[0]["id"] if r else "")')
+curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
+  -X POST $API/projects/$PID/join-requests/$RID/approve -d '{"role":"EDITOR"}'
+chk "申請被核准 → 申請人收到 JOIN_APPROVED" "$(KIND "$JT" JOIN_APPROVED)" "1"
+
+# 指派 → 被指派的人收到
+JID=$(curl -s -H "Authorization: Bearer $JT" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])')
+curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
+  -X PATCH $API/tasks/$NT_A -d "{\"assigneeId\":\"$JID\"}"
+chk "任務被指派 → 收到 TASK_ASSIGNED" "$(KIND "$JT" TASK_ASSIGNED)" "1"
+
+# 指派給自己不該有通知
+DEMOID=$(curl -s -H "$AUTH" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])')
+BEFORE_SELF=$(UNREAD "$TOK")
+curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
+  -X PATCH $API/tasks/$NT_B -d "{\"assigneeId\":\"$DEMOID\"}"
+chk "指派給自己不通知自己" "$(UNREAD "$TOK")" "$BEFORE_SELF"
+
+# 被指向 → 該任務的負責人收到（Jack 把自己那張指向 demo 負責的那張）
+curl -s -o /dev/null -H "Authorization: Bearer $JT" -H 'content-type: application/json' \
+  -X POST $API/tasks/$NT_A/links -d "{\"targetId\":\"$NT_B\",\"linkType\":\"FS\"}"
+chk "任務被指向 → 負責人收到 TASK_LINKED" "$(KIND "$TOK" TASK_LINKED)" "1"
+
+# 別人的通知碰不得
+NID=$(curl -s -H "Authorization: Bearer $JT" $API/notifications \
+  | python3 -c 'import sys,json;d=json.load(sys.stdin)["items"];print(d[0]["id"] if d else "")')
+C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST $API/notifications/$NID/read)
+chk "標記別人的通知已讀 → 404" "$C" "404"
 
 echo
 echo "════════ 通過 $pass 項，失敗 $fail 項 ════════"

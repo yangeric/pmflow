@@ -66,6 +66,9 @@ export async function assertNotDescendant(
  *
  * 關鍵：階層邊（parent → child）與依賴邊要**一起**看。
  * 只檢查依賴邊的話，「A 是 B 的父任務，同時 B 又前置於 A」這種混合環會漏掉。
+ *
+ * 判準：加上 source → target 之後會不會成環，等同於「現在是否已經有一條
+ * target → … → source 的路徑」。所以從 target 起步往下走，走得到 source 就是環。
  */
 export async function assertNoCycle(
   tx: Db, sourceId: string, targetId: string
@@ -80,8 +83,9 @@ export async function assertNoCycle(
       SELECT id AS from_id, parent_id AS to_id
       FROM task WHERE parent_id IS NOT NULL AND deleted_at IS NULL
       UNION ALL
-      -- 準備新增的這條邊
-      SELECT ${targetId}::uuid, ${sourceId}::uuid
+      -- 準備新增的這條邊。方向要跟上面兩種一致（source → target），
+      -- 寫反的話從 target 起步第一步就走回 source，任何一條依賴都會被判成環。
+      SELECT ${sourceId}::uuid, ${targetId}::uuid
     ),
     walk AS (
       SELECT ${targetId}::uuid AS node, ARRAY[${targetId}::uuid] AS path, 0 AS depth
