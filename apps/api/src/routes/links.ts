@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import { authenticate, requireTaskAccess } from '../lib/auth.js'
 import { assertNoCycle, isScheduling, SYMMETRIC } from '../lib/graph.js'
+import { notify } from '../lib/notify.js'
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 
 const createBody = z.object({
@@ -56,6 +57,33 @@ export default async function linkRoutes(app: FastifyInstance) {
                VALUES (${src.workspaceId}, ${sourceId}, 'LINK_CHANGE', ${user.id},
                        ${user.displayName},
                        ${sql.json({ action: 'add', linkType: b.linkType, targetId })})`
+
+      // ── 通知被指向的那一端 ──
+      //
+      // 用 b.targetId 而不是上面算過的 targetId：對稱型關聯會依字典序把兩端對調，
+      // 那是儲存細節。使用者的認知是「我把 A 指到了 B」，該被通知的一直是 B 的負責人。
+      const [pointed] = await tx<{
+        assignee_id: string | null; project_id: string
+      }[]>`
+        SELECT assignee_id, project_id FROM task WHERE id = ${b.targetId}`
+      if (pointed?.assignee_id) {
+        const [from] = await tx<{ ref: string; title: string }[]>`
+          SELECT p.key || '-' || t.number AS ref, t.title
+          FROM task t JOIN project p ON p.id = t.project_id
+          WHERE t.id = ${req.params.id}`
+        await notify({
+          db: tx,
+          workspaceId: src.workspaceId,
+          userId: pointed.assignee_id,
+          kind: 'TASK_LINKED',
+          actorId: user.id,
+          actorName: user.displayName,
+          projectId: pointed.project_id,
+          taskId: b.targetId,
+          // 前端要能講出「要等 MRG-3 完成，我才能開始」，所以連對方的代號一起存下來
+          body: { linkType: b.linkType, otherRef: from?.ref, otherTitle: from?.title },
+        })
+      }
       return l
     })
 

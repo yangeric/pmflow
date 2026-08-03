@@ -4,6 +4,7 @@ import { sql } from '../lib/db.js'
 import {
   authenticate, requireProjectCreator, requireProjectRole, requireWorkspaceMember,
 } from '../lib/auth.js'
+import { notify } from '../lib/notify.js'
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 
 /**
@@ -132,6 +133,13 @@ export default async function memberRoutes(app: FastifyInstance) {
         SET status = 'APPROVED', decided_by = ${user.id}, decided_at = now(),
             decided_note = '已由建立者直接加入'
         WHERE project_id = ${req.params.id} AND user_id = ${body.userId} AND status = 'PENDING'`
+
+      // 被直接加進來的人不會知道自己多了一個專案，這一則就是他唯一的線索
+      await notify({
+        db: tx, workspaceId, userId: body.userId,
+        kind: 'JOIN_APPROVED', actorId: user.id, actorName: user.displayName,
+        projectId: req.params.id, body: { role: body.role, direct: true },
+      })
     })
     return reply.code(201).send({ ok: true })
   })
@@ -179,8 +187,10 @@ export default async function memberRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     const body = applyBody.parse(req.body)
 
-    const [p] = await sql<{ workspace_id: string; archived_at: string | null }[]>`
-      SELECT workspace_id, archived_at FROM project WHERE id = ${req.params.id}`
+    const [p] = await sql<{
+      workspace_id: string; archived_at: string | null; created_by: string | null
+    }[]>`
+      SELECT workspace_id, archived_at, created_by FROM project WHERE id = ${req.params.id}`
     if (!p) throw notFound('找不到專案')
     if (p.archived_at) throw badRequest('這個專案已封存，不能申請加入')
     await requireWorkspaceMember(user.id, p.workspace_id)
@@ -200,6 +210,14 @@ export default async function memberRoutes(app: FastifyInstance) {
       INSERT INTO project_join_request (project_id, user_id, message)
       VALUES (${req.params.id}, ${user.id}, ${body.message ?? null})
       RETURNING id, status, created_at AS "createdAt"`
+
+    // 創立者得知道有人在敲門。「成員」頁籤上的紅點只有進到那個專案才看得到，
+    // 而會來申請的多半是創立者近期沒在看的專案。
+    await notify({
+      db: sql, workspaceId: p.workspace_id, userId: p.created_by,
+      kind: 'JOIN_REQUESTED', actorId: user.id, actorName: user.displayName,
+      projectId: req.params.id, body: { message: body.message ?? null },
+    })
     return reply.code(201).send(row)
   })
 
@@ -235,7 +253,7 @@ export default async function memberRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string; reqId: string } }>(
     '/projects/:id/join-requests/:reqId/approve', async req => {
       const user = await authenticate(req)
-      await requireProjectCreator(user.id, req.params.id)
+      const { workspaceId } = await requireProjectCreator(user.id, req.params.id)
       const body = decideBody.parse(req.body ?? {})
 
       return sql.begin(async tx => {
@@ -257,6 +275,12 @@ export default async function memberRoutes(app: FastifyInstance) {
           SET status = 'APPROVED', decided_by = ${user.id}, decided_at = now(),
               decided_note = ${body.note ?? null}
           WHERE id = ${req.params.reqId}`
+
+        await notify({
+          db: tx, workspaceId, userId: r.user_id,
+          kind: 'JOIN_APPROVED', actorId: user.id, actorName: user.displayName,
+          projectId: req.params.id, body: { role: body.role, note: body.note ?? null },
+        })
         return { ok: true, role: body.role }
       })
     })

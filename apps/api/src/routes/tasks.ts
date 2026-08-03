@@ -5,6 +5,7 @@ import { authenticate, requireProjectRole, requireTaskAccess } from '../lib/auth
 import { rankBetween } from '../lib/rank.js'
 import { rebuildClosure, assertNotDescendant } from '../lib/graph.js'
 import { schedule, type SchedTask, type SchedLink } from '../lib/schedule.js'
+import { notify } from '../lib/notify.js'
 import { badRequest, notFound } from '../lib/errors.js'
 
 const TASK_COLUMNS = sql`
@@ -110,6 +111,13 @@ export default async function taskRoutes(app: FastifyInstance) {
       await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
                VALUES (${workspaceId}, ${t.id}, 'CREATED', ${user.id}, ${user.displayName},
                        ${sql.json({ title: body.title })})`
+
+      // 建立時就填了負責人，對那個人來說跟事後被指派是同一件事
+      await notify({
+        db: tx, workspaceId, userId: body.assigneeId,
+        kind: 'TASK_ASSIGNED', actorId: user.id, actorName: user.displayName,
+        projectId: req.params.id, taskId: t.id,
+      })
       return t
     })
 
@@ -165,11 +173,16 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 更新任務 ─────────────────────────────────────────
   app.patch<{ Params: { id: string } }>('/tasks/:id', async req => {
     const user = await authenticate(req)
-    const { workspaceId } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { workspaceId, projectId } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
     const b = patchBody.parse(req.body)
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
+
+      // 舊的負責人要在 UPDATE 之前讀，不然就分不出「換人」和「本來就是他」——
+      // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看
+      const [before] = await tx<{ assignee_id: string | null }[]>`
+        SELECT assignee_id FROM task WHERE id = ${req.params.id}`
 
       await tx`
         UPDATE task SET
@@ -193,6 +206,14 @@ export default async function taskRoutes(app: FastifyInstance) {
       await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
                VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
                        ${user.id}, ${user.displayName}, ${sql.json(b as Record<string, never>)})`
+
+      if (b.assigneeId !== undefined && b.assigneeId !== before?.assignee_id) {
+        await notify({
+          db: tx, workspaceId, userId: b.assigneeId,
+          kind: 'TASK_ASSIGNED', actorId: user.id, actorName: user.displayName,
+          projectId, taskId: req.params.id,
+        })
+      }
     })
 
     return loadTask(req.params.id)
