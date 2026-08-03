@@ -130,6 +130,13 @@ type TaskNodeData = {
   isEpic: boolean
   /** 框裡直接放著幾張任務。0＝不是框 */
   childCount: number
+  /**
+   * 在框裡面，而且沒有任何同框的上游 —— 這一包從這幾張開始。
+   *
+   * 一支箭頭指進框，意思是「這一整包要等」，實際被擋住的就是這幾張。
+   * 不標出來的話，框裡有好幾個起點時會看不出來要從哪裡下手。
+   */
+  isEntry: boolean
   isMilestone: boolean
   dimmed: boolean
   focused: boolean
@@ -202,6 +209,11 @@ const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
   { label: '⇉ 並行', className: 'text-teal-700',
     text: '期間重疊、彼此沒有先後，可以同時派不同的人做。\n' +
           '預設不顯示，要在上面的「並行」打勾。' },
+  { label: '起點', className: 'text-emerald-700',
+    text: '這一包從這幾張開始 —— 框裡沒有任何任務排在它前面。\n' +
+          '一包可以有好幾個起點，它們是同時可以動手的。\n' +
+          '要讓整包等別的任務，把線拉到「框」上就好，\n' +
+          '不必一張一張連 —— 擋住框就等於擋住裡面所有起點。' },
   { label: '內含 N 張', className: 'text-violet-700',
     text: '框的標題列上寫的數字＝這個框裡直接放著幾張任務。\n' +
           '框的日期與進度由裡面那些任務彙總出來。' },
@@ -260,6 +272,10 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
               title="這個框裡直接放著幾張任務。框的日期與進度由裡面那些任務彙總出來">
           內含 {data.childCount} 張
         </span>
+        {data.isEntry && (
+          <span className={BADGE + ' bg-emerald-50 font-medium text-emerald-700'}
+                title="這一包的起點：外層框裡沒有任何任務排在它前面">起點</span>
+        )}
         {data.kin && (
           <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
                 title={data.kin === 'parent'
@@ -313,6 +329,12 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
                     ? '這是選中任務的上層大項目，兩者之間沒有依賴關係'
                     : '這是選中任務底下的任務，兩者之間沒有依賴關係'}>
               {data.kin === 'parent' ? '這張的上層' : '這張的下層'}
+            </span>
+          )}
+          {data.isEntry && (
+            <span className={BADGE + ' bg-emerald-50 font-medium text-emerald-700'}
+                  title="這一包的起點：框裡沒有任何任務排在它前面。指進框的依賴擋住的就是這幾張">
+              起點
             </span>
           )}
           {data.isEpic && (
@@ -467,6 +489,8 @@ type LayoutResult = {
   boxes: Set<string>
   /** 框裡直接放著幾張任務 */
   childCount: Map<string, number>
+  /** 框裡面沒有同框上游的任務＝這一包的起點 */
+  entries: Set<string>
 }
 
 function layout(
@@ -683,7 +707,20 @@ function layout(
   const childCount = new Map<string, number>()
   for (const id of boxes) childCount.set(id, (kidsOf.get(id) ?? []).length)
 
-  return { rel, size, abs, boxes, childCount }
+  // 框裡的起點：同一個框底下，沒有任何一條排程依賴指向它。
+  // 只算同框的上游 —— 從框外面指進來的線本來就是擋住整包，不影響誰是起點。
+  const entries = new Set<string>()
+  for (const [parent, kids] of kidsOf) {
+    if (!parent || kids.length < 2) continue
+    const inBox = new Set(kids)
+    const hasUpstream = new Set<string>()
+    for (const e of usable) {
+      if (inBox.has(e.sourceId) && inBox.has(e.targetId)) hasUpstream.add(e.targetId)
+    }
+    for (const k of kids) if (!hasUpstream.has(k)) entries.add(k)
+  }
+
+  return { rel, size, abs, boxes, childCount, entries }
 }
 
 export default function GraphView(props: {
@@ -870,6 +907,7 @@ function GraphCanvas({
           inquiryState: n.inquiryState,
           isEpic: isBox,
           childCount: L.childCount.get(n.id) ?? 0,
+          isEntry: L.entries.has(n.id),
           isMilestone: n.type === 'MILESTONE',
           dimmed: false,
           focused: false,
@@ -1563,35 +1601,15 @@ function GraphCanvas({
  */
 function LegendBar() {
   /**
-   * 點開的那一則說明。
+   * 滑到哪一項就顯示哪一項的說明，移開就收。
    *
-   * 每一項的說明本來只掛在 `title` 上，游標要停著不動一秒才會出現，
-   * 而且在觸控螢幕上根本叫不出來。點一下就在那一項的正上方跳出同一段文字，
-   * 長相跟系統的提示框一樣（深色小方框），再點一次或點別的地方收起來。
-   * 刻意不做成橫跨整列的長條 —— 那看起來像另一塊面板，不像「這一項的說明」。
+   * 不用瀏覽器原生的 `title`：它要停住不動一秒才出現、樣子不能控制。
+   * 自己畫一個深色小方框，貼在那一項的正上方 —— 刻意不做成橫跨整列的長條，
+   * 那看起來像另一塊面板，不像「這一項的說明」。
    */
-  const [tip, setTip] = useState<
-    { label: string; text: string; x: number; pinned: boolean } | null
-  >(null)
+  const [tip, setTip] = useState<{ label: string; text: string; x: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (!tip) return
-    const close = (e: MouseEvent) => {
-      if (!barRef.current?.contains(e.target as globalThis.Node)) setTip(null)
-    }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setTip(null) }
-    document.addEventListener('mousedown', close)
-    document.addEventListener('keydown', esc)
-    // 點開的說明看完就該自己消失 —— 沒有人想為了看一句話再回去按一次關閉。
-    // 滑過去顯示的那種本來就會在移開時收掉，不用計時。
-    const timer = tip.pinned ? window.setTimeout(() => setTip(null), 6000) : undefined
-    return () => {
-      document.removeEventListener('mousedown', close)
-      document.removeEventListener('keydown', esc)
-      if (timer) window.clearTimeout(timer)
-    }
-  }, [tip])
 
   /**
    * 提示框對齊被指到的那一項，所以要記下它在列上的水平位置。
@@ -1600,22 +1618,22 @@ function LegendBar() {
    * 要再點一次或點別的地方才關。同一個框兩種用法，不用瀏覽器原生的 title ——
    * 原生的要停住不動一秒才出現，而且觸控螢幕根本叫不出來。
    */
-  const at = (e: ReactMouseEvent<HTMLElement>) => {
+  /** 提示框最寬到這裡。要先知道寬度才算得出「貼齊邊界」該放哪 */
+  const TIP_W = 560
+
+  const hover = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
+    // 位置要在呼叫 setTip 之前算好。放進 updater 裡的話 React 可能晚一點才執行它，
+    // 那時 event.currentTarget 已經被清成 null。
     const bar = barRef.current?.getBoundingClientRect()
     const item = e.currentTarget.getBoundingClientRect()
-    return bar ? item.left + item.width / 2 - bar.left : 0
+    if (!bar) return
+    // 對齊那一項的中心，但整個框要留在說明列的範圍內 ——
+    // 靠最左邊的項目（緊鄰「操作說明」那一格）不夾住的話，提示框會有一半跑到框外面
+    const centre = item.left + item.width / 2 - bar.left
+    const x = Math.min(Math.max(8, centre - TIP_W / 2), Math.max(8, bar.width - TIP_W - 8))
+    setTip({ label, text, x })
   }
-  const hover = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
-    // 位置一定要在呼叫 setTip 之前算好。放進 updater 裡的話 React 可能晚一點才執行它，
-    // 那時 event.currentTarget 已經被清成 null，整個元件就炸了。
-    const x = at(e)
-    setTip(t => (t?.pinned ? t : { label, text, x, pinned: false }))
-  }
-  const unhover = () => setTip(t => (t?.pinned ? t : null))
-  const show = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
-    const x = at(e)
-    setTip(t => (t?.pinned && t.label === label ? null : { label, text, x, pinned: true }))
-  }
+  const unhover = () => setTip(null)
 
   return (
     <div ref={barRef}
@@ -1623,17 +1641,13 @@ function LegendBar() {
                     text-[11px] text-slate-500">
       {tip && (
         <div
-          className="pointer-events-none absolute bottom-full z-20 mb-1 w-max max-w-sm
-                     -translate-x-1/2 rounded-md bg-slate-800 px-2.5 py-1.5 text-[11px]
+          className="pointer-events-none absolute bottom-full z-20 mb-1 w-max
+                     whitespace-pre rounded-md bg-slate-800 px-3 py-2 text-[11px]
                      leading-5 text-white shadow-lg"
-          /* 貼齊左右邊界：靠最左或最右的項目，置中之後會有一半跑到列外面 */
-          style={{ left: `clamp(0.5rem, ${tip.x}px, calc(100% - 0.5rem))` }}
+          style={{ left: tip.x, maxWidth: TIP_W }}
           role="tooltip">
-          <div className="font-medium text-white">
-            {tip.label}
-            {tip.pinned && <span className="ml-2 text-[10px] text-slate-400">會自動關閉</span>}
-          </div>
-          <div className="whitespace-pre-wrap text-slate-200">{tip.text}</div>
+          <div className="font-medium text-white">{tip.label}</div>
+          <div className="text-slate-200">{tip.text}</div>
         </div>
       )}
       {/* 「操作說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
@@ -1644,8 +1658,7 @@ function LegendBar() {
           className="cursor-help rounded bg-slate-100 px-2 py-1 font-medium text-slate-600
                      hover:bg-slate-200"
           onMouseEnter={hover('怎麼操作', OPERATION_HELP)}
-          onMouseLeave={unhover}
-          onClick={show('怎麼操作', OPERATION_HELP)}>操作說明</span>
+          onMouseLeave={unhover}>操作說明</span>
       </div>
 
       {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
@@ -1654,24 +1667,20 @@ function LegendBar() {
         {SCHEDULING.map(t => (
           <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
                       onMouseEnter={hover(LINK_CHIP[t], SCHEDULING_HELP[t])}
-                      onMouseLeave={unhover}
-                      onClick={show(LINK_CHIP[t], SCHEDULING_HELP[t])} />
+                      onMouseLeave={unhover} />
         ))}
         <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label="語意關聯"
                     onMouseEnter={hover('語意關聯', SEMANTIC_HELP)}
-                    onMouseLeave={unhover}
-                    onClick={show('語意關聯', SEMANTIC_HELP)} />
+                    onMouseLeave={unhover} />
         {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
         <button type="button"
                 onMouseEnter={hover('大項目的框', BOX_HELP)} onMouseLeave={unhover}
-                onClick={show('大項目的框', BOX_HELP)}
                 className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
           <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50" />
           大項目的框
         </button>
         <button type="button"
                 onMouseEnter={hover('匯合點', JUNCTION_HELP)} onMouseLeave={unhover}
-                onClick={show('匯合點', JUNCTION_HELP)}
                 className="flex shrink-0 cursor-help items-center gap-1 hover:text-slate-800">
           <span className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: SCHEDULING_COLOR.SS }} />
@@ -1684,16 +1693,14 @@ function LegendBar() {
       <LegendRowStrip label="圖示">
         {ICON_HELP.map(h => (
           <LegendChip key={h.label} className={h.className}
-                      onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}
-                      onClick={show(h.label, h.text)}>
+                      onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}>
             {h.label}
           </LegendChip>
         ))}
         {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
           <LegendChip key={st}
                       onMouseEnter={hover(INQUIRY_META[st].label, INQUIRY_HELP[st])}
-                      onMouseLeave={unhover}
-                      onClick={show(INQUIRY_META[st].label, INQUIRY_HELP[st])}>
+                      onMouseLeave={unhover}>
             {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
           </LegendChip>
         ))}

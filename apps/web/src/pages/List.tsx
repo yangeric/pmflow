@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
-import type { Task, TaskStatus } from '../lib/api'
-import { InquiryBadge, Empty, cx } from '../components/ui'
+import { Fragment, useMemo, useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Api, type Task, type TaskStatus } from '../lib/api'
+import { InquiryBadge, Empty, Input, cx } from '../components/ui'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 
 const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
@@ -11,15 +12,57 @@ const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
 
 /** 清單／樹狀視圖：依 parentId 展開階層（上下關聯） */
 export default function ListView({
-  tasks, statuses, onOpen,
+  projectId, tasks, statuses, onOpen, parentForNew,
 }: {
+  projectId: string
   tasks: Task[]; statuses: TaskStatus[]; onOpen: (id: string) => void
+  /** 側欄選了大項目時，最下面那一列新增的任務要掛在它底下 */
+  parentForNew?: string | null
 }) {
+  const qc = useQueryClient()
   const statusName = useMemo(
     () => Object.fromEntries(statuses.map(s => [s.key, s])), [statuses])
 
+  /**
+   * 正在替哪一張任務加子任務。
+   *
+   * 原本要新增子任務只有右上角那一個輸入框，而且它加出來的是「跟目前篩選同一層」的任務 ——
+   * 想掛在某一張底下得先選那個大項目、或事後再拖一次。在清單上每一列直接給一個入口，
+   * 才對得上使用者的動作：他人就停在那一列上。
+   */
+  const [addingTo, setAddingTo] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
+
+  /** 最下面那一列：新增跟目前這一層同級的任務 */
+  const [addingTop, setAddingTop] = useState(false)
+  const [topTitle, setTopTitle] = useState('')
+
+  /**
+   * 狀態直接在清單上改。
+   *
+   * 本來要改狀態得先點開那一張任務，或去看板拖 —— 但清單正是「一次看一整排」的地方，
+   * 逐張點開等於把最順手的動作變成最慢的。
+   */
+  const setStatus = useMutation({
+    mutationFn: (v: { id: string; statusKey: string }) =>
+      Api.patchTask(v.id, { statusKey: v.statusKey }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks', projectId] }),
+  })
+
+  const create = useMutation({
+    mutationFn: (v: { parentId: string | null; title: string }) =>
+      Api.createTask(projectId, { title: v.title, parentId: v.parentId }),
+    onSuccess: () => {
+      setTitle('')
+      setTopTitle('')
+      qc.invalidateQueries({ queryKey: ['tasks', projectId] })
+      // 不關掉輸入框：一次要加好幾張子任務是常態，關掉的話每一張都要重點一次
+    },
+  })
+
   // 大項目的進度／起迄日由子任務彙總，不直接顯示資料庫存的值
   const rolled = useMemo(() => rollup(tasks), [tasks])
+  const parent = parentForNew ? tasks.find(t => t.id === parentForNew) : undefined
 
   // 依階層排序：父任務後面緊接自己的子樹
   const ordered = useMemo(() => {
@@ -44,7 +87,10 @@ export default function ListView({
     return out
   }, [tasks])
 
-  if (!ordered.length) return <Empty>這個專案還沒有任務。按右上角「＋ 新增任務」開始。</Empty>
+  const newTop = () => {
+    if (!topTitle.trim()) return
+    create.mutate({ parentId: parentForNew ?? null, title: topTitle.trim() })
+  }
 
   return (
     <div className="overflow-auto p-4">
@@ -52,7 +98,8 @@ export default function ListView({
         <thead>
           <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500">
             <th className="px-3 py-2">任務</th>
-            <th className="w-24 px-3 py-2">狀態</th>
+            <th className="w-32 px-3 py-2">負責人</th>
+            <th className="w-28 px-3 py-2">狀態</th>
             <th className="w-32 px-3 py-2">發文追蹤</th>
             <th className="w-24 px-3 py-2">開始</th>
             <th className="w-24 px-3 py-2">結束</th>
@@ -68,8 +115,9 @@ export default function ListView({
             const dueDate = r?.dueDate ?? t.dueDate
             const overdue = isTaskOverdue(dueDate, progress)
             return (
-              <tr key={t.id} onClick={() => onOpen(t.id)}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
+              <Fragment key={t.id}>
+              <tr onClick={() => onOpen(t.id)}
+                  className="group cursor-pointer border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
                     {t.depth > 0 && <span className="select-none text-slate-300">└</span>}
@@ -83,12 +131,56 @@ export default function ListView({
                     <span className={cx(t.type === 'EPIC' ? 'font-medium text-slate-900' : 'text-slate-800')}>
                       {t.title}
                     </span>
+                    {/* 一直看得到。藏在 hover 底下的話，等於還是只有右上角那一個入口 ——
+                        找得到才叫入口，顏色淡一點就不會吵 */}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation()          // 不要順便把任務打開
+                        setAddingTo(id => (id === t.id ? null : t.id))
+                        setTitle('')
+                      }}
+                      title={`在「${t.title}」底下新增子任務`}
+                      className={cx(
+                        'ml-1 shrink-0 rounded px-1.5 py-0.5 text-[11px] transition-colors',
+                        addingTo === t.id
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'text-slate-300 hover:bg-slate-200 hover:text-slate-700'
+                      )}>
+                      ＋ 子任務
+                    </button>
                   </div>
                 </td>
                 <td className="px-3 py-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs text-slate-600">
-                    <span className="h-2 w-2 rounded-full" style={{ background: st?.color ?? '#cbd5e1' }} />
-                    {st?.name ?? t.statusKey}
+                  {t.assigneeName ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"
+                          title={t.assigneeName}>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center
+                                       rounded-full bg-slate-200 text-[10px] font-medium text-slate-600">
+                        {initial(t.assigneeName)}
+                      </span>
+                      <span className="truncate">{t.assigneeName}</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-300">未指派</span>
+                  )}
+                </td>
+                {/* 點在下拉上不要順便把任務打開 */}
+                <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 shrink-0 rounded-full"
+                          style={{ background: st?.color ?? '#cbd5e1' }} />
+                    <select
+                      value={t.statusKey}
+                      disabled={setStatus.isPending}
+                      onChange={e => setStatus.mutate({ id: t.id, statusKey: e.target.value })}
+                      className="-ml-0.5 cursor-pointer rounded border border-transparent bg-transparent
+                                 py-0.5 pl-1 pr-5 text-xs text-slate-600
+                                 hover:border-slate-300 hover:bg-white
+                                 focus:border-blue-500 focus:bg-white focus:outline-none">
+                      {statuses.map(s => (
+                        <option key={s.key} value={s.key}>{s.name}</option>
+                      ))}
+                    </select>
                   </span>
                 </td>
                 <td className="px-3 py-2"><InquiryBadge state={t.inquiryState} /></td>
@@ -112,12 +204,84 @@ export default function ListView({
                   </span>
                 </td>
               </tr>
+
+              {addingTo === t.id && (
+                <tr className="border-t border-slate-100 bg-slate-50">
+                  <td colSpan={7} className="px-3 py-2">
+                    <div className="flex items-center gap-2"
+                         style={{ paddingLeft: (t.depth + 1) * 20 }}>
+                      <span className="select-none text-slate-300">└</span>
+                      <Input
+                        autoFocus
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && title.trim()) {
+                            create.mutate({ parentId: t.id, title: title.trim() })
+                          }
+                          if (e.key === 'Escape') { setAddingTo(null); setTitle('') }
+                        }}
+                        placeholder={`在「${t.title}」底下新增，按 Enter 建立`}
+                        className="max-w-md"
+                      />
+                      <button onClick={() => { setAddingTo(null); setTitle('') }}
+                              className="text-xs text-slate-400 hover:text-slate-600">取消</button>
+                      <span className="text-xs text-slate-400">
+                        建立後輸入框會留著，可以連續加好幾張
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             )
           })}
         </tbody>
+
+        {/* 新增任務的入口就放在清單最後 —— 東西加在哪裡，入口就在哪裡。
+            上面每一列的「＋ 子任務」加的是那一張底下的，這裡加的是同一層的 */}
+        <tfoot>
+          <tr className="border-t border-slate-100">
+            <td colSpan={7} className="px-3 py-2">
+              {addingTop ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    autoFocus
+                    value={topTitle}
+                    onChange={e => setTopTitle(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') newTop()
+                      if (e.key === 'Escape') { setAddingTop(false); setTopTitle('') }
+                    }}
+                    placeholder={parent ? `在「${parent.title}」底下新增，按 Enter 建立`
+                                        : '輸入標題後按 Enter 新增任務'}
+                    className="max-w-md"
+                  />
+                  <button onClick={() => { setAddingTop(false); setTopTitle('') }}
+                          className="text-xs text-slate-400 hover:text-slate-600">取消</button>
+                  <span className="text-xs text-slate-400">
+                    建立後輸入框會留著，可以連續加好幾張
+                  </span>
+                </div>
+              ) : (
+                <button onClick={() => { setAddingTop(true); setTopTitle('') }}
+                        className="rounded px-1.5 py-0.5 text-sm text-slate-400
+                                   hover:bg-slate-100 hover:text-slate-700">
+                  ＋ 新增任務
+                </button>
+              )}
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
+}
+
+/** 頭像上的字：中文取最後一個字（名），英文取第一個字母 */
+const initial = (name: string) => {
+  const t = name.trim()
+  return /[A-Za-z]/.test(t[0] ?? '') ? t[0].toUpperCase() : t.slice(-1)
 }
 
 const fmt = (d: string | null) => (d ? d.slice(0, 10).replaceAll('-', '/').slice(5) : '—')

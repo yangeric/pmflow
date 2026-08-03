@@ -18,6 +18,7 @@ import { Button, Input, cx } from './ui'
 export function EpicSidebar({
   project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
   onSwitchProject, onInquiryBoard, inquiryActive, overdueTotal,
+  onMembers, membersActive, pendingJoins,
   userName, onLogout, onAccount, bell,
 }: {
   project?: Project
@@ -32,6 +33,11 @@ export function EpicSidebar({
   onSwitchProject: () => void
   onInquiryBoard: () => void
   inquiryActive: boolean
+  /** 成員管理。不放在任務視圖那一排頁籤 —— 它是專案的設定，不是另一種看任務的方式 */
+  onMembers: () => void
+  membersActive: boolean
+  /** 待審的加入申請數。沒有通知信，有人敲門就只靠這個數字被看見 */
+  pendingJoins: number
   overdueTotal: number
   userName: string
   onLogout: () => void
@@ -144,6 +150,21 @@ export function EpicSidebar({
         {overdueTotal > 0 && (
           <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700">
             {overdueTotal}
+          </span>
+        )}
+      </button>
+
+      <button onClick={onMembers}
+              className={cx(
+                'mx-2 mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm',
+                membersActive
+                  ? 'bg-blue-50 font-medium text-blue-700'
+                  : 'text-slate-600 hover:bg-slate-50'
+              )}>
+        <span>👥</span> 成員
+        {pendingJoins > 0 && (
+          <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+            {pendingJoins}
           </span>
         )}
       </button>

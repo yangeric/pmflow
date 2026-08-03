@@ -1,8 +1,8 @@
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Api, type AppNotification, type Task } from './lib/api'
 import { useAuth } from './lib/auth'
-import { Button, Input, Spinner, cx } from './components/ui'
+import { Button, Spinner, cx } from './components/ui'
 import { TaskDrawer } from './components/TaskDrawer'
 import { EpicSidebar } from './components/EpicSidebar'
 import { NotificationBell } from './components/NotificationBell'
@@ -35,8 +35,8 @@ const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'calendar', label: '行事曆' },
   { key: 'gantt', label: '甘特圖' },
   { key: 'graph', label: '關聯圖' },
-  // 成員不是任務視圖，但放同一排頁籤最好找 —— 而且待審申請的紅點要有地方掛
-  { key: 'members', label: '成員' },
+  // 成員刻意不放在這一排。這排是「同一批任務的不同看法」，
+  // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口移到側欄。
 ]
 
 export default function App() {
@@ -206,8 +206,6 @@ function ProjectWorkspace({
   /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
   bell: ReactNode
 }) {
-  const qc = useQueryClient()
-  const [newTitle, setNewTitle] = useState('')
   /** 側欄選中的大項目；null＝不篩選 */
   const [epicId, setEpicId] = useState<string | null>(null)
 
@@ -242,16 +240,6 @@ function ProjectWorkspace({
 
   const epic = epicId ? tasks.find(t => t.id === epicId) : undefined
 
-  const create = useMutation({
-    // 篩在某個大項目底下時，新任務直接掛進去，不用再手動搬
-    mutationFn: (title: string) =>
-      Api.createTask(projectId, epicId ? { title, parentId: epicId } : { title }),
-    onSuccess: () => {
-      setNewTitle('')
-      qc.invalidateQueries({ queryKey: ['tasks', projectId] })
-    },
-  })
-
   const overdue = visible.filter(t => t.inquiryState === 'OVERDUE').length
 
   return (
@@ -270,6 +258,9 @@ function ProjectWorkspace({
         onSwitchProject={onSwitchProject}
         onInquiryBoard={() => setView('inquiry')}
         inquiryActive={view === 'inquiry'}
+        onMembers={() => { setView('members'); setOpenTask(null) }}
+        membersActive={view === 'members'}
+        pendingJoins={pendingJoins}
         overdueTotal={totalOverdue}
         userName={userName}
         onLogout={onLogout}
@@ -344,19 +335,6 @@ function ProjectWorkspace({
                     ⚠️ {overdue} 張任務有單位逾期未回
                   </span>
                 )}
-                <div className="ml-auto flex items-center gap-2">
-                  <Input
-                    value={newTitle}
-                    onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && newTitle.trim()) create.mutate(newTitle.trim())
-                    }}
-                    placeholder={epic ? `新增到「${epic.title}」底下` : '輸入標題後按 Enter 新增任務'}
-                    className="w-64"
-                  />
-                  <Button variant="primary" disabled={!newTitle.trim() || create.isPending}
-                          onClick={() => create.mutate(newTitle.trim())}>＋ 新增任務</Button>
-                </div>
               </div>
               <nav className="flex gap-1 px-3 pt-2">
                 {VIEWS.map(v => (
@@ -369,12 +347,6 @@ function ProjectWorkspace({
                               : 'text-slate-500 hover:text-slate-700'
                           )}>
                     {v.label}
-                    {/* 沒有通知信，有人敲門就只靠這個紅點被看見 */}
-                    {v.key === 'members' && pendingJoins > 0 && (
-                      <span className="rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                        {pendingJoins}
-                      </span>
-                    )}
                   </button>
                 ))}
               </nav>
@@ -395,7 +367,8 @@ function ProjectWorkspace({
               ) : (
                 <>
                   {view === 'list' && (
-                    <ListView tasks={visible} statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+                    <ListView projectId={projectId} tasks={visible} parentForNew={epicId}
+                              statuses={project?.statuses ?? []} onOpen={setOpenTask} />
                   )}
                   {view === 'board' && (
                     <Board projectId={projectId} tasks={visible}
