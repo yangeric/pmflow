@@ -1,5 +1,10 @@
 # PMFlow 架構圖
 
+> ⚠️ **這份是最早的設計稿，已經跟實作對不起來。** 下面寫的 Spring Boot / Java 21 / JPA /
+> Flyway / Valkey / STOMP 都沒有真的做；實際跑的是 Fastify + TypeScript + postgres.js。
+> **要找「改東西該去哪個檔」請看 [`CODEMAP.md`](./CODEMAP.md)**，那份是照著程式碼寫的。
+> 這份留著是為了記錄當初的目標形狀。
+
 > 搭配 `SPEC.md` 閱讀。所有圖以 Mermaid 撰寫，GitHub / GitLab / VS Code 皆可直接渲染。
 
 ---
