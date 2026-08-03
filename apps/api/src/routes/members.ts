@@ -97,6 +97,7 @@ export default async function memberRoutes(app: FastifyInstance) {
 
     const members = await sql`
       SELECT u.id, u.display_name AS "displayName", u.email, pm.role,
+             (u.avatar_file IS NOT NULL) AS "hasAvatar",
              pm.joined_at AS "joinedAt"
       FROM project_member pm
       JOIN app_user u ON u.id = pm.user_id

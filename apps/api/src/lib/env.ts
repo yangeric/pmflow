@@ -37,4 +37,6 @@ export const env = {
   corsOrigin: req('PMFLOW_CORS_ORIGIN', 'http://localhost:5173'),
   inquiryDefaultDueDays: Number(req('PMFLOW_INQUIRY_DEFAULT_DUE_DAYS', '7')),
   seedDemo: req('PMFLOW_SEED_DEMO', 'true') !== 'false',
+  /** 上傳的檔案放這裡。容器把它掛成 volume，換版本不會把圖弄丟 */
+  attachmentsDir: req('PMFLOW_ATTACHMENTS_DIR', '/data/attachments'),
 }

@@ -4,6 +4,7 @@ import { sql } from '../lib/db.js'
 import {
   authenticate, hashPassword, verifyPassword, requireWorkspaceAdmin, type WorkspaceRole,
 } from '../lib/auth.js'
+import { saveAvatar, readAvatar, removeAvatar } from '../lib/avatar.js'
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 
 /**
@@ -61,10 +62,10 @@ export default async function accountRoutes(app: FastifyInstance) {
     const auth = await authenticate(req)
     const [row] = await sql<{
       id: string; email: string; displayName: string
-      locale: string; timezone: string; createdAt: string
+      locale: string; timezone: string; createdAt: string; avatarFile: string | null
     }[]>`
       SELECT id, email, display_name AS "displayName", locale, timezone,
-             created_at AS "createdAt"
+             created_at AS "createdAt", avatar_file AS "avatarFile"
       FROM app_user WHERE id = ${auth.id}`
     if (!row) throw notFound('找不到帳號')
 
@@ -74,6 +75,52 @@ export default async function accountRoutes(app: FastifyInstance) {
       WHERE wm.user_id = ${auth.id}
       ORDER BY w.created_at`
     return { user: row, workspaces }
+  })
+
+  // ── 頭像 ────────────────────────────────────────────
+  /**
+   * 上傳用 JSON 帶 data URL，不做 multipart（見 lib/avatar.ts 的說明）。
+   * 前端會先把圖縮成 256 見方再送，所以正常情況只有幾十 KB。
+   */
+  app.put('/me/avatar', async req => {
+    const auth = await authenticate(req)
+    const { image } = z.object({ image: z.string().min(1).max(4_000_000) }).parse(req.body)
+
+    const [old] = await sql<{ avatar_file: string | null }[]>`
+      SELECT avatar_file FROM app_user WHERE id = ${auth.id}`
+    const file = await saveAvatar(auth.id, image)
+    await sql`UPDATE app_user SET avatar_file = ${file} WHERE id = ${auth.id}`
+    await removeAvatar(old?.avatar_file ?? null)
+    return { avatarFile: file }
+  })
+
+  app.delete('/me/avatar', async (req, reply) => {
+    const auth = await authenticate(req)
+    const [old] = await sql<{ avatar_file: string | null }[]>`
+      SELECT avatar_file FROM app_user WHERE id = ${auth.id}`
+    await sql`UPDATE app_user SET avatar_file = NULL WHERE id = ${auth.id}`
+    await removeAvatar(old?.avatar_file ?? null)
+    return reply.code(204).send()
+  })
+
+  /**
+   * 讀別人的頭像。
+   *
+   * 只要是同一個工作區的成員就看得到 —— 頭像會出現在任務清單、成員頁、
+   * 通知裡，那些地方本來就看得到這個人的名字，頭像不比名字更私密。
+   * 快取一小時，但檔名帶時間戳，換過就是新網址，不會拿到舊圖。
+   */
+  app.get<{ Params: { id: string } }>('/users/:id/avatar', async (req, reply) => {
+    await authenticate(req)
+    const [row] = await sql<{ avatar_file: string | null }[]>`
+      SELECT avatar_file FROM app_user WHERE id = ${req.params.id}`
+    if (!row?.avatar_file) throw notFound('這個帳號沒有頭像')
+    const img = await readAvatar(row.avatar_file)
+    if (!img) throw notFound('找不到頭像檔')
+    return reply
+      .header('cache-control', 'private, max-age=3600')
+      .type(img.mime)
+      .send(img.body)
   })
 
   app.patch('/me/profile', async req => {

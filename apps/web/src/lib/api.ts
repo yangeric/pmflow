@@ -85,6 +85,8 @@ export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'GUEST'
 export interface MyProfile {
   id: string; email: string; displayName: string
   locale: string; timezone: string; createdAt: string
+  /** 檔名。有值代表有頭像，圖片本身走 GET /users/:id/avatar */
+  avatarFile: string | null
 }
 
 /** 管理者看到的帳號一覽 */
@@ -98,6 +100,7 @@ export interface AdminUser {
 export interface ProjectMember {
   id: string; displayName: string; email: string
   role: ProjectRole; joinedAt: string; isCreator: boolean
+  hasAvatar: boolean
 }
 
 /** 別人送來的加入申請（只有建立者看得到） */
@@ -155,6 +158,7 @@ export interface Task {
   type: 'TASK' | 'MILESTONE' | 'BUG' | 'EPIC'
   statusKey: string; priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   assigneeId: string | null; assigneeName: string | null
+  assigneeHasAvatar: boolean
   startDate: string | null; dueDate: string | null
   estimateHours: string | null; progress: number
   scheduleMode: 'AUTO' | 'MANUAL'; rank: string
@@ -258,6 +262,14 @@ export const Api = {
       '/me/profile', { method: 'PATCH', json }),
   changePassword: (json: { currentPassword: string; newPassword: string }) =>
     api('/me/password', { method: 'POST', json }),
+
+  /** 頭像用 data URL 上傳，前端會先縮到 256 見方（見 components/Avatar.tsx） */
+  uploadAvatar: (image: string) =>
+    api<{ avatarFile: string }>('/me/avatar', { method: 'PUT', json: { image } }),
+  removeAvatar: () => api('/me/avatar', { method: 'DELETE' }),
+  /** 頭像的網址。檔名帶時間戳，換過就是新網址，不會拿到快取的舊圖 */
+  avatarUrl: (userId: string, version?: string | null) =>
+    `/api/v1/users/${userId}/avatar${version ? `?v=${encodeURIComponent(version)}` : ''}`,
 
   // ── 工作區管理者：站台上的帳號 ──
   adminUsers: (workspaceId: string) =>
