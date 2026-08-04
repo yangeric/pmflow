@@ -4,11 +4,22 @@ import { sql } from '../lib/db.js'
 import { authenticate, requireProjectRole } from '../lib/auth.js'
 import { forbidden, notFound } from '../lib/errors.js'
 
+/**
+ * 新專案開出來就有的狀態欄。
+ *
+ * 「待驗收 → 驗證中 → 驗證完成」是三件不同的事：東西交出去等人來驗（沒人在動）、
+ * 有人正在驗、驗過了等收尾。全部擠在「待驗收」的話，看板上分不出
+ * 「還沒人動」跟「正在驗」，而那正是每天要追的差別。
+ *
+ * 驗證完成算 DONE —— 驗過了就不該再被算進「還沒做完」的數字裡。
+ */
 const DEFAULT_STATUSES = [
-  { key: 'todo',    name: '待辦',   category: 'TODO',   color: '#94a3b8', rank: 1000 },
-  { key: 'doing',   name: '進行中', category: 'ACTIVE', color: '#3178c6', rank: 2000 },
-  { key: 'review',  name: '待驗收', category: 'ACTIVE', color: '#e07b39', rank: 3000 },
-  { key: 'done',    name: '已完成', category: 'DONE',   color: '#2e8b57', rank: 4000 },
+  { key: 'todo',      name: '待辦',     category: 'TODO',   color: '#94a3b8', rank: 1000 },
+  { key: 'doing',     name: '進行中',   category: 'ACTIVE', color: '#3178c6', rank: 2000 },
+  { key: 'review',    name: '待驗收',   category: 'ACTIVE', color: '#e07b39', rank: 3000 },
+  { key: 'verifying', name: '驗證中',   category: 'ACTIVE', color: '#8b5cf6', rank: 3200 },
+  { key: 'verified',  name: '驗證完成', category: 'DONE',   color: '#0d9488', rank: 3500 },
+  { key: 'done',      name: '已完成',   category: 'DONE',   color: '#2e8b57', rank: 4000 },
 ]
 
 const createBody = z.object({

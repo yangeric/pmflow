@@ -4,10 +4,12 @@ import { rebuildClosure } from './lib/graph.js'
 import { recalcInquiryState, addWorkingDays, toISODate } from './lib/inquiry.js'
 
 const STATUSES = [
-  { key: 'todo',   name: '待辦',   category: 'TODO',   color: '#94a3b8', rank: 1000 },
-  { key: 'doing',  name: '進行中', category: 'ACTIVE', color: '#3178c6', rank: 2000 },
-  { key: 'review', name: '待驗收', category: 'ACTIVE', color: '#e07b39', rank: 3000 },
-  { key: 'done',   name: '已完成', category: 'DONE',   color: '#2e8b57', rank: 4000 },
+  { key: 'todo',      name: '待辦',     category: 'TODO',   color: '#94a3b8', rank: 1000 },
+  { key: 'doing',     name: '進行中',   category: 'ACTIVE', color: '#3178c6', rank: 2000 },
+  { key: 'review',    name: '待驗收',   category: 'ACTIVE', color: '#e07b39', rank: 3000 },
+  { key: 'verifying', name: '驗證中',   category: 'ACTIVE', color: '#8b5cf6', rank: 3200 },
+  { key: 'verified',  name: '驗證完成', category: 'DONE',   color: '#0d9488', rank: 3500 },
+  { key: 'done',      name: '已完成',   category: 'DONE',   color: '#2e8b57', rank: 4000 },
 ]
 
 const day = (offset: number) => {
