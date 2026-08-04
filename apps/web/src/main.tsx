@@ -2,8 +2,12 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './lib/auth'
+import { ThemeProvider, applyStoredTheme } from './lib/theme'
 import App from './App'
 import './index.css'
+
+// 在 React 掛載之前先套用，不然第一格畫面會閃一下白的
+applyStoredTheme()
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,9 +27,11 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>
 )

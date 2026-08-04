@@ -6,6 +6,7 @@ import { Button, Spinner, cx } from './components/ui'
 import { TaskDrawer } from './components/TaskDrawer'
 import { EpicSidebar } from './components/EpicSidebar'
 import { NotificationBell } from './components/NotificationBell'
+import { UserMenu } from './components/UserMenu'
 import Login from './pages/Login'
 import Board from './pages/Board'
 import ListView from './pages/List'
@@ -94,6 +95,17 @@ export default function App() {
   // 這裡收起來只是不要讓人按了才被拒絕
   const isWorkspaceAdmin = ['OWNER', 'ADMIN'].includes(workspaces[0]?.role ?? '')
 
+  // 帳號設定、系統管理、外觀、登出都收在右上角的頭像底下（見 components/UserMenu.tsx）
+  const userMenu = (
+    <UserMenu
+      userName={user.displayName}
+      isWorkspaceAdmin={isWorkspaceAdmin}
+      onAccount={() => setAccount('profile')}
+      onAdmin={() => setAccount('admin')}
+      onLogout={logout}
+    />
+  )
+
   // ── 帳號設定／系統管理：蓋在最上面，離開就回到原本的畫面 ──
   if (account) {
     return (
@@ -107,7 +119,7 @@ export default function App() {
             <AccountTab active={account === 'admin'}
                         onClick={() => setAccount('admin')}>系統管理</AccountTab>
           )}
-          <div className="ml-auto">{bell}</div>
+          <div className="ml-auto flex items-center gap-2">{bell}{userMenu}</div>
         </header>
         <div className="min-h-0 flex-1">
           {account === 'profile'
@@ -125,12 +137,10 @@ export default function App() {
       <ProjectPicker
         projects={projects}
         workspaceId={workspaceId}
-        userName={user.displayName}
         onPick={id => { setProjectId(id); setView('list') }}
         onInquiryBoard={() => setView('inquiry')}
-        onAccount={() => setAccount('profile')}
-        onLogout={logout}
         bell={bell}
+        menu={userMenu}
       />
     )
   }
@@ -162,11 +172,9 @@ export default function App() {
       openTask={openTask} setOpenTask={setOpenTask}
       totalOverdue={totalOverdue}
       pendingJoins={projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0}
-      userName={user.displayName}
-      onLogout={logout}
-      onAccount={() => setAccount('profile')}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
-      bell={<NotificationBell onOpen={openNotification} placement="up" />}
+      bell={bell}
+      menu={userMenu}
     />
   )
 }
@@ -189,7 +197,7 @@ function AccountTab({ active, onClick, children }: {
  */
 function ProjectWorkspace({
   projectId, workspaceId, view, setView, openTask, setOpenTask,
-  totalOverdue, pendingJoins, userName, onLogout, onAccount, onSwitchProject, bell,
+  totalOverdue, pendingJoins, onSwitchProject, bell, menu,
 }: {
   projectId: string
   workspaceId: string
@@ -200,12 +208,11 @@ function ProjectWorkspace({
   totalOverdue: number
   /** 待審的加入申請數。不是建立者的話後端一律回 0 */
   pendingJoins: number
-  userName: string
-  onLogout: () => void
-  onAccount: () => void
   onSwitchProject: () => void
   /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
   bell: ReactNode
+  /** 右上角的頭像選單。同樣由 App 建立 —— 點下去是換畫面，那是 App 的事 */
+  menu: ReactNode
 }) {
   /** 側欄選中的大項目；null＝不篩選 */
   const [epicId, setEpicId] = useState<string | null>(null)
@@ -263,10 +270,6 @@ function ProjectWorkspace({
         membersActive={view === 'members'}
         pendingJoins={pendingJoins}
         overdueTotal={totalOverdue}
-        userName={userName}
-        onLogout={onLogout}
-        onAccount={onAccount}
-        bell={bell}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
@@ -274,6 +277,7 @@ function ProjectWorkspace({
           <>
             <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
               <Button variant="ghost" onClick={() => setView('list')}>← 回專案</Button>
+              <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
             </header>
             <div className="min-h-0 flex-1">
               <InquiryBoard
@@ -307,6 +311,7 @@ function ProjectWorkspace({
                 <span className="font-medium text-slate-700">
                   {tasks.find(x => x.id === openTask)?.title ?? '任務'}
                 </span>
+                <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
               </header>
             ) : (
             <header className="border-b border-slate-200 bg-white">
@@ -336,6 +341,7 @@ function ProjectWorkspace({
                     ⚠️ {overdue} 張任務有單位逾期未回
                   </span>
                 )}
+                <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
               </div>
               <nav className="flex gap-1 px-3 pt-2">
                 {VIEWS.map(v => (

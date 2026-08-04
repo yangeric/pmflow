@@ -5,6 +5,36 @@
                "Microsoft JhengHei", sans-serif;
 }
 
+/**
+ * 深色模式靠 <html> 上的 .dark class，不靠 prefers-color-scheme ——
+ * 使用者要能在畫面上自己切（見 lib/theme.tsx）。Tailwind 4 預設的 dark:
+ * 是跟著系統走的，所以這裡改寫成 class 版本。
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/**
+ * ── 深色配色的對照表 ──
+ * 改畫面時照這張表加 dark: 前綴，不要每個地方自己配一組，
+ * 不然同一種東西在不同頁面會長得不一樣。
+ *
+ *   底：頁面  bg-slate-50  → dark:bg-slate-950
+ *       卡片  bg-white     → dark:bg-slate-900
+ *       浮層  bg-white     → dark:bg-slate-800（選單、抽屜這種疊在卡片上的）
+ *   線：ring-slate-200 / border-slate-200 → dark:ring-slate-700 / dark:border-slate-700
+ *       border-slate-100（分隔線）        → dark:border-slate-800
+ *   字：text-slate-900/800 → dark:text-slate-100
+ *       text-slate-700/600 → dark:text-slate-300
+ *       text-slate-500     → dark:text-slate-400
+ *       text-slate-400     → dark:text-slate-500
+ *       text-slate-300     → dark:text-slate-600
+ *   互動：hover:bg-slate-50/100 → dark:hover:bg-slate-800
+ *   彩色徽章：bg-X-50 text-X-700 → dark:bg-X-500/15 dark:text-X-300
+ *            （X = blue / emerald / amber / red / violet / fuchsia，一律這個公式）
+ *   輸入框：bg-white border-slate-300 → dark:bg-slate-900 dark:border-slate-600
+ *
+ * 專案顏色、狀態顏色那些**資料帶進來的顏色不要動** —— 那是使用者自己選的。
+ */
+
 :root { color-scheme: light; }
 
 html, body, #root { height: 100%; }
@@ -14,6 +44,10 @@ body {
   background: #f6f7f9;
   color: #1e293b;
   -webkit-font-smoothing: antialiased;
+}
+.dark body {
+  background: #020617;   /* slate-950 */
+  color: #e2e8f0;        /* slate-200 */
 }
 
 /* 拖曳時不要選到文字 */

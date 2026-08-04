@@ -10,17 +10,16 @@ import { Button, Input, cx } from '../components/ui'
  * 進去之後想換專案，走側欄頂端的「切換專案」再回到這一頁。
  */
 export default function ProjectPicker({
-  projects, workspaceId, userName, onPick, onInquiryBoard, onLogout, onAccount, bell,
+  projects, workspaceId, onPick, onInquiryBoard, bell, menu,
 }: {
   projects: Project[]
   workspaceId: string
-  userName: string
   onPick: (id: string) => void
   onInquiryBoard: () => void
-  onLogout: () => void
-  onAccount: () => void
   /** 通知鈴鐺。被核准加入哪個專案，就是在這一頁才看得到差別 */
   bell?: ReactNode
+  /** 右上角的頭像選單：帳號設定、系統管理、外觀、登出 */
+  menu?: ReactNode
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -92,11 +91,9 @@ export default function ProjectPicker({
         <div className="mb-8 flex items-baseline gap-3">
           <span className="text-xl font-semibold text-slate-800">PMFlow</span>
           <span className="text-sm text-slate-400">選一個專案開始</span>
-          <div className="ml-auto flex items-center gap-3 text-sm">
+          <div className="ml-auto flex items-center gap-2 text-sm">
             {bell}
-            <span className="text-slate-500">{userName}</span>
-            <button onClick={onAccount} className="text-slate-400 hover:text-slate-600">帳號設定</button>
-            <button onClick={onLogout} className="text-slate-400 hover:text-slate-600">登出</button>
+            {menu}
           </div>
         </div>
 
