@@ -41,14 +41,29 @@ export default async function memberRoutes(app: FastifyInstance) {
    * 同工作區、自己還不是成員的專案。只回專案本身的門面資訊
    * （代碼、名稱、誰開的、多少人），不回任何任務內容 ——
    * 還沒獲准的人不該看到裡面有什麼。
+   *
+   * **要搜尋才回東西**（`q` 比對專案名稱或代碼）。原本是把整個工作區的專案
+   * 都列出來，但「預設就看得到每一個專案叫什麼、誰開的」本身就是一種外洩 ——
+   * 專案名稱常常寫著客戶名或標案名。要加入的人本來就知道自己要找哪一個，
+   * 讓他打出來即可。
+   *
+   * 唯一的例外是自己還在審核中的申請：那些一律回，否則送出去之後就找不到
+   * 那張卡片，也就撤不回來了。
    */
-  app.get<{ Querystring: { workspaceId?: string } }>('/projects/joinable', async req => {
-    const user = await authenticate(req)
-    const workspaceId = req.query.workspaceId
-    if (!workspaceId) throw badRequest('缺少 workspaceId')
-    await requireWorkspaceMember(user.id, workspaceId)
+  app.get<{ Querystring: { workspaceId?: string; q?: string } }>(
+    '/projects/joinable', async req => {
+      const user = await authenticate(req)
+      const workspaceId = req.query.workspaceId
+      if (!workspaceId) throw badRequest('缺少 workspaceId')
+      await requireWorkspaceMember(user.id, workspaceId)
 
-    const rows = await sql`
+      const q = (req.query.q ?? '').trim()
+      // 代碼是大寫英數，名稱是自由文字，所以兩邊比對方式不同：
+      // 代碼從開頭比（打 MRG 是在找 MRG，不是找 XMRG），名稱包含就算
+      const like = `%${q.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
+      const keyLike = `${q.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
+
+      const rows = await sql`
       SELECT p.id, p.key, p.name, p.description, p.color,
              u.display_name AS "createdByName",
              (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::int AS "memberCount",
@@ -63,9 +78,14 @@ export default async function memberRoutes(app: FastifyInstance) {
         AND NOT EXISTS (
           SELECT 1 FROM project_member pm
           WHERE pm.project_id = p.id AND pm.user_id = ${user.id})
-      ORDER BY p.rank, p.created_at`
-    return { projects: rows }
-  })
+        AND (
+          r.id IS NOT NULL
+          OR (${q} <> '' AND (p.name ILIKE ${like} OR p.key ILIKE ${keyLike}))
+        )
+      ORDER BY r.id IS NULL, p.rank, p.created_at
+      LIMIT 30`
+      return { projects: rows }
+    })
 
   // ── 工作區裡有哪些帳號 ────────────────────────────────
   /**

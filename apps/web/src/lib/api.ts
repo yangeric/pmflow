@@ -260,8 +260,13 @@ export const Api = {
   removeMember: (projectId: string, userId: string) =>
     api(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
 
-  joinableProjects: (workspaceId: string) =>
-    api<{ projects: JoinableProject[] }>(`/projects/joinable?workspaceId=${workspaceId}`),
+  /**
+   * 要搜尋才回東西（比對專案名稱或代碼）。沒給 q 就只回自己審核中的申請 ——
+   * 專案清單不預設攤開來給所有人看，理由見 api/src/routes/members.ts。
+   */
+  joinableProjects: (workspaceId: string, q = '') =>
+    api<{ projects: JoinableProject[] }>(
+      `/projects/joinable?${new URLSearchParams({ workspaceId, q })}`),
   applyToJoin: (projectId: string, message?: string) =>
     api<{ id: string }>(`/projects/${projectId}/join-requests`, { method: 'POST', json: { message } }),
   joinRequests: (projectId: string) =>

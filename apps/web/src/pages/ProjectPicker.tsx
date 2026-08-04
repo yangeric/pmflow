@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type Project } from '../lib/api'
 import { Button, Input, cx } from '../components/ui'
@@ -40,14 +40,26 @@ export default function ProjectPicker({
 
   const totalOverdue = projects.reduce((n, p) => n + (p.overdueInquiryCount ?? 0), 0)
 
-  // ── 還沒加入的專案 ──────────────────────────────────────
+  // ── 還沒加入的專案：要搜尋才找得到 ──────────────────────────
   /**
    * 同工作區、自己還不是成員的專案。只看得到門面（代碼、名稱、誰開的、幾個人），
    * 看不到裡面有什麼任務 —— 還沒獲准的人不該看到內容。
+   *
+   * **不預設列出來**，要打專案名稱或代碼搜尋。想加入的人本來就知道自己要找哪一個，
+   * 而把整個工作區的專案攤開來，等於讓每個人都讀得到所有專案叫什麼名字。
+   * 只有自己還在審核中的申請會一直顯示，不然送出去就撤不回來了。
    */
-  const { data: joinable } = useQuery({
-    queryKey: ['joinableProjects', workspaceId],
-    queryFn: () => Api.joinableProjects(workspaceId),
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  // 打字打到一半不要每個字都送一次查詢
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const { data: joinable, isFetching: searching } = useQuery({
+    queryKey: ['joinableProjects', workspaceId, query],
+    queryFn: () => Api.joinableProjects(workspaceId, query),
     enabled: !!workspaceId,
   })
   const others = joinable?.projects ?? []
@@ -58,7 +70,7 @@ export default function ProjectPicker({
   const [joinErr, setJoinErr] = useState<string | null>(null)
 
   const refreshJoin = () => {
-    qc.invalidateQueries({ queryKey: ['joinableProjects', workspaceId] })
+    qc.invalidateQueries({ queryKey: ['joinableProjects'] })
     qc.invalidateQueries({ queryKey: ['projects'] })
   }
   const apply = useMutation({
@@ -181,23 +193,36 @@ export default function ProjectPicker({
           )}
         </div>
 
-        {/* ── 其他專案：看得到門面，但要申請才進得去 ── */}
-        {others.length > 0 && (
-          <>
-            <div className="mb-2 mt-8 flex items-center gap-2">
-              <span className="text-xs font-medium tracking-wide text-slate-400">其他專案</span>
-              <span className="text-xs text-slate-400">
-                你還不是成員。要進去得由專案的建立者同意。
+        {/* ── 加入其他專案：搜尋得到才看得到 ── */}
+        <div className="mt-8">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-xs font-medium tracking-wide text-slate-400">加入其他專案</span>
+            <span className="text-xs text-slate-400">
+              輸入專案名稱或代碼搜尋。要進去得由專案的建立者同意。
+            </span>
+          </div>
+
+          <Input value={search} onChange={e => setSearch(e.target.value)}
+                 placeholder="專案名稱或代碼，例如 MRG" maxLength={80} />
+
+          {joinErr && (
+            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {joinErr}
+            </div>
+          )}
+
+          {/* 沒打字時這裡通常是空的，只有自己還在審核中的申請會留著 */}
+          {query !== '' && others.length === 0 && !searching && (
+            <div className="mt-3 rounded-xl bg-white p-6 text-center text-sm text-slate-400 ring-1 ring-slate-200">
+              找不到叫「{query}」的專案。<br />
+              <span className="text-xs">
+                名稱要對得上，或直接輸入專案代碼；已經加入的專案不會出現在這裡。
               </span>
             </div>
+          )}
 
-            {joinErr && (
-              <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {joinErr}
-              </div>
-            )}
-
-            <div className="grid gap-3 sm:grid-cols-2">
+          {others.length > 0 && (
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {others.map(p => (
                 <div key={p.id}
                      className="flex items-start gap-3 rounded-xl bg-white/60 p-4 ring-1 ring-slate-200">
@@ -244,8 +269,8 @@ export default function ProjectPicker({
                 </div>
               ))}
             </div>
-          </>
-        )}
+          )}
+        </div>
 
       </div>
     </div>
