@@ -1,5 +1,6 @@
 import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from 'react'
 import type { InquiryState } from '../lib/api'
+import { T } from '../strings'
 
 export const cx = (...s: Array<string | false | null | undefined>) => s.filter(Boolean).join(' ')
 
@@ -61,14 +62,14 @@ export function Field({ label, children }: { label: string; children: ReactNode 
  * 卡片、清單、甘特上都掛這個，一眼看出「誰還沒回、逾期幾天」。
  */
 export const INQUIRY_META: Record<InquiryState, { label: string; cls: string; icon: string }> = {
-  NONE:     { label: '',         cls: '',                                              icon: '' },
-  AWAITING: { label: '待回覆',   cls: 'bg-blue-50 text-blue-700 ring-blue-600/20 '
+  NONE:     { label: '',                     cls: '',                                  icon: '' },
+  AWAITING: { label: T.inquiry.badge.awaiting, cls: 'bg-blue-50 text-blue-700 ring-blue-600/20 '
     + 'dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30',                   icon: '⏳' },
-  OVERDUE:  { label: '逾期未回', cls: 'bg-red-50 text-red-700 ring-red-600/20 '
+  OVERDUE:  { label: T.inquiry.badge.overdue, cls: 'bg-red-50 text-red-700 ring-red-600/20 '
     + 'dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30',                      icon: '⚠️' },
-  PARTIAL:  { label: '部分已回', cls: 'bg-amber-50 text-amber-800 ring-amber-600/20 '
+  PARTIAL:  { label: T.inquiry.badge.partial, cls: 'bg-amber-50 text-amber-800 ring-amber-600/20 '
     + 'dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30',                icon: '◐' },
-  REPLIED:  { label: '已回覆',   cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20 '
+  REPLIED:  { label: T.inquiry.badge.replied, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20 '
     + 'dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/30',          icon: '✓' },
 }
 
@@ -99,17 +100,17 @@ export function ProblemBadge({ problem }: { problem: string | null | undefined }
   if (!problem) return null
   return (
     <span
-      title={`目前遇到的問題：${problem}`}
+      title={T.task.problem.tooltip(problem)}
       className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px]
                  font-medium text-fuchsia-700 ring-1 ring-inset ring-fuchsia-600/20
                  bg-fuchsia-50
                  dark:bg-fuchsia-500/15 dark:text-fuchsia-300 dark:ring-fuchsia-400/30">
-      <span aria-hidden>⚑</span>有問題
+      <span aria-hidden>⚑</span>{T.task.problem.badge}
     </span>
   )
 }
 
-export function Spinner({ label = '載入中…' }: { label?: string }) {
+export function Spinner({ label = T.common.loading }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-400 dark:text-slate-500">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600
