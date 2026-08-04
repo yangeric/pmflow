@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type Inquiry } from '../lib/api'
 import { addMonthsYmd, addWorkingDaysYmd, parseYmd, todayYmd, toYmd, WEEKDAY_LABELS } from '../lib/date'
+import { T } from '../strings'
 import { Button, Input, cx } from './ui'
 
 /**
@@ -63,44 +64,47 @@ export function InquiryTable({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700">發文追蹤</h3>
+        <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+          {T.inquiry.table.title}
+        </h3>
         {canEdit && !adding && (
-          <Button onClick={() => setAdding(true)} className="text-xs">＋ 新增單位</Button>
+          <Button onClick={() => setAdding(true)} className="text-xs">{T.inquiry.table.add}</Button>
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200">
-        <table className="w-full min-w-[900px] border-collapse bg-white text-sm">
+      <div className="overflow-x-auto rounded-lg ring-1 ring-slate-200 dark:ring-slate-700">
+        <table className="w-full min-w-[900px] border-collapse bg-white text-sm dark:bg-slate-900">
           <thead>
-            <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500">
-              <th className="px-3 py-2">提給單位</th>
-              <th className="px-3 py-2">承辦人</th>
-              <th className="px-3 py-2">聯絡方式</th>
-              <th className="px-3 py-2">提問日</th>
-              <th className="px-3 py-2">期望回覆</th>
-              <th className="px-3 py-2">狀態</th>
-              <th className="px-3 py-2">回覆單位</th>
-              <th className="px-3 py-2">回覆人</th>
-              <th className="px-3 py-2">回覆日</th>
+            <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500
+                           dark:bg-slate-800 dark:text-slate-400">
+              <th className="px-3 py-2">{T.inquiry.table.column.askedToUnit}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.askedToPerson}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.contact}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.askedAt}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.dueDate}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.status}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.repliedByUnit}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.repliedByPerson}</th>
+              <th className="px-3 py-2">{T.inquiry.table.column.repliedAt}</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {inquiries.length === 0 && !adding && (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400">
-                還沒有發文紀錄。按「＋ 新增單位」記錄這件事提給了誰。
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400 dark:text-slate-500">
+                {T.inquiry.table.empty}
               </td></tr>
             )}
 
             {inquiries.map(q => {
               const transferred = q.isReplied && q.repliedByUnit && q.repliedByUnit !== q.askedToUnit
               return (
-                <tr key={q.id} className="border-t border-slate-100 align-top">
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">{q.askedToUnit}</td>
-                  <td className="px-3 py-2 text-slate-600">{q.askedToPerson ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-500">{q.askedToContact ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-500">{fmt(q.askedAt)}</td>
-                  <td className="px-3 py-2 text-slate-500">
+                <tr key={q.id} className="border-t border-slate-100 align-top dark:border-slate-800">
+                  <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800 dark:text-slate-100">{q.askedToUnit}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{q.askedToPerson ?? T.common.none}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{q.askedToContact ?? T.common.none}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{fmt(q.askedAt)}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
                     {editingDueId === q.id ? (
                       <DueDateEditor
                         inquiry={q}
@@ -111,8 +115,9 @@ export function InquiryTable({
                     ) : canEdit ? (
                       <button
                         type="button"
-                        title="改期望回覆日"
-                        className="-mx-1 rounded px-1 py-0.5 hover:bg-slate-100 hover:text-slate-700"
+                        title={T.inquiry.table.editDue}
+                        className="-mx-1 rounded px-1 py-0.5 hover:bg-slate-100 hover:text-slate-700
+                                   dark:hover:bg-slate-800 dark:hover:text-slate-200"
                         onClick={() => setEditingDueId(q.id)}
                       >
                         {fmt(q.dueDate)}
@@ -120,19 +125,25 @@ export function InquiryTable({
                     ) : fmt(q.dueDate)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2"><StatusCell q={q} /></td>
-                  <td className={cx('px-3 py-2', transferred ? 'font-medium text-amber-700' : 'text-slate-600')}>
-                    {q.repliedByUnit ?? '—'}
-                    {transferred && <span className="ml-1 text-[10px] text-amber-600">轉單位</span>}
+                  <td className={cx('px-3 py-2', transferred
+                    ? 'font-medium text-amber-700 dark:text-amber-300'
+                    : 'text-slate-600 dark:text-slate-300')}>
+                    {q.repliedByUnit ?? T.common.none}
+                    {transferred && (
+                      <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400">
+                        {T.inquiry.table.transferred}
+                      </span>
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-slate-600">{q.repliedByPerson ?? '—'}</td>
-                  <td className="px-3 py-2 text-slate-500">{fmt(q.repliedAt)}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{q.repliedByPerson ?? T.common.none}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{fmt(q.repliedAt)}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-right">
                     {canEdit && (q.isReplied
-                      ? <Button variant="ghost" className="text-xs" onClick={() => reopen.mutate(q.id)}>退回待回覆</Button>
-                      : <Button variant="primary" className="text-xs" onClick={() => setReplyingId(q.id)}>登錄回覆</Button>)}
+                      ? <Button variant="ghost" className="text-xs" onClick={() => reopen.mutate(q.id)}>{T.inquiry.table.reopen}</Button>
+                      : <Button variant="primary" className="text-xs" onClick={() => setReplyingId(q.id)}>{T.inquiry.table.markReplied}</Button>)}
                     {canEdit && (
-                      <Button variant="ghost" className="ml-1 text-xs text-slate-400"
-                              onClick={() => remove.mutate(q.id)} title="刪除">✕</Button>
+                      <Button variant="ghost" className="ml-1 text-xs text-slate-400 dark:text-slate-500"
+                              onClick={() => remove.mutate(q.id)} title={T.common.delete}>✕</Button>
                     )}
                   </td>
                 </tr>
@@ -168,21 +179,33 @@ export function InquiryTable({
 function StatusCell({ q }: { q: Inquiry }) {
   if (q.status === 'REPLIED') {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-        ✓ 已回{q.daysToReply != null && <span className="text-emerald-600/70">（{q.daysToReply} 天）</span>}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-emerald-50 px-1.5 py-0.5
+                       text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-600/20
+                       dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/30">
+        <span aria-hidden>✓</span>{T.inquiry.table.status.replied}
+        {q.daysToReply != null && (
+          <span className="text-emerald-600/70 dark:text-emerald-400/80">
+            {T.inquiry.table.status.repliedDays(q.daysToReply)}
+          </span>
+        )}
       </span>
     )
   }
   if (q.status === 'OVERDUE') {
     return (
-      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
-        ⚠️ 逾期 {q.daysOverdue} 天
+      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-red-50 px-1.5 py-0.5
+                       text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20
+                       dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30">
+        {/* 逾期天數由後端算，狀態是 OVERDUE 就一定有值；?? 0 只是讓型別過關 */}
+        <span aria-hidden>⚠️</span>{T.inquiry.overdueDays(q.daysOverdue ?? 0)}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-      ⏳ 已 {q.daysElapsed} 天
+    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5
+                     text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20
+                     dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30">
+      <span aria-hidden>⏳</span>{T.inquiry.elapsedDays(q.daysElapsed)}
     </span>
   )
 }
@@ -206,19 +229,19 @@ function AskRow({
   const due = useDueDate(base, () => defaultDue(base, defaultDueDays))
 
   return (
-    <tr className="border-t-2 border-blue-200 bg-blue-50/40">
+    <tr className="border-t-2 border-blue-200 bg-blue-50/40 dark:border-blue-500/40 dark:bg-blue-500/10">
       <td className="px-2 py-2">
         <UnitInput workspaceId={workspaceId} value={unit} onChange={setUnit}
-                   placeholder="例如 採購部" autoFocus />
+                   placeholder={T.inquiry.table.placeholder.unit} autoFocus />
       </td>
-      <td className="px-2 py-2"><Input value={person} onChange={e => setPerson(e.target.value)} placeholder="王小明" /></td>
-      <td className="px-2 py-2"><Input value={contact} onChange={e => setContact(e.target.value)} placeholder="分機 2145" /></td>
-      <td className="px-2 py-2 text-xs text-slate-400">今天</td>
+      <td className="px-2 py-2"><Input value={person} onChange={e => setPerson(e.target.value)} placeholder={T.inquiry.table.placeholder.person} /></td>
+      <td className="px-2 py-2"><Input value={contact} onChange={e => setContact(e.target.value)} placeholder={T.inquiry.table.placeholder.contact} /></td>
+      <td className="px-2 py-2 text-xs text-slate-400 dark:text-slate-500">{T.inquiry.table.askedToday}</td>
       <td className="px-2 py-2 align-top">
         <DueDateField state={due} />
       </td>
       <td colSpan={4} className="px-2 py-2">
-        <Input value={question} onChange={e => setQuestion(e.target.value)} placeholder="要問什麼？（選填）" />
+        <Input value={question} onChange={e => setQuestion(e.target.value)} placeholder={T.inquiry.table.placeholder.question} />
       </td>
       <td className="whitespace-nowrap px-2 py-2 text-right">
         <Button variant="primary" className="text-xs" disabled={!unit.trim() || busy}
@@ -229,8 +252,8 @@ function AskRow({
                   // 一律送明確的值：空字串代表「不設期限」，要送 null 讓後端別再套預設
                   dueDate: due.date || null,
                   question: question.trim() || undefined,
-                })}>儲存</Button>
-        <Button variant="ghost" className="ml-1 text-xs" onClick={onCancel}>取消</Button>
+                })}>{T.common.save}</Button>
+        <Button variant="ghost" className="ml-1 text-xs" onClick={onCancel}>{T.common.cancel}</Button>
       </td>
     </tr>
   )
@@ -248,21 +271,24 @@ function AskRow({
  *
  * 工作天一律走 lib/date.ts 的 addWorkingDaysYmd —— 跟後端同一套算法，
  * 畫面上看到的那一天就是存進資料庫的那一天。
+ *
+ * 這張表只管日期怎麼算，標籤在 strings/inquiry.ts 的 due.preset ——
+ * 改字的人不必看懂工作天邏輯。
  */
-type DuePresetKey = 'D1' | 'D3' | 'D5' | 'D7' | 'D10' | 'D14' | 'M1' | 'NONE' | 'CUSTOM'
+type DuePresetKey = keyof typeof T.inquiry.due.preset
 
 const DUE_PRESETS: Array<{
-  key: DuePresetKey; label: string; workingDays?: number; months?: number
+  key: DuePresetKey; workingDays?: number; months?: number
 }> = [
-  { key: 'D1',     label: '1 個工作天（很急）',     workingDays: 1 },
-  { key: 'D3',     label: '3 個工作天',             workingDays: 3 },
-  { key: 'D5',     label: '5 個工作天（約一週）',   workingDays: 5 },
-  { key: 'D7',     label: '7 個工作天',             workingDays: 7 },
-  { key: 'D10',    label: '10 個工作天（約兩週）',  workingDays: 10 },
-  { key: 'D14',    label: '14 個工作天（約三週）',  workingDays: 14 },
-  { key: 'M1',     label: '一個月後',               months: 1 },
-  { key: 'NONE',   label: '不設期限' },
-  { key: 'CUSTOM', label: '自訂日期' },
+  { key: 'D1',     workingDays: 1 },
+  { key: 'D3',     workingDays: 3 },
+  { key: 'D5',     workingDays: 5 },
+  { key: 'D7',     workingDays: 7 },
+  { key: 'D10',    workingDays: 10 },
+  { key: 'D14',    workingDays: 14 },
+  { key: 'M1',     months: 1 },
+  { key: 'NONE' },
+  { key: 'CUSTOM' },
 ]
 
 /** 某一檔選項從起算日推出來的日期。不設期限沒有日期，自訂日期由呼叫端沿用原值 */
@@ -302,20 +328,30 @@ function useDueDate(base: string, init: () => { preset: DuePresetKey; date: stri
 function DueDateField({ state }: { state: ReturnType<typeof useDueDate> }) {
   return (
     <div className="space-y-1">
+      {/* 原生 select 的底色不吃 Tailwind 的預設，深色底下得自己指定，
+          不然是白底黑字的一塊 */}
       <select
         value={state.preset}
         onChange={e => state.choose(e.target.value as DuePresetKey)}
-        aria-label="幾天後回覆"
+        aria-label={T.inquiry.due.label}
         className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs
-                   focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                   focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40
+                   dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
       >
-        {DUE_PRESETS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+        {DUE_PRESETS.map(p => (
+          <option key={p.key} value={p.key}>{T.inquiry.due.preset[p.key]}</option>
+        ))}
       </select>
-      <Input type="date" value={state.date} onChange={e => state.setDate(e.target.value)} />
-      <span className="block text-[10px] text-slate-400">
+      {/* color-scheme 決定日期選擇器那顆小日曆的長相，只給背景色它還是白的 */}
+      <Input type="date" className="dark:[color-scheme:dark]"
+             value={state.date} onChange={e => state.setDate(e.target.value)} />
+      <span className="block text-[10px] text-slate-400 dark:text-slate-500">
         {state.date
-          ? `＝ ${state.date.replaceAll('-', '/')}（週${WEEKDAY_LABELS[parseYmd(state.date).getDay()]}）`
-          : '不設期限，不會列入逾期'}
+          ? T.inquiry.due.resolved(
+              state.date.replaceAll('-', '/'),
+              WEEKDAY_LABELS[parseYmd(state.date).getDay()],
+            )
+          : T.inquiry.due.noDeadline}
       </span>
     </div>
   )
@@ -341,8 +377,8 @@ function DueDateEditor({ inquiry, onSubmit, onCancel, busy }: {
       <DueDateField state={due} />
       <div className="flex gap-1">
         <Button variant="primary" className="px-2 py-1 text-xs" disabled={busy}
-                onClick={() => onSubmit(due.date || null)}>儲存</Button>
-        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCancel}>取消</Button>
+                onClick={() => onSubmit(due.date || null)}>{T.common.save}</Button>
+        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCancel}>{T.common.cancel}</Button>
       </div>
     </div>
   )
@@ -365,17 +401,26 @@ function ReplyRow({
   const changed = unit !== inquiry.askedToUnit
 
   return (
-    <tr className="border-t-2 border-emerald-200 bg-emerald-50/40">
-      <td colSpan={5} className="px-3 py-2 text-xs text-slate-500">
-        登錄「{inquiry.askedToUnit}」這筆的回覆
-        {changed && <span className="ml-2 font-medium text-amber-700">← 回覆單位已改成別的單位</span>}
+    <tr className="border-t-2 border-emerald-200 bg-emerald-50/40 dark:border-emerald-500/40 dark:bg-emerald-500/10">
+      <td colSpan={5} className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+        {T.inquiry.table.reply.heading(inquiry.askedToUnit)}
+        {changed && (
+          <span className="ml-2 font-medium text-amber-700 dark:text-amber-300">
+            {T.inquiry.table.reply.unitChanged}
+          </span>
+        )}
       </td>
-      <td className="px-2 py-2 text-xs text-emerald-700">✓ 已回覆</td>
+      <td className="px-2 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+        <span aria-hidden>✓ </span>{T.inquiry.table.reply.mark}
+      </td>
       <td className="px-2 py-2">
         <UnitInput workspaceId={workspaceId} value={unit} onChange={setUnit} />
       </td>
       <td className="px-2 py-2"><Input value={person} onChange={e => setPerson(e.target.value)} /></td>
-      <td className="px-2 py-2"><Input type="date" value={date} onChange={e => setDate(e.target.value)} /></td>
+      <td className="px-2 py-2">
+        <Input type="date" className="dark:[color-scheme:dark]"
+               value={date} onChange={e => setDate(e.target.value)} />
+      </td>
       <td className="whitespace-nowrap px-2 py-2 text-right">
         <Button variant="primary" className="text-xs" disabled={busy}
                 onClick={() => onSubmit({
@@ -383,11 +428,11 @@ function ReplyRow({
                   repliedByPerson: person.trim() || undefined,
                   repliedAt: date,
                   replyNote: note.trim() || undefined,
-                })}>確認</Button>
-        <Button variant="ghost" className="ml-1 text-xs" onClick={onCancel}>取消</Button>
+                })}>{T.inquiry.table.reply.submit}</Button>
+        <Button variant="ghost" className="ml-1 text-xs" onClick={onCancel}>{T.common.cancel}</Button>
       </td>
       <td colSpan={10} className="px-3 pb-2">
-        <Input value={note} onChange={e => setNote(e.target.value)} placeholder="回覆重點摘要（選填）" />
+        <Input value={note} onChange={e => setNote(e.target.value)} placeholder={T.inquiry.table.placeholder.replyNote} />
       </td>
     </tr>
   )
@@ -452,19 +497,24 @@ export function UnitInput({
         onChange={e => { onChange(e.target.value); setOpen(true); measure() }}
       />
       {open && rect && units.length > 0 && (
+        // 疊在卡片上的浮層用比卡片淺一階的底色，不然跟表格黏成一片
         <ul
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
-          className="z-50 max-h-56 overflow-auto rounded-md bg-white py-1 shadow-lg ring-1 ring-slate-200"
+          className="z-50 max-h-56 overflow-auto rounded-md bg-white py-1 shadow-lg ring-1 ring-slate-200
+                     dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700"
         >
           {units.map(u => (
             <li key={u.unit}>
               <button
                 type="button"
-                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-50"
+                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm
+                           hover:bg-slate-50 dark:hover:bg-slate-700"
                 onMouseDown={e => { e.preventDefault(); onChange(u.unit); setOpen(false) }}
               >
                 <span className="truncate">{u.unit}</span>
-                <span className="shrink-0 text-[10px] text-slate-400">用過 {u.usageCount} 次</span>
+                <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+                  {T.inquiry.unit.usage(u.usageCount)}
+                </span>
               </button>
             </li>
           ))}
@@ -474,4 +524,4 @@ export function UnitInput({
   )
 }
 
-const fmt = (d: string | null) => (d ? String(d).slice(0, 10).replaceAll('-', '/').slice(5) : '—')
+const fmt = (d: string | null) => (d ? String(d).slice(0, 10).replaceAll('-', '/').slice(5) : T.common.none)

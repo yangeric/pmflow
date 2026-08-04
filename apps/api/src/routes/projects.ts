@@ -30,6 +30,11 @@ const createBody = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
+  /**
+   * 公開＝不用搜尋就出現在「加入其他專案」的清單裡。
+   * 只影響找不找得到，不影響進不進得去 —— 一樣要建立者核准才會變成成員。
+   */
+  isPublic: z.boolean().optional(),
 })
 
 export default async function projectRoutes(app: FastifyInstance) {
@@ -101,7 +106,8 @@ export default async function projectRoutes(app: FastifyInstance) {
     const [p] = await sql`
       SELECT id, workspace_id AS "workspaceId", key, name, description, color, status,
              start_date AS "startDate", end_date AS "endDate",
-             created_by AS "createdBy", (created_by = ${user.id}) AS "isCreator"
+             created_by AS "createdBy", (created_by = ${user.id}) AS "isCreator",
+             is_public AS "isPublic"
       FROM project WHERE id = ${req.params.id}`
     if (!p) throw notFound('找不到專案')
     const statuses = await sql`
@@ -124,10 +130,12 @@ export default async function projectRoutes(app: FastifyInstance) {
         description = coalesce(${body.description ?? null}, description),
         color       = coalesce(${body.color ?? null}, color),
         start_date  = coalesce(${body.startDate ?? null}, start_date),
-        end_date    = coalesce(${body.endDate ?? null}, end_date)
+        end_date    = coalesce(${body.endDate ?? null}, end_date),
+        is_public   = coalesce(${body.isPublic ?? null}, is_public)
       WHERE id = ${req.params.id}
       RETURNING id, key, name, description, color,
-                start_date AS "startDate", end_date AS "endDate"`
+                start_date AS "startDate", end_date AS "endDate",
+                is_public AS "isPublic"`
     return row
   })
 }

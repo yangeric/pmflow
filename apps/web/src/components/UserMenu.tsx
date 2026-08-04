@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Api } from '../lib/api'
 import { useTheme, type ThemeChoice } from '../lib/theme'
+import { T } from '../strings'
 import { Avatar } from './Avatar'
 import { cx } from './ui'
 
@@ -18,9 +19,9 @@ import { cx } from './ui'
  */
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string; icon: string }> = [
-  { value: 'light', label: '淺色', icon: '☀' },
-  { value: 'dark', label: '深色', icon: '☾' },
-  { value: 'system', label: '跟隨系統', icon: '💻' },
+  { value: 'light', label: T.account.menu.themeLight, icon: '☀' },
+  { value: 'dark', label: T.account.menu.themeDark, icon: '☾' },
+  { value: 'system', label: T.account.menu.themeSystem, icon: '💻' },
 ]
 
 export function UserMenu({
@@ -93,13 +94,13 @@ export function UserMenu({
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
-          <MenuItem onClick={go(onAccount)}>帳號設定</MenuItem>
-          {isWorkspaceAdmin && <MenuItem onClick={go(onAdmin)}>系統管理</MenuItem>}
+          <MenuItem onClick={go(onAccount)}>{T.account.menu.account}</MenuItem>
+          {isWorkspaceAdmin && <MenuItem onClick={go(onAdmin)}>{T.account.menu.admin}</MenuItem>}
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
           <div className="px-3 py-1.5">
-            <div className="mb-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">外觀</div>
+            <div className="mb-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">{T.account.menu.appearance}</div>
             <div className="flex gap-1">
               {THEME_OPTIONS.map(o => (
                 <button
@@ -122,7 +123,7 @@ export function UserMenu({
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
-          <MenuItem onClick={go(onLogout)} danger>登出</MenuItem>
+          <MenuItem onClick={go(onLogout)} danger>{T.account.menu.logout}</MenuItem>
         </div>
       )}
     </div>

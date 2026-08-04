@@ -1,3 +1,121 @@
 /** 導覽、頁籤、標題列 用到的文字。寫法見 strings/index.ts */
 export const nav = {
+  appName: 'PMFlow',
+  starting: '啟動中…',
+
+  /** 蓋在最上面那一層（帳號設定／系統管理）的頁籤 */
+  accountSettings: '帳號設定',
+  systemAdmin: '系統管理',
+
+  /** 麵包屑與返回。箭頭留在畫面上，這裡只放字 */
+  backToOverview: '回總覽',
+  backToProject: '回專案',
+  backToPicker: '回專案選擇',
+  /** 任務還沒載到名字時的替代標題 */
+  fallbackTaskTitle: '任務',
+  showAll: '看全部',
+  overdueHere: (n: number) => `${n} 張任務有單位逾期未回`,
+
+  /** 跨專案的發文追蹤，選擇頁與側欄都會用到同一個名字 */
+  inquiryBoard: '發文追蹤',
+
+  views: {
+    list: '清單',
+    board: '看板',
+    calendar: '行事曆',
+    gantt: '甘特圖',
+    graph: '關聯圖',
+  },
+  loadingGantt: '載入甘特圖…',
+  loadingGraph: '載入關聯圖…',
+
+  sidebar: {
+    switchProject: '切換專案',
+    members: '成員',
+    epics: '大項目',
+    epicsHint: '點大項目看總覽，點小項目在右邊開詳情',
+    allTasks: '全部任務',
+    emptyTitle: '還沒有大項目。',
+    emptyHint: '大項目就是把一件大事分成幾塊，例如「機房搬遷」底下掛盤點、採購、搬運。',
+    /** 大項目樹上的展開／收合箭頭 */
+    expandEpic: '展開',
+    collapseEpic: '收合',
+    epicSummary: (title: string, done: number, total: number) =>
+      `${title}　${done}/${total} 個小項目已完成`,
+    epicOverdue: (n: number) => `底下有 ${n} 張任務的單位逾期未回`,
+    taskOverdue: '單位逾期未回',
+    taskTitle: (ref: string, title: string) => `${ref}　${title}`,
+    loose: (n: number) => `另有 ${n} 個任務的上層已被刪除，在「全部任務」裡找得到`,
+    epicNamePlaceholder: '大項目名稱',
+    addEpic: '新增大項目',
+    /** 側欄整體的收折 */
+    collapseSidebar: '收合側欄',
+    expandSidebar: '展開側欄',
+    /** 收起來只剩窄條時，紅點要靠游標停著才說得清楚是什麼 */
+    pendingJoinsHint: (n: number) => `${n} 件加入申請等你核准`,
+    overdueHint: (n: number) => `${n} 件單位逾期未回`,
+  },
+
+  notification: {
+    title: '通知',
+    unreadAria: (n: number) => `通知，${n} 則未讀`,
+    markAllRead: '全部標為已讀',
+    emptyTitle: '目前沒有通知。',
+    emptyHint: '任務被指向、被指派，或有人申請加入你開的專案時會出現在這裡。',
+    role: {
+      MANAGER: '管理者', EDITOR: '編輯者', COMMENTER: '可留言', VIEWER: '唯讀',
+    },
+    /** 通知句子裡的代稱：資料缺一角時頂上去，句子才不會斷掉 */
+    someone: '有人',
+    someTask: '一張你負責的任務',
+    yourProject: '你開的專案',
+    otherTask: '另一張任務',
+    yourTask: '你的任務',
+    quoted: (s: string) => `「${s}」`,
+    /** 一句話講完發生什麼事，主詞是做這件事的人 */
+    linkedTo: (who: string, other: string, task: string) => `${who} 把${other}關聯到你的${task}`,
+    linkedPlain: (who: string, task: string) => `${who} 建立了一條關聯到你的${task}`,
+    assigned: (who: string, task: string) => `${who} 把${task}指派給你`,
+    joinRequested: (who: string, project: string) => `${who} 申請加入${project}`,
+    joinAdded: (who: string, project: string) => `${who} 把你加入${project}`,
+    joinApproved: (who: string, project: string) => `${who} 核准了你加入${project}的申請`,
+    roleIs: (role: string) => `你的身分是${role}`,
+    /**
+     * 被指向這一端看到的完整句子。兩張任務都寫名字、一個代名詞都不留 ——
+     * 通知是在別的地方看到的，「我」會被讀成收通知的人。
+     */
+    link: {
+      FS: (mine: string, other: string) => `你的${mine}要等 ${other} 完成才能開始`,
+      SS: (mine: string, other: string) => `你的${mine}要等 ${other} 開始才能開始`,
+      FF: (mine: string, other: string) => `你的${mine}要等 ${other} 完成才能完成`,
+      SF: (mine: string, other: string) => `你的${mine}要等 ${other} 開始才能完成`,
+      RELATES: (mine: string, other: string) => `${other} 與你的${mine}相關`,
+      BLOCKS: (mine: string, other: string) => `${other} 阻擋你的${mine}`,
+      DUPLICATES: (mine: string, other: string) => `${other} 被標記為與你的${mine}重複`,
+      REQUIRES: (mine: string, other: string) => `${other} 需要你的${mine}`,
+    },
+    time: {
+      justNow: '剛剛',
+      minutes: (n: number) => `${n} 分鐘前`,
+      hours: (n: number) => `${n} 小時前`,
+      days: (n: number) => `${n} 天前`,
+    },
+  },
+
+  login: {
+    subtitleLogin: '登入你的工作區',
+    subtitleRegister: '建立新帳號',
+    displayName: '顯示名稱',
+    displayNamePlaceholder: '王小明',
+    email: '電子郵件',
+    password: '密碼',
+    submitting: '處理中…',
+    login: '登入',
+    register: '註冊',
+    toRegister: '還沒有帳號？註冊一個',
+    toLogin: '已經有帳號了？登入',
+    demoHint: '示範帳號已經幫你填好了，直接按登入就能看到含甘特、看板與發文追蹤的示範資料。',
+    /** 連不上後端是前端自己判斷的，不是後端回的訊息 */
+    connectFailed: '連線失敗，請確認後端是否啟動',
+  },
 } as const

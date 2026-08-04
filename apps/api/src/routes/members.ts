@@ -64,7 +64,7 @@ export default async function memberRoutes(app: FastifyInstance) {
       const keyLike = `${q.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
 
       const rows = await sql`
-      SELECT p.id, p.key, p.name, p.description, p.color,
+      SELECT p.id, p.key, p.name, p.description, p.color, p.is_public AS "isPublic",
              u.display_name AS "createdByName",
              (SELECT count(*) FROM project_member m WHERE m.project_id = p.id)::int AS "memberCount",
              r.status AS "myRequestStatus",
@@ -79,10 +79,12 @@ export default async function memberRoutes(app: FastifyInstance) {
           SELECT 1 FROM project_member pm
           WHERE pm.project_id = p.id AND pm.user_id = ${user.id})
         AND (
-          r.id IS NOT NULL
+          -- 公開的專案不用搜尋就看得到；審核中的申請一律留著，不然撤不回來
+          p.is_public
+          OR r.id IS NOT NULL
           OR (${q} <> '' AND (p.name ILIKE ${like} OR p.key ILIKE ${keyLike}))
         )
-      ORDER BY r.id IS NULL, p.rank, p.created_at
+      ORDER BY r.id IS NULL, p.is_public DESC, p.rank, p.created_at
       LIMIT 30`
       return { projects: rows }
     })

@@ -5,6 +5,7 @@ import { project } from './project'
 import { account } from './account'
 import { inquiry } from './inquiry'
 import { chart } from './chart'
+import { calendar } from './calendar'
 
 /**
  * 畫面上的文字全部集中在這裡，**不要寫死在元件裡**。
@@ -32,4 +33,5 @@ export const T = {
   account,
   inquiry,
   chart,
+  calendar,
 }

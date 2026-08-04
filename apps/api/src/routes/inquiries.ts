@@ -123,7 +123,9 @@ export default async function inquiryRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     // COMMENTER 就能登錄回覆 —— 實務上接到電話說「我們回了」的人，
     // 常常不是有編輯權的專案經理
-    const { taskId, workspaceId } = await accessInquiry(user.id, req.params.id, 'COMMENTER')
+    // 登錄回覆只要是專案成員就可以 —— 回覆是別人送回來的事實，
+    // 誰收到誰登錄最快；卡在編輯權限上只會讓它留在某個人的信箱裡
+    const { taskId, workspaceId } = await accessInquiry(user.id, req.params.id, 'VIEWER')
     const b = markRepliedBody.parse(req.body)
 
     await sql.begin(async tx => {

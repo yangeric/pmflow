@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Project, type Task } from '../lib/api'
 import { rollup } from '../lib/rollup'
+import { T } from '../strings'
 import { Button, Input, cx } from './ui'
 
 /**
@@ -15,6 +16,32 @@ import { Button, Input, cx } from './ui'
  *
  * 大項目 = parentId 為 null 的任務，就是既有的 parent_id 階層，沒有另開表。
  */
+
+/**
+ * 收折狀態存在瀏覽器。
+ *
+ * 「側欄要不要收起來」是看螢幕決定的 —— 在筆電上為了甘特圖寬一點而收起來的人，
+ * 換到大螢幕未必想收。存進帳號會讓兩台裝置互相蓋掉，跟深色模式同一個道理。
+ */
+const COLLAPSE_KEY = 'pmflow.sidebar'
+
+function storedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === 'collapsed'
+  } catch {
+    // 隱私模式下 localStorage 會直接丟例外，那就當作沒收起來
+    return false
+  }
+}
+
+function rememberCollapsed(v: boolean): void {
+  try {
+    localStorage.setItem(COLLAPSE_KEY, v ? 'collapsed' : 'expanded')
+  } catch {
+    // 存不進去就只有這次有效，不值得為它中斷操作
+  }
+}
+
 export function EpicSidebar({
   project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
   onSwitchProject, onInquiryBoard, inquiryActive, overdueTotal,
@@ -44,6 +71,7 @@ export function EpicSidebar({
   const [title, setTitle] = useState('')
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
 
   const { epics, stat, looseCount, childrenOf } = useMemo(() => {
     const ids = new Set(tasks.map(t => t.id))
@@ -107,6 +135,11 @@ export function EpicSidebar({
     })
   }
 
+  function setCollapse(v: boolean) {
+    setCollapsed(v)
+    rememberCollapsed(v)
+  }
+
   const create = useMutation({
     mutationFn: (t: string) => Api.createTask(project!.id, { title: t, type: 'EPIC' }),
     onSuccess: () => {
@@ -115,21 +148,72 @@ export function EpicSidebar({
     },
   })
 
+  /**
+   * 收起來之後留一條窄條，不是整個消失。
+   *
+   * 整個藏掉的話，「怎麼把它叫回來」就變成一個要學的秘密；而且待審申請與
+   * 單位逾期是有時效的事，收起側欄就看不到紅點，等於把提醒關掉。
+   * 窄條上只留三件事：展開、發文追蹤、成員，紅點照樣亮。
+   */
+  if (collapsed) {
+    return (
+      <aside className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-slate-200
+                        bg-white py-2 dark:border-slate-700 dark:bg-slate-900">
+        <button onClick={() => setCollapse(false)}
+                title={T.nav.sidebar.expandSidebar}
+                aria-label={T.nav.sidebar.expandSidebar}
+                className="rounded-md px-2 py-1.5 text-sm text-slate-400 hover:bg-slate-100
+                           hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800
+                           dark:hover:text-slate-300">
+          »
+        </button>
+
+        <span className="my-1 h-2.5 w-2.5 shrink-0 rounded-full"
+              title={project?.name ?? T.common.none}
+              style={{ background: project?.color ?? '#94a3b8' }} />
+
+        <RailButton icon="📮"
+                    label={T.nav.inquiryBoard}
+                    active={inquiryActive}
+                    onClick={onInquiryBoard}
+                    dot={overdueTotal > 0}
+                    dotLabel={T.nav.sidebar.overdueHint(overdueTotal)} />
+
+        <RailButton icon="👥"
+                    label={T.nav.sidebar.members}
+                    active={membersActive}
+                    onClick={onMembers}
+                    dot={pendingJoins > 0}
+                    dotLabel={T.nav.sidebar.pendingJoinsHint(pendingJoins)} />
+      </aside>
+    )
+  }
+
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white
+                      dark:border-slate-700 dark:bg-slate-900">
 
       {/* ── 專案標頭：切換專案的入口在這裡 ── */}
-      <div className="border-b border-slate-200 px-3 py-3">
+      <div className="border-b border-slate-200 px-3 py-3 dark:border-slate-700">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full"
                 style={{ background: project?.color ?? '#94a3b8' }} />
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">
-            {project?.name ?? '—'}
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800
+                           dark:text-slate-100">
+            {project?.name ?? T.common.none}
           </span>
+          <button onClick={() => setCollapse(true)}
+                  title={T.nav.sidebar.collapseSidebar}
+                  aria-label={T.nav.sidebar.collapseSidebar}
+                  className="shrink-0 rounded px-1 text-sm text-slate-400 hover:text-slate-700
+                             dark:text-slate-500 dark:hover:text-slate-300">
+            «
+          </button>
         </div>
         <button onClick={onSwitchProject}
-                className="mt-1.5 text-xs text-slate-400 hover:text-slate-600">
-          ⇄ 切換專案
+                className="mt-1.5 text-xs text-slate-400 hover:text-slate-600
+                           dark:text-slate-500 dark:hover:text-slate-300">
+          ⇄ {T.nav.sidebar.switchProject}
         </button>
       </div>
 
@@ -137,12 +221,13 @@ export function EpicSidebar({
               className={cx(
                 'mx-2 mt-2 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm',
                 inquiryActive
-                  ? 'bg-blue-50 font-medium text-blue-700'
-                  : 'text-slate-600 hover:bg-slate-50'
+                  ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
               )}>
-        <span>📮</span> 發文追蹤
+        <span>📮</span> {T.nav.inquiryBoard}
         {overdueTotal > 0 && (
-          <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700">
+          <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700
+                           dark:bg-red-500/15 dark:text-red-300">
             {overdueTotal}
           </span>
         )}
@@ -152,10 +237,10 @@ export function EpicSidebar({
               className={cx(
                 'mx-2 mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm',
                 membersActive
-                  ? 'bg-blue-50 font-medium text-blue-700'
-                  : 'text-slate-600 hover:bg-slate-50'
+                  ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
               )}>
-        <span>👥</span> 成員
+        <span>👥</span> {T.nav.sidebar.members}
         {pendingJoins > 0 && (
           <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
             {pendingJoins}
@@ -164,9 +249,11 @@ export function EpicSidebar({
       </button>
 
       <div className="px-4 pb-1 pt-3">
-        <div className="text-xs font-medium tracking-wide text-slate-400">大項目</div>
-        <div className="mt-0.5 text-[11px] leading-snug text-slate-400">
-          點大項目看總覽，點小項目在右邊開詳情
+        <div className="text-xs font-medium tracking-wide text-slate-400 dark:text-slate-500">
+          {T.nav.sidebar.epics}
+        </div>
+        <div className="mt-0.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+          {T.nav.sidebar.epicsHint}
         </div>
       </div>
 
@@ -176,18 +263,20 @@ export function EpicSidebar({
           className={cx(
             'mb-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm',
             !inquiryActive && selectedEpicId === null
-              ? 'bg-slate-100 font-medium text-slate-800'
-              : 'text-slate-600 hover:bg-slate-50'
+              ? 'bg-slate-100 font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-100'
+              : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
           )}>
-          <span className="text-slate-400">☰</span>
-          <span className="flex-1">全部任務</span>
-          <span className="text-xs tabular-nums text-slate-400">{tasks.length}</span>
+          <span className="text-slate-400 dark:text-slate-500">☰</span>
+          <span className="flex-1">{T.nav.sidebar.allTasks}</span>
+          <span className="text-xs tabular-nums text-slate-400 dark:text-slate-500">
+            {tasks.length}
+          </span>
         </button>
 
         {epics.length === 0 && (
-          <div className="px-2.5 py-3 text-xs leading-relaxed text-slate-400">
-            還沒有大項目。<br />
-            大項目就是把一件大事分成幾塊，例如「機房搬遷」底下掛盤點、採購、搬運。
+          <div className="px-2.5 py-3 text-xs leading-relaxed text-slate-400 dark:text-slate-500">
+            {T.nav.sidebar.emptyTitle}<br />
+            {T.nav.sidebar.emptyHint}
           </div>
         )}
 
@@ -199,45 +288,50 @@ export function EpicSidebar({
           return (
             <div key={epic.id} className="mb-0.5">
             <div className={cx('flex items-start rounded-md',
-              active ? 'bg-slate-100' : 'hover:bg-slate-50')}>
+              active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}>
             <button
               onClick={e => { e.stopPropagation(); toggle(epic.id) }}
               disabled={!kids.length}
-              aria-label={open ? '收合' : '展開'}
+              aria-label={open ? T.nav.sidebar.collapseEpic : T.nav.sidebar.expandEpic}
               aria-expanded={open}
               className={cx('w-6 shrink-0 py-2.5 text-xs',
-                kids.length ? 'text-slate-400 hover:text-slate-700' : 'text-transparent')}>
+                kids.length
+                  ? 'text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300'
+                  : 'text-transparent')}>
               {open ? '▾' : '▸'}
             </button>
             <button
               onClick={() => onSelectEpic(epic.id)}
               title={s.hasChildren
-                ? `${epic.title}　${s.done}/${s.total} 個小項目已完成`
+                ? T.nav.sidebar.epicSummary(epic.title, s.done, s.total)
                 : epic.title}
               className="block min-w-0 flex-1 rounded-md py-2 pr-2.5 text-left">
               <div className="flex items-center gap-2">
                 <span className={cx(
                   'min-w-0 flex-1 truncate text-sm',
-                  active ? 'font-medium text-slate-800' : 'text-slate-700'
+                  active
+                    ? 'font-medium text-slate-800 dark:text-slate-100'
+                    : 'text-slate-700 dark:text-slate-300'
                 )}>{epic.title}</span>
                 {s.overdue > 0 && (
-                  <span title={`底下有 ${s.overdue} 張任務的單位逾期未回`}
-                        className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700">
+                  <span title={T.nav.sidebar.epicOverdue(s.overdue)}
+                        className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
+                                   dark:bg-red-500/15 dark:text-red-300">
                     {s.overdue}
                   </span>
                 )}
               </div>
               <div className="mt-1.5 flex items-center gap-2">
-                <span className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200">
+                <span className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                   <span className={cx('block h-full',
                           s.progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500')}
                         style={{ width: `${s.progress}%` }} />
                 </span>
-                <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
                   {s.progress}%
                 </span>
                 {s.hasChildren && (
-                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400">
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
                     {s.done}/{s.total}
                   </span>
                 )}
@@ -252,18 +346,20 @@ export function EpicSidebar({
                 <button
                   key={kid.id}
                   onClick={() => onOpenTask(kid.id)}
-                  title={`${kid.ref}　${kid.title}`}
+                  title={T.nav.sidebar.taskTitle(kid.ref, kid.title)}
                   aria-current={on ? 'true' : undefined}
                   className={cx(
                     'flex w-full items-center gap-2 rounded-md py-1.5 pl-8 pr-2 text-left text-[13px]',
-                    on ? 'bg-blue-50 font-medium text-blue-700'
-                       : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                    on ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                       : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 '
+                         + 'dark:hover:bg-slate-800 dark:hover:text-slate-300'
                   )}>
                   <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full',
-                    kid.progress >= 100 ? 'bg-emerald-500' : 'bg-slate-300')} />
+                    kid.progress >= 100 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
                   <span className="min-w-0 flex-1 truncate">{kid.title}</span>
                   {kid.inquiryState === 'OVERDUE' && (
-                    <span title="單位逾期未回" className="shrink-0 text-[11px] text-red-600">⚠️</span>
+                    <span title={T.nav.sidebar.taskOverdue}
+                          className="shrink-0 text-[11px] text-red-600 dark:text-red-400">⚠️</span>
                   )}
                 </button>
               )
@@ -273,15 +369,15 @@ export function EpicSidebar({
         })}
 
         {looseCount > 0 && (
-          <div className="mt-2 px-2.5 text-[11px] leading-snug text-slate-400">
-            另有 {looseCount} 個任務的上層已被刪除，在「全部任務」裡找得到
+          <div className="mt-2 px-2.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+            {T.nav.sidebar.loose(looseCount)}
           </div>
         )}
 
         {adding ? (
-          <div className="mt-2 space-y-1.5 rounded-md bg-slate-50 p-2">
+          <div className="mt-2 space-y-1.5 rounded-md bg-slate-50 p-2 dark:bg-slate-800">
             <Input value={title} onChange={e => setTitle(e.target.value)}
-                   placeholder="大項目名稱" autoFocus
+                   placeholder={T.nav.sidebar.epicNamePlaceholder} autoFocus
                    onKeyDown={e => {
                      if (e.key === 'Enter' && title.trim()) create.mutate(title.trim())
                      if (e.key === 'Escape') { setAdding(false); setTitle('') }
@@ -289,21 +385,54 @@ export function EpicSidebar({
             <div className="flex gap-1">
               <Button variant="primary" className="flex-1 justify-center text-xs"
                       disabled={!title.trim() || create.isPending}
-                      onClick={() => create.mutate(title.trim())}>建立</Button>
+                      onClick={() => create.mutate(title.trim())}>{T.common.create}</Button>
               <Button className="text-xs" onClick={() => { setAdding(false); setTitle('') }}>
-                取消
+                {T.common.cancel}
               </Button>
             </div>
           </div>
         ) : (
           <button onClick={() => setAdding(true)} disabled={!project}
                   className="mt-1 w-full rounded-md px-2.5 py-2 text-left text-sm text-slate-400
-                             hover:bg-slate-50 disabled:opacity-50">
-            ＋ 新增大項目
+                             hover:bg-slate-50 disabled:opacity-50
+                             dark:text-slate-500 dark:hover:bg-slate-800">
+            ＋ {T.nav.sidebar.addEpic}
           </button>
         )}
       </nav>
 
     </aside>
+  )
+}
+
+/**
+ * 窄條上的一顆按鈕。文字塞不下，所以字只留在 title 與 aria-label；
+ * 紅點不帶數字 —— 44px 寬放不下兩位數，而且這裡只需要回答「有沒有事」。
+ */
+function RailButton({ icon, label, active, onClick, dot, dotLabel }: {
+  icon: string
+  label: string
+  active: boolean
+  onClick: () => void
+  dot: boolean
+  dotLabel: string
+}) {
+  return (
+    <button onClick={onClick}
+            title={dot ? `${label}　${dotLabel}` : label}
+            aria-label={label}
+            className={cx(
+              'relative rounded-md px-2 py-1.5 text-sm',
+              active
+                ? 'bg-blue-50 dark:bg-blue-500/15'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+            )}>
+      <span aria-hidden>{icon}</span>
+      {dot && (
+        <span aria-hidden
+              className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500
+                         ring-2 ring-white dark:ring-slate-900" />
+      )}
+    </button>
   )
 }

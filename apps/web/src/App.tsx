@@ -2,6 +2,7 @@ import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Api, type AppNotification, type Task, type WorkspaceRole } from './lib/api'
 import { useAuth } from './lib/auth'
+import { T } from './strings'
 import { Button, Spinner, cx } from './components/ui'
 import { TaskDrawer } from './components/TaskDrawer'
 import { EpicSidebar } from './components/EpicSidebar'
@@ -31,11 +32,11 @@ type View = 'list' | 'board' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'mem
 type AccountView = 'profile' | 'admin' | null
 
 const VIEWS: Array<{ key: View; label: string }> = [
-  { key: 'list', label: '清單' },
-  { key: 'board', label: '看板' },
-  { key: 'calendar', label: '行事曆' },
-  { key: 'gantt', label: '甘特圖' },
-  { key: 'graph', label: '關聯圖' },
+  { key: 'list', label: T.nav.views.list },
+  { key: 'board', label: T.nav.views.board },
+  { key: 'calendar', label: T.nav.views.calendar },
+  { key: 'gantt', label: T.nav.views.gantt },
+  { key: 'graph', label: T.nav.views.graph },
   // 成員刻意不放在這一排。這排是「同一批任務的不同看法」，
   // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口移到側欄。
 ]
@@ -70,7 +71,7 @@ export default function App() {
   })
   const projects = projectsData?.projects ?? []
 
-  if (!ready) return <Spinner label="啟動中…" />
+  if (!ready) return <Spinner label={T.nav.starting} />
   if (!user) return <Login />
 
   /**
@@ -110,14 +111,15 @@ export default function App() {
   if (account) {
     return (
       <div className="flex h-full flex-col">
-        <header className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2.5">
-          <Button variant="ghost" onClick={() => setAccount(null)}>← 返回</Button>
-          <span className="mx-2 text-slate-200">|</span>
+        <header className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2.5
+                           dark:border-slate-700 dark:bg-slate-900">
+          <Button variant="ghost" onClick={() => setAccount(null)}>← {T.common.back}</Button>
+          <span className="mx-2 text-slate-200 dark:text-slate-600">|</span>
           <AccountTab active={account === 'profile'}
-                      onClick={() => setAccount('profile')}>帳號設定</AccountTab>
+                      onClick={() => setAccount('profile')}>{T.nav.accountSettings}</AccountTab>
           {isWorkspaceAdmin && (
             <AccountTab active={account === 'admin'}
-                        onClick={() => setAccount('admin')}>系統管理</AccountTab>
+                        onClick={() => setAccount('admin')}>{T.nav.systemAdmin}</AccountTab>
           )}
           <div className="ml-auto flex items-center gap-2">{bell}{userMenu}</div>
         </header>
@@ -149,8 +151,9 @@ export default function App() {
   if (!projectId) {
     return (
       <div className="flex h-full flex-col">
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
-          <Button variant="ghost" onClick={() => setView('list')}>← 回專案選擇</Button>
+        <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
+                           dark:border-slate-700 dark:bg-slate-900">
+          <Button variant="ghost" onClick={() => setView('list')}>← {T.nav.backToPicker}</Button>
           <div className="ml-auto">{bell}</div>
         </header>
         <div className="min-h-0 flex-1">
@@ -185,7 +188,9 @@ function AccountTab({ active, onClick, children }: {
   return (
     <button onClick={onClick}
             className={cx('rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                          active ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:text-slate-700')}>
+                          active
+                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200')}>
       {children}
     </button>
   )
@@ -275,8 +280,9 @@ function ProjectWorkspace({
       <main className="flex min-w-0 flex-1 flex-col">
         {view === 'inquiry' ? (
           <>
-            <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
-              <Button variant="ghost" onClick={() => setView('list')}>← 回專案</Button>
+            <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
+                               dark:border-slate-700 dark:bg-slate-900">
+              <Button variant="ghost" onClick={() => setView('list')}>← {T.nav.backToProject}</Button>
               <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
             </header>
             <div className="min-h-0 flex-1">
@@ -290,55 +296,69 @@ function ProjectWorkspace({
           <>
             {openTask ? (
               /* 看單張任務時，上面只留一條麵包屑，把版面讓給內容 */
-              <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5 text-sm">
+              <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
+                                 text-sm dark:border-slate-700 dark:bg-slate-900">
                 <button onClick={() => setOpenTask(null)}
-                        className="text-slate-400 hover:text-slate-700">← 回總覽</button>
-                <span className="text-slate-300">|</span>
+                        className="text-slate-400 hover:text-slate-700
+                                   dark:text-slate-500 dark:hover:text-slate-300">
+                  ← {T.nav.backToOverview}
+                </button>
+                <span className="text-slate-300 dark:text-slate-600">|</span>
                 <button onClick={() => { setEpicId(null); setOpenTask(null) }}
-                        className="text-slate-400 hover:text-slate-700">{project?.name}</button>
+                        className="text-slate-400 hover:text-slate-700
+                                   dark:text-slate-500 dark:hover:text-slate-300">{project?.name}</button>
                 {(() => {
                   const t = tasks.find(x => x.id === openTask)
                   const parent = t?.parentId ? tasks.find(x => x.id === t.parentId) : undefined
                   return parent ? (
                     <>
-                      <span className="text-slate-300">/</span>
+                      <span className="text-slate-300 dark:text-slate-600">/</span>
                       <button onClick={() => { setEpicId(parent.id); setOpenTask(null) }}
-                              className="text-slate-400 hover:text-slate-700">{parent.title}</button>
+                              className="text-slate-400 hover:text-slate-700
+                                         dark:text-slate-500 dark:hover:text-slate-300">{parent.title}</button>
                     </>
                   ) : null
                 })()}
-                <span className="text-slate-300">/</span>
-                <span className="font-medium text-slate-700">
-                  {tasks.find(x => x.id === openTask)?.title ?? '任務'}
+                <span className="text-slate-300 dark:text-slate-600">/</span>
+                <span className="font-medium text-slate-700 dark:text-slate-300">
+                  {tasks.find(x => x.id === openTask)?.title ?? T.nav.fallbackTaskTitle}
                 </span>
                 <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
               </header>
             ) : (
-            <header className="border-b border-slate-200 bg-white">
+            <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-center gap-3 px-4 pt-3">
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500
+                                 dark:bg-slate-800 dark:text-slate-400">
                   {project?.key}
                 </span>
                 {epic ? (
                   <>
                     <button onClick={() => setEpicId(null)}
-                            className="text-sm text-slate-400 hover:text-slate-600">
+                            className="text-sm text-slate-400 hover:text-slate-600
+                                       dark:text-slate-500 dark:hover:text-slate-300">
                       {project?.name}
                     </button>
-                    <span className="text-slate-300">/</span>
-                    <h1 className="text-base font-semibold text-slate-800">{epic.title}</h1>
+                    <span className="text-slate-300 dark:text-slate-600">/</span>
+                    <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                      {epic.title}
+                    </h1>
                     <button onClick={() => setEpicId(null)}
                             className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500
-                                       hover:bg-slate-200">
-                      ✕ 看全部
+                                       hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400
+                                       dark:hover:bg-slate-700">
+                      ✕ {T.nav.showAll}
                     </button>
                   </>
                 ) : (
-                  <h1 className="text-base font-semibold text-slate-800">{project?.name ?? '—'}</h1>
+                  <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                    {project?.name ?? T.common.none}
+                  </h1>
                 )}
                 {overdue > 0 && (
-                  <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                    ⚠️ {overdue} 張任務有單位逾期未回
+                  <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700
+                                   dark:bg-red-500/15 dark:text-red-300">
+                    ⚠️ {T.nav.overdueHere(overdue)}
                   </span>
                 )}
                 <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
@@ -350,8 +370,8 @@ function ProjectWorkspace({
                             'flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-sm font-medium',
                             'transition-colors',
                             view === v.key
-                              ? 'border-b-2 border-blue-600 text-blue-700'
-                              : 'text-slate-500 hover:text-slate-700'
+                              ? 'border-b-2 border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300'
+                              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                           )}>
                     {v.label}
                   </button>
@@ -387,12 +407,12 @@ function ProjectWorkspace({
                                   onOpen={setOpenTask} />
                   )}
                   {view === 'gantt' && (
-                    <Suspense fallback={<Spinner label="載入甘特圖…" />}>
+                    <Suspense fallback={<Spinner label={T.nav.loadingGantt} />}>
                       <GanttView projectId={projectId} tasks={visible} onOpen={setOpenTask} />
                     </Suspense>
                   )}
                   {view === 'graph' && (
-                    <Suspense fallback={<Spinner label="載入關聯圖…" />}>
+                    <Suspense fallback={<Spinner label={T.nav.loadingGraph} />}>
                       <GraphView projectId={projectId} tasks={visible}
                                  statuses={project?.statuses ?? []} onOpen={setOpenTask} />
                     </Suspense>

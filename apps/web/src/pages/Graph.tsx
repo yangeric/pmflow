@@ -13,6 +13,8 @@ import {
   Api, ApiError, type InquiryState, type LinkType, type Task, type TaskStatus,
 } from '../lib/api'
 import { Button, Empty, INQUIRY_META, Spinner, cx } from '../components/ui'
+import { useTheme } from '../lib/theme'
+import { T } from '../strings'
 
 /**
  * 關聯網路圖 —— 把「上下左右」三種關聯一次畫出來。

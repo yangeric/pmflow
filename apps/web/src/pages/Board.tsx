@@ -11,6 +11,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, cx } from '../components/ui'
+import { T } from '../strings'
 
 /**
  * 看板：dnd-kit 拖曳。
@@ -119,16 +120,19 @@ function Column({
   return (
     <div ref={setNodeRef}
          className={cx(
-           'flex w-72 shrink-0 flex-col rounded-lg bg-slate-100/80 ring-1',
-           isOver ? 'ring-2 ring-blue-400' : 'ring-slate-200'
+           // 欄的底色在深色下要比卡片再暗一階，卡片才浮得起來（淺色是反過來的）
+           'flex w-72 shrink-0 flex-col rounded-lg bg-slate-100/80 ring-1 dark:bg-slate-900/50',
+           isOver ? 'ring-2 ring-blue-400' : 'ring-slate-200 dark:ring-slate-700'
          )}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <span className="h-2 w-2 rounded-full" style={{ background: column.color }} />
-        <span className="text-sm font-semibold text-slate-700">{column.name}</span>
-        <span className="rounded bg-white px-1.5 text-xs text-slate-500">{column.tasks.length}</span>
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{column.name}</span>
+        <span className="rounded bg-white px-1.5 text-xs text-slate-500
+                         dark:bg-slate-800 dark:text-slate-400">{column.tasks.length}</span>
         {overdue > 0 && (
-          <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700">
-            {overdue} 逾期
+          <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700
+                           dark:bg-red-500/15 dark:text-red-300">
+            {T.task.board.overdueCount(overdue)}
           </span>
         )}
       </div>
@@ -136,8 +140,9 @@ function Column({
         <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-3">
           {column.tasks.map(t => <SortableCard key={t.id} task={t} onOpen={onOpen} />)}
           {column.tasks.length === 0 && (
-            <div className="rounded-md border-2 border-dashed border-slate-200 py-6 text-center text-xs text-slate-400">
-              拖曳卡片到這裡
+            <div className="rounded-md border-2 border-dashed border-slate-200 py-6 text-center text-xs
+                            text-slate-400 dark:border-slate-700 dark:text-slate-500">
+              {T.task.board.dropHere}
             </div>
           )}
         </div>
@@ -168,17 +173,21 @@ function Card({
       onClick={() => onOpen(task.id)}
       className={cx(
         'cursor-grab rounded-lg bg-white p-2.5 ring-1 ring-slate-200 active:cursor-grabbing',
-        overlay ? 'rotate-2 shadow-xl' : 'hover:ring-slate-300'
+        'dark:bg-slate-900 dark:ring-slate-700',
+        overlay ? 'rotate-2 shadow-xl' : 'hover:ring-slate-300 dark:hover:ring-slate-600'
       )}
     >
       <div className="mb-1 flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-slate-400">{task.ref}</span>
+        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{task.ref}</span>
         {task.type === 'MILESTONE' && <span className="text-[11px]">◆</span>}
         {task.priority === 'URGENT' && (
-          <span className="rounded bg-red-100 px-1 text-[10px] font-medium text-red-700">緊急</span>
+          <span className="rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
+                           dark:bg-red-500/15 dark:text-red-300">
+            {T.task.priority.URGENT}
+          </span>
         )}
       </div>
-      <div className="text-sm leading-snug text-slate-800">{task.title}</div>
+      <div className="text-sm leading-snug text-slate-800 dark:text-slate-200">{task.title}</div>
 
       {/* 兩種徽章放同一排：卡片本來就窄，各自佔一行會把卡片撐高，
           一欄能看到的卡片數就少了 */}
@@ -189,12 +198,12 @@ function Card({
         </div>
       )}
 
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
         {task.dueDate && <span>📅 {task.dueDate.slice(5, 10).replace('-', '/')}</span>}
         {task.assigneeName && <span>👤 {task.assigneeName}</span>}
         {task.progress > 0 && (
           <span className="ml-auto flex items-center gap-1">
-            <span className="h-1 w-10 overflow-hidden rounded-full bg-slate-200">
+            <span className="h-1 w-10 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
               <span className="block h-full bg-blue-500" style={{ width: `${task.progress}%` }} />
             </span>
             {task.progress}%

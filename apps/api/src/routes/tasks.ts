@@ -6,7 +6,33 @@ import { rankBetween } from '../lib/rank.js'
 import { rebuildClosure, assertNotDescendant } from '../lib/graph.js'
 import { schedule, type SchedTask, type SchedLink } from '../lib/schedule.js'
 import { notify } from '../lib/notify.js'
-import { badRequest, notFound } from '../lib/errors.js'
+import { badRequest, forbidden, notFound } from '../lib/errors.js'
+
+/**
+ * 誰能改任務本身：**開這張任務的人、專案的建立者、專案管理者**，其他人不行。
+ *
+ * 為什麼要比「編輯者」更嚴：一張任務是誰開的，通常就是誰在追這件事。
+ * 專案裡每個編輯者都能改別人的標題、日期、負責人的話，追蹤的人會發現
+ * 自己開的任務莫名其妙變了樣，而活動紀錄要翻很久才知道是誰動的。
+ *
+ * **但「目前遇到的問題」與發文追蹤的回覆不受這條限制** —— 那兩件事本來就是
+ * 「誰遇到誰寫、誰收到回覆誰登錄」，卡在權限上只會讓資訊留在別人的腦袋裡。
+ * 那兩條路各自只要求專案成員身分，不走這個函式。
+ */
+async function assertCanEditTask(
+  taskId: string, userId: string, role: string
+): Promise<void> {
+  if (role === 'MANAGER') return
+  const [row] = await sql<{ taskCreator: string | null; projectCreator: string | null }[]>`
+    SELECT t.created_by AS "taskCreator", p.created_by AS "projectCreator"
+    FROM task t JOIN project p ON p.id = t.project_id
+    WHERE t.id = ${taskId}`
+  if (row?.taskCreator === userId || row?.projectCreator === userId) return
+  throw forbidden(
+    '只有開這張任務的人與專案管理者可以修改任務。'
+    + '你仍然可以填寫「目前遇到的問題」、登錄發文追蹤的回覆，以及留言。'
+  )
+}
 
 const TASK_COLUMNS = sql`
   t.id, t.project_id AS "projectId", t.workspace_id AS "workspaceId",
@@ -180,8 +206,13 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 更新任務 ─────────────────────────────────────────
   app.patch<{ Params: { id: string } }>('/tasks/:id', async req => {
     const user = await authenticate(req)
-    const { workspaceId, projectId } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
     const b = patchBody.parse(req.body)
+    // 只填「目前遇到的問題」的話，專案裡的任何人都可以 —— 那是「我卡在這裡」，
+    // 不是在改別人的任務。其他欄位一律要編輯者，而且還要過 assertCanEditTask
+    const onlyProblem = Object.keys(b).length > 0 && Object.keys(b).every(k => k === 'problem')
+    const { workspaceId, projectId, role } = await requireTaskAccess(
+      user.id, req.params.id, onlyProblem ? 'VIEWER' : 'EDITOR')
+    if (!onlyProblem) await assertCanEditTask(req.params.id, user.id, role)
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
@@ -253,7 +284,8 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 拖曳：改父層 / 排序 / 狀態欄 ───────────────────────
   app.post<{ Params: { id: string } }>('/tasks/:id/move', async req => {
     const user = await authenticate(req)
-    await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    await assertCanEditTask(req.params.id, user.id, role)
     const b = moveBody.parse(req.body)
 
     const neighbours = await sql<{ id: string; rank: string }[]>`
@@ -283,7 +315,8 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 拖曳甘特長條：改日期，可連動下游 ───────────────────
   app.post<{ Params: { id: string } }>('/tasks/:id/reschedule', async req => {
     const user = await authenticate(req)
-    const { projectId } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { projectId, role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    await assertCanEditTask(req.params.id, user.id, role)
     const b = rescheduleBody.parse(req.body)
 
     await sql`
@@ -318,7 +351,8 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 刪除（軟刪除）────────────────────────────────────
   app.delete<{ Params: { id: string } }>('/tasks/:id', async (req, reply) => {
     const user = await authenticate(req)
-    await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    await assertCanEditTask(req.params.id, user.id, role)
     await sql`UPDATE task SET deleted_at = now() WHERE id = ${req.params.id}`
     return reply.code(204).send()
   })

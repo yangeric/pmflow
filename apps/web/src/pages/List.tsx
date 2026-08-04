@@ -4,12 +4,9 @@ import { Api, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, Empty, Input, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { rollup, isTaskOverdue } from '../lib/rollup'
+import { T } from '../strings'
 
-const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
-  EPIC: '大項目',
-  MILESTONE: '里程碑',
-  BUG: '缺陷',
-}
+const TYPE_LABEL: Partial<Record<Task['type'], string>> = T.task.type
 
 /** 清單／樹狀視圖：依 parentId 展開階層（上下關聯） */
 export default function ListView({
@@ -95,16 +92,18 @@ export default function ListView({
 
   return (
     <div className="overflow-auto p-4">
-      <table className="w-full border-collapse overflow-hidden rounded-lg bg-white text-sm ring-1 ring-slate-200">
+      <table className="w-full border-collapse overflow-hidden rounded-lg bg-white text-sm ring-1 ring-slate-200
+                        dark:bg-slate-900 dark:ring-slate-700">
         <thead>
-          <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500">
-            <th className="px-3 py-2">任務</th>
-            <th className="w-32 px-3 py-2">負責人</th>
-            <th className="w-28 px-3 py-2">狀態</th>
-            <th className="w-32 px-3 py-2">發文追蹤</th>
-            <th className="w-24 px-3 py-2">開始</th>
-            <th className="w-24 px-3 py-2">結束</th>
-            <th className="w-20 px-3 py-2">進度</th>
+          <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500
+                         dark:bg-slate-800 dark:text-slate-400">
+            <th className="px-3 py-2">{T.task.list.colTask}</th>
+            <th className="w-32 px-3 py-2">{T.task.list.colAssignee}</th>
+            <th className="w-28 px-3 py-2">{T.task.list.colStatus}</th>
+            <th className="w-32 px-3 py-2">{T.task.list.colInquiry}</th>
+            <th className="w-24 px-3 py-2">{T.task.list.colStart}</th>
+            <th className="w-24 px-3 py-2">{T.task.list.colDue}</th>
+            <th className="w-20 px-3 py-2">{T.task.list.colProgress}</th>
           </tr>
         </thead>
         <tbody>
@@ -118,18 +117,22 @@ export default function ListView({
             return (
               <Fragment key={t.id}>
               <tr onClick={() => onOpen(t.id)}
-                  className="group cursor-pointer border-t border-slate-100 hover:bg-slate-50">
+                  className="group cursor-pointer border-t border-slate-100 hover:bg-slate-50
+                             dark:border-slate-800 dark:hover:bg-slate-800">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
-                    {t.depth > 0 && <span className="select-none text-slate-300">└</span>}
+                    {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-600">└</span>}
                     {t.type === 'MILESTONE' && <span className="text-violet-500">◆</span>}
                     {TYPE_LABEL[t.type] && t.type !== 'MILESTONE' && (
-                      <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700">
+                      <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700
+                                       dark:bg-violet-500/15 dark:text-violet-300">
                         {TYPE_LABEL[t.type]}
                       </span>
                     )}
-                    <span className="font-mono text-[11px] text-slate-400">{t.ref}</span>
-                    <span className={cx(t.type === 'EPIC' ? 'font-medium text-slate-900' : 'text-slate-800')}>
+                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{t.ref}</span>
+                    <span className={cx(t.type === 'EPIC'
+                      ? 'font-medium text-slate-900 dark:text-slate-100'
+                      : 'text-slate-800 dark:text-slate-200')}>
                       {t.title}
                     </span>
                     {/* 緊跟在標題後面，不另外開一欄：有問題的任務是少數，
@@ -143,27 +146,28 @@ export default function ListView({
                         setAddingTo(id => (id === t.id ? null : t.id))
                         setTitle('')
                       }}
-                      title={`在「${t.title}」底下新增子任務`}
+                      title={T.task.list.addChildTip(t.title)}
                       className={cx(
                         'ml-1 shrink-0 rounded px-1.5 py-0.5 text-[11px] transition-colors',
                         addingTo === t.id
-                          ? 'bg-blue-100 text-blue-700'
-                          : 'text-slate-300 hover:bg-slate-200 hover:text-slate-700'
+                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+                          : 'text-slate-300 hover:bg-slate-200 hover:text-slate-700 '
+                            + 'dark:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200'
                       )}>
-                      ＋ 子任務
+                      {T.task.list.addChild}
                     </button>
                   </div>
                 </td>
                 <td className="px-3 py-2">
                   {t.assigneeName ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"
+                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"
                           title={t.assigneeName}>
                       <Avatar userId={t.assigneeId} name={t.assigneeName}
                               hasAvatar={t.assigneeHasAvatar} />
                       <span className="truncate">{t.assigneeName}</span>
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-300">未指派</span>
+                    <span className="text-xs text-slate-300 dark:text-slate-600">{T.common.unassigned}</span>
                   )}
                 </td>
                 {/* 點在下拉上不要順便把任務打開 */}
@@ -178,7 +182,9 @@ export default function ListView({
                       className="-ml-0.5 cursor-pointer rounded border border-transparent bg-transparent
                                  py-0.5 pl-1 pr-5 text-xs text-slate-600
                                  hover:border-slate-300 hover:bg-white
-                                 focus:border-blue-500 focus:bg-white focus:outline-none">
+                                 focus:border-blue-500 focus:bg-white focus:outline-none
+                                 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
+                                 dark:focus:bg-slate-900">
                       {statuses.map(s => (
                         <option key={s.key} value={s.key}>{s.name}</option>
                       ))}
@@ -186,33 +192,37 @@ export default function ListView({
                   </span>
                 </td>
                 <td className="px-3 py-2"><InquiryBadge state={t.inquiryState} /></td>
-                <td className="px-3 py-2 text-xs text-slate-500">{fmt(startDate)}</td>
+                <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{fmt(startDate)}</td>
                 {/* 只有「任務本身逾期」才染紅。單位逾期未回是另一件事，走上一欄的徽章 */}
-                <td className={cx('px-3 py-2 text-xs', overdue ? 'font-medium text-red-600' : 'text-slate-500')}
-                    title={overdue ? '已過結束日且尚未完成' : undefined}>
+                <td className={cx('px-3 py-2 text-xs', overdue
+                      ? 'font-medium text-red-600 dark:text-red-400'
+                      : 'text-slate-500 dark:text-slate-400')}
+                    title={overdue ? T.task.list.overdueTip : undefined}>
                   {fmt(dueDate)}
                 </td>
                 <td className="px-3 py-2">
-                  <span className="flex items-center gap-1.5 text-xs text-slate-500"
+                  <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400"
                         title={r?.derived
-                          ? `由 ${r.totalCount} 個子任務加權平均算出（已完成 ${r.doneCount} 個）`
+                          ? T.task.list.derivedProgressTip(r.totalCount, r.doneCount)
                           : undefined}>
-                    <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-slate-200">
+                    <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-slate-200
+                                     dark:bg-slate-700">
                       <span className={cx('block h-full', progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500')}
                             style={{ width: `${progress}%` }} />
                     </span>
                     <span className="tabular-nums">{progress}%</span>
-                    {r?.derived && <span className="text-slate-300" aria-hidden>∑</span>}
+                    {r?.derived && <span className="text-slate-300 dark:text-slate-600" aria-hidden>∑</span>}
                   </span>
                 </td>
               </tr>
 
               {addingTo === t.id && (
-                <tr className="border-t border-slate-100 bg-slate-50">
+                <tr className="border-t border-slate-100 bg-slate-50
+                               dark:border-slate-800 dark:bg-slate-800">
                   <td colSpan={7} className="px-3 py-2">
                     <div className="flex items-center gap-2"
                          style={{ paddingLeft: (t.depth + 1) * 20 }}>
-                      <span className="select-none text-slate-300">└</span>
+                      <span className="select-none text-slate-300 dark:text-slate-600">└</span>
                       <Input
                         autoFocus
                         value={title}
@@ -223,13 +233,16 @@ export default function ListView({
                           }
                           if (e.key === 'Escape') { setAddingTo(null); setTitle('') }
                         }}
-                        placeholder={`在「${t.title}」底下新增，按 Enter 建立`}
+                        placeholder={T.task.list.addChildPlaceholder(t.title)}
                         className="max-w-md"
                       />
                       <button onClick={() => { setAddingTo(null); setTitle('') }}
-                              className="text-xs text-slate-400 hover:text-slate-600">取消</button>
-                      <span className="text-xs text-slate-400">
-                        建立後輸入框會留著，可以連續加好幾張
+                              className="text-xs text-slate-400 hover:text-slate-600
+                                         dark:text-slate-500 dark:hover:text-slate-300">
+                        {T.common.cancel}
+                      </button>
+                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                        {T.task.list.keepOpenHint}
                       </span>
                     </div>
                   </td>
@@ -243,7 +256,7 @@ export default function ListView({
         {/* 新增任務的入口就放在清單最後 —— 東西加在哪裡，入口就在哪裡。
             上面每一列的「＋ 子任務」加的是那一張底下的，這裡加的是同一層的 */}
         <tfoot>
-          <tr className="border-t border-slate-100">
+          <tr className="border-t border-slate-100 dark:border-slate-800">
             <td colSpan={7} className="px-3 py-2">
               {addingTop ? (
                 <div className="flex items-center gap-2">
@@ -255,21 +268,25 @@ export default function ListView({
                       if (e.key === 'Enter') newTop()
                       if (e.key === 'Escape') { setAddingTop(false); setTopTitle('') }
                     }}
-                    placeholder={parent ? `在「${parent.title}」底下新增，按 Enter 建立`
-                                        : '輸入標題後按 Enter 新增任務'}
+                    placeholder={parent ? T.task.list.addChildPlaceholder(parent.title)
+                                        : T.task.list.addTaskPlaceholder}
                     className="max-w-md"
                   />
                   <button onClick={() => { setAddingTop(false); setTopTitle('') }}
-                          className="text-xs text-slate-400 hover:text-slate-600">取消</button>
-                  <span className="text-xs text-slate-400">
-                    建立後輸入框會留著，可以連續加好幾張
+                          className="text-xs text-slate-400 hover:text-slate-600
+                                     dark:text-slate-500 dark:hover:text-slate-300">
+                    {T.common.cancel}
+                  </button>
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                    {T.task.list.keepOpenHint}
                   </span>
                 </div>
               ) : (
                 <button onClick={() => { setAddingTop(true); setTopTitle('') }}
                         className="rounded px-1.5 py-0.5 text-sm text-slate-400
-                                   hover:bg-slate-100 hover:text-slate-700">
-                  ＋ 新增任務
+                                   hover:bg-slate-100 hover:text-slate-700
+                                   dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                  {T.task.list.addTask}
                 </button>
               )}
             </td>
@@ -280,4 +297,4 @@ export default function ListView({
   )
 }
 
-const fmt = (d: string | null) => (d ? d.slice(0, 10).replaceAll('-', '/').slice(5) : '—')
+const fmt = (d: string | null) => (d ? d.slice(0, 10).replaceAll('-', '/').slice(5) : T.common.none)

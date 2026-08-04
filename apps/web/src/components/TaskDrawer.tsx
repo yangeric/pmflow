@@ -4,14 +4,18 @@ import { Api, ApiError, type LinkType, type Task, type TaskStatus } from '../lib
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
 import { Button, Input, Field, Spinner, InquiryBadge, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
+import { T } from '../strings'
 
-const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
-  EPIC: '大項目', MILESTONE: '里程碑', BUG: '缺陷',
-}
+const TYPE_LABEL: Partial<Record<Task['type'], string>> = T.task.type
 
-const PRIORITY_LABEL = {
-  LOW: '低', NORMAL: '普通', HIGH: '高', URGENT: '緊急',
-} as const
+const PRIORITY_LABEL = T.task.priority
+
+/**
+ * 下拉的樣式。ui.tsx 只包了 Input 沒包 select，這一頁有五個下拉，
+ * 各自寫一份的話深色配色一定會漏掉其中一個。
+ */
+const SELECT_CLS = 'w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm '
+  + 'text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100'
 
 /**
  * 任務詳情。
@@ -64,7 +68,7 @@ export function TaskDrawer({
     mutationFn: (v: { targetId: string; linkType: LinkType; lagDays: number }) => Api.addLink(taskId, v),
     onSuccess: () => { setLinkError(null); invalidate() },
     onError: (e: unknown) => setLinkError(
-      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '建立關聯失敗'),
+      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : T.task.link.addFailed),
   })
   const delLink = useMutation({ mutationFn: (id: string) => Api.deleteLink(id), onSuccess: invalidate })
 
@@ -74,14 +78,16 @@ export function TaskDrawer({
 
   const Shell = ({ children }: { children: React.ReactNode }) =>
     variant === 'overlay' ? (
-      <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/20" onClick={onClose}>
-        <div className="flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"
+      <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/20 dark:bg-slate-950/60"
+           onClick={onClose}>
+        {/* 覆蓋式抽屜是疊在卡片上的浮層，深色底要比卡片再亮一階才分得出層次 */}
+        <div className="flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl dark:bg-slate-800"
              onClick={e => e.stopPropagation()}>
           {children}
         </div>
       </div>
     ) : (
-      <div className="flex h-full min-h-0 flex-col bg-white">{children}</div>
+      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-900">{children}</div>
     )
 
   return (
@@ -89,15 +95,18 @@ export function TaskDrawer({
       <>
         {isLoading || !data ? <Spinner /> : (
           <>
-            <header className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+            <header className="flex items-start justify-between border-b border-slate-200 px-6 py-4
+                               dark:border-slate-700">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500
+                                   dark:bg-slate-800 dark:text-slate-400">
                     {data.ref}
                   </span>
                   <InquiryBadge state={data.inquiryState} />
                   {TYPE_LABEL[data.type] && (
-                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700">
+                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700
+                                     dark:bg-violet-500/15 dark:text-violet-300">
                       {TYPE_LABEL[data.type]}
                     </span>
                   )}
@@ -105,7 +114,8 @@ export function TaskDrawer({
                 <input
                   defaultValue={data.title}
                   onBlur={e => e.target.value !== data.title && patch.mutate({ title: e.target.value })}
-                  className="mt-1.5 w-full border-0 p-0 text-xl font-semibold text-slate-800 focus:outline-none focus:ring-0"
+                  className="mt-1.5 w-full border-0 bg-transparent p-0 text-xl font-semibold text-slate-800
+                             focus:outline-none focus:ring-0 dark:text-slate-100"
                 />
               </div>
               <Button variant="ghost" onClick={onClose} className="text-lg leading-none">✕</Button>
@@ -114,39 +124,39 @@ export function TaskDrawer({
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
               {/* ── 基本欄位 ── */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Field label="狀態">
+                <Field label={T.task.drawer.fieldStatus}>
                   <select value={data.statusKey}
                           onChange={e => patch.mutate({ statusKey: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+                          className={SELECT_CLS}>
                     {statuses.map(s => <option key={s.key} value={s.key}>{s.name}</option>)}
                   </select>
                 </Field>
-                <Field label="優先級">
+                <Field label={T.task.drawer.fieldPriority}>
                   <select value={data.priority}
                           onChange={e => patch.mutate({ priority: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+                          className={SELECT_CLS}>
                     {(Object.keys(PRIORITY_LABEL) as Array<keyof typeof PRIORITY_LABEL>)
                       .map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
                   </select>
                 </Field>
-                <Field label="開始日">
+                <Field label={T.task.drawer.fieldStart}>
                   <Input type="date" defaultValue={data.startDate?.slice(0, 10) ?? ''}
                          onBlur={e => patch.mutate({ startDate: e.target.value || null })} />
                 </Field>
-                <Field label="結束日">
+                <Field label={T.task.drawer.fieldDue}>
                   <Input type="date" defaultValue={data.dueDate?.slice(0, 10) ?? ''}
                          onBlur={e => patch.mutate({ dueDate: e.target.value || null })} />
                 </Field>
-                <Field label="進度 %">
+                <Field label={T.task.drawer.fieldProgress}>
                   <Input type="number" min={0} max={100} defaultValue={data.progress}
                          onBlur={e => patch.mutate({ progress: Number(e.target.value) })} />
                 </Field>
-                <Field label="排程模式">
+                <Field label={T.task.drawer.fieldScheduleMode}>
                   <select value={data.scheduleMode}
                           onChange={e => patch.mutate({ scheduleMode: e.target.value })}
-                          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-                    <option value="AUTO">自動（依關聯推算日期）</option>
-                    <option value="MANUAL">人工鎖定（日期固定不被推動）</option>
+                          className={SELECT_CLS}>
+                    <option value="AUTO">{T.task.drawer.scheduleAuto}</option>
+                    <option value="MANUAL">{T.task.drawer.scheduleManual}</option>
                   </select>
                 </Field>
               </div>
@@ -156,11 +166,13 @@ export function TaskDrawer({
                   但它常常就是「發文出去在等回覆」的那個原因，兩者要挨著看 */}
               <div>
                 <div className="mb-2 flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-700">目前遇到的問題</h3>
+                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {T.task.problem.label}
+                  </h3>
                   {data.problem && (
-                    <Button variant="ghost" className="text-xs text-slate-500"
+                    <Button variant="ghost" className="text-xs text-slate-500 dark:text-slate-400"
                             onClick={() => patch.mutate({ problem: null })}>
-                      已解決，清空
+                      {T.task.problem.clear}
                     </Button>
                   )}
                 </div>
@@ -174,14 +186,15 @@ export function TaskDrawer({
                     if (e.target.value.trim() === (data.problem ?? '')) return
                     patch.mutate({ problem: e.target.value })
                   }}
-                  placeholder="現在卡在哪裡？例如：等對方確認規格、測試機還沒到、預算還沒下來"
-                  className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm
+                  placeholder={T.task.problem.placeholder}
+                  className="w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm
                              placeholder:text-slate-400 focus:border-blue-500 focus:outline-none
-                             focus:ring-2 focus:ring-blue-500/40"
+                             focus:ring-2 focus:ring-blue-500/40
+                             dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100
+                             dark:placeholder:text-slate-500"
                 />
-                <p className="mt-1 text-xs text-slate-400">
-                  寫了之後，清單、看板、關聯圖上都會標一個「有問題」。
-                  解決了就按「已解決，清空」—— 寫過的內容會留在下面的活動紀錄裡。
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {T.task.problem.hint}
                 </p>
               </div>
 
@@ -191,31 +204,36 @@ export function TaskDrawer({
 
               {/* ── 左右關聯 ── */}
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">
-                  任務關聯 <span className="font-normal text-slate-400">（左右：依賴與語意）</span>
+                <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  {T.task.link.title}{' '}
+                  <span className="font-normal text-slate-400 dark:text-slate-500">
+                    {T.task.link.titleHint}
+                  </span>
                 </h3>
                 <div className="space-y-1.5">
                   {data.links.length === 0 && (
-                    <p className="text-sm text-slate-400">還沒有任何關聯。</p>
+                    <p className="text-sm text-slate-400 dark:text-slate-500">{T.task.link.empty}</p>
                   )}
                   {data.links.map(l => (
                     <div key={l.id + l.direction}
-                         className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm">
+                         className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm
+                                    dark:bg-slate-800">
                       <span className={cx(
                         'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium',
                         SCHEDULING.includes(l.linkType)
-                          ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-600'
+                          ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
+                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
                       )}>{LINK_CHIP[l.linkType]}</span>
-                      <span className="min-w-0 flex-1 truncate text-slate-700">
+                      <span className="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-300">
                         {linkSentence(l.linkType, l.direction, l.otherRef)}
-                        <span className="ml-1.5 text-slate-400">{l.otherTitle}</span>
+                        <span className="ml-1.5 text-slate-400 dark:text-slate-500">{l.otherTitle}</span>
                       </span>
                       {l.lagDays !== 0 && (
-                        <span className="shrink-0 text-xs text-slate-400">
-                          間隔 {l.lagDays > 0 ? '+' : ''}{l.lagDays} 天
+                        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
+                          {T.task.link.lagDays(l.lagDays)}
                         </span>
                       )}
-                      <Button variant="ghost" className="text-xs text-slate-400"
+                      <Button variant="ghost" className="text-xs text-slate-400 dark:text-slate-500"
                               onClick={() => delLink.mutate(l.id)}>✕</Button>
                     </div>
                   ))}
@@ -223,10 +241,10 @@ export function TaskDrawer({
 
                 <div className="mt-3 flex flex-wrap items-end gap-2">
                   <div className="min-w-56 flex-1">
-                    <Field label="關聯到">
+                    <Field label={T.task.link.fieldTarget}>
                       <select value={targetId} onChange={e => setTargetId(e.target.value)}
-                              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-                        <option value="">選擇任務…</option>
+                              className={SELECT_CLS}>
+                        <option value="">{T.task.link.pickTask}</option>
                         {allTasks.filter(t => t.id !== taskId).map(t => (
                           <option key={t.id} value={t.id}>{t.ref} {t.title}</option>
                         ))}
@@ -234,31 +252,32 @@ export function TaskDrawer({
                     </Field>
                   </div>
                   <div className="w-60">
-                    <Field label="關聯類型">
+                    <Field label={T.task.link.fieldType}>
                       <select value={linkType} onChange={e => setLinkType(e.target.value as LinkType)}
-                              className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
-                        <optgroup label="排程（會推動日期）">
+                              className={SELECT_CLS}>
+                        <optgroup label={T.task.link.groupScheduling}>
                           {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
                         </optgroup>
-                        <optgroup label="語意（不影響排程）">
+                        <optgroup label={T.task.link.groupSemantic}>
                           {SEMANTIC.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
                         </optgroup>
                       </select>
                     </Field>
                   </div>
                   <div className="w-28">
-                    <Field label="間隔（天）">
+                    <Field label={T.task.link.fieldLag}>
                       <Input type="number" value={lag} onChange={e => setLag(Number(e.target.value))}
-                             title="正數＝中間要空幾天；負數＝可以提前重疊" />
+                             title={T.task.link.lagHint} />
                     </Field>
                   </div>
                   <Button variant="primary" disabled={!targetId || addLink.isPending}
                           onClick={() => addLink.mutate({ targetId, linkType, lagDays: lag })}>
-                    建立關聯
+                    {T.task.link.add}
                   </Button>
                 </div>
                 {linkError && (
-                  <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
+                  <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200
+                                  dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30">
                     {linkError}
                   </div>
                 )}
@@ -267,15 +286,19 @@ export function TaskDrawer({
               {/* ── 上下階層 ── */}
               {data.children.length > 0 && (
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-slate-700">
-                    子任務 <span className="font-normal text-slate-400">（上下：階層）</span>
+                  <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    {T.task.children.title}{' '}
+                    <span className="font-normal text-slate-400 dark:text-slate-500">
+                      {T.task.children.titleHint}
+                    </span>
                   </h3>
                   <div className="space-y-1">
                     {data.children.map(c => (
-                      <div key={c.id} className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm">
-                        <span className="font-mono text-xs text-slate-500">{c.ref}</span>
+                      <div key={c.id} className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm
+                                                 dark:bg-slate-800 dark:text-slate-200">
+                        <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{c.ref}</span>
                         <span className="flex-1 truncate">{c.title}</span>
-                        <span className="text-xs text-slate-400">{c.progress}%</span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500">{c.progress}%</span>
                       </div>
                     ))}
                   </div>
@@ -284,12 +307,18 @@ export function TaskDrawer({
 
               {/* ── 活動時間軸 ── */}
               <div>
-                <h3 className="mb-2 text-sm font-semibold text-slate-700">活動紀錄</h3>
-                <ul className="space-y-1 text-xs text-slate-500">
+                <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  {T.task.drawer.activityTitle}
+                </h3>
+                <ul className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                   {data.activities.slice(0, 15).map(a => (
                     <li key={a.id} className="flex gap-2">
-                      <span className="text-slate-400">{new Date(a.createdAt).toLocaleString('zh-TW')}</span>
-                      <span className="text-slate-600">{a.actorName ?? '系統'}</span>
+                      <span className="text-slate-400 dark:text-slate-500">
+                        {new Date(a.createdAt).toLocaleString('zh-TW')}
+                      </span>
+                      <span className="text-slate-600 dark:text-slate-300">
+                        {a.actorName ?? T.task.drawer.systemActor}
+                      </span>
                       <span>{describeActivity(a.kind, a.body)}</span>
                     </li>
                   ))}
@@ -305,16 +334,16 @@ export function TaskDrawer({
 
 function describeActivity(kind: string, body: Record<string, unknown> | null): string {
   switch (kind) {
-    case 'CREATED': return '建立了這張任務'
-    case 'COMMENT': return `留言：${String(body?.text ?? '')}`
+    case 'CREATED': return T.task.activity.created
+    case 'COMMENT': return T.task.activity.comment(String(body?.text ?? ''))
     case 'LINK_CHANGE': {
       const t = String(body?.linkType ?? '') as LinkType
-      return `調整關聯（${LINK_CHIP[t] ?? t}）`
+      return T.task.activity.linkChange(LINK_CHIP[t] ?? t)
     }
     case 'INQUIRY_CHANGE':
       return body?.action === 'ask'
-        ? `發文給 ${String(body?.unit ?? '')}`
-        : `登錄回覆${body?.repliedByUnit ? `（${String(body.repliedByUnit)}）` : ''}`
+        ? T.task.activity.inquiryAsk(String(body?.unit ?? ''))
+        : T.task.activity.inquiryReply(body?.repliedByUnit ? String(body.repliedByUnit) : '')
     default:
       /*
        * 問題被清空之後，任務上就沒有它了 —— 這一行是唯一查得回「當初卡在哪」
@@ -323,9 +352,9 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
       if (body && 'problem' in body) {
         const before = body.problemBefore ? String(body.problemBefore) : ''
         return body.problem
-          ? `記下目前遇到的問題：${String(body.problem)}`
-          : `把問題標為已解決${before ? `（原本：${before}）` : ''}`
+          ? T.task.activity.problemSet(String(body.problem))
+          : T.task.activity.problemCleared(before)
       }
-      return '更新了欄位'
+      return T.task.activity.fieldUpdated
   }
 }

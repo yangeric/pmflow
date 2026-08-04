@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type Project } from '../lib/api'
+import { T } from '../strings'
 import { Button, Input, cx } from '../components/ui'
 
 /**
@@ -76,7 +77,7 @@ export default function ProjectPicker({
     mutationFn: (projectId: string) => Api.applyToJoin(projectId, applyMsg.trim() || undefined),
     onSuccess: () => { setApplyingTo(null); setApplyMsg(''); setJoinErr(null); refreshJoin() },
     onError: (e: unknown) => setJoinErr(
-      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '申請失敗'
+      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : T.project.join.failed
     ),
   })
   const cancelApply = useMutation({
@@ -85,12 +86,14 @@ export default function ProjectPicker({
   })
 
   return (
-    <div className="h-full overflow-auto bg-slate-50">
+    <div className="h-full overflow-auto bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-4xl px-6 py-12">
 
         <div className="mb-8 flex items-baseline gap-3">
-          <span className="text-xl font-semibold text-slate-800">PMFlow</span>
-          <span className="text-sm text-slate-400">選一個專案開始</span>
+          <span className="text-xl font-semibold text-slate-800 dark:text-slate-100">
+            {T.nav.appName}
+          </span>
+          <span className="text-sm text-slate-400 dark:text-slate-500">{T.project.pickOne}</span>
           <div className="ml-auto flex items-center gap-2 text-sm">
             {bell}
             {menu}
@@ -101,27 +104,34 @@ export default function ProjectPicker({
         <button
           onClick={onInquiryBoard}
           className="mb-6 flex w-full items-center gap-3 rounded-xl bg-white px-4 py-3 text-left
-                     ring-1 ring-slate-200 transition hover:ring-slate-400"
+                     ring-1 ring-slate-200 transition hover:ring-slate-400
+                     dark:bg-slate-900 dark:ring-slate-700 dark:hover:ring-slate-500"
         >
           <span className="text-lg">📮</span>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-slate-800">發文追蹤</div>
-            <div className="text-xs text-slate-400">跨所有專案，看發出去的事情回了沒</div>
+            <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+              {T.nav.inquiryBoard}
+            </div>
+            <div className="text-xs text-slate-400 dark:text-slate-500">{T.project.inquiryHint}</div>
           </div>
           {totalOverdue > 0 && (
-            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
-              {totalOverdue} 件逾期
+            <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700
+                             dark:bg-red-500/15 dark:text-red-300">
+              {T.project.overdueCount(totalOverdue)}
             </span>
           )}
         </button>
 
-        <div className="mb-2 text-xs font-medium tracking-wide text-slate-400">專案</div>
+        <div className="mb-2 text-xs font-medium tracking-wide text-slate-400 dark:text-slate-500">
+          {T.project.section}
+        </div>
 
         {projects.length === 0 && !adding && (
-          <div className="rounded-xl bg-white p-8 text-center ring-1 ring-slate-200">
-            <div className="text-sm text-slate-500">還沒有任何專案</div>
+          <div className="rounded-xl bg-white p-8 text-center ring-1 ring-slate-200
+                          dark:bg-slate-900 dark:ring-slate-700">
+            <div className="text-sm text-slate-500 dark:text-slate-400">{T.project.empty}</div>
             <Button variant="primary" className="mt-3" onClick={() => setAdding(true)}>
-              ＋ 建立第一個專案
+              ＋ {T.project.createFirst}
             </Button>
           </div>
         )}

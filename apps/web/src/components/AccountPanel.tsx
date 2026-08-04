@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Api, ApiError, type ApiToken, type WorkspaceRole } from '../lib/api'
+import { Api, ApiError, type ApiToken } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { todayYmd } from '../lib/date'
+import { T } from '../strings'
 import { Button, Field, Input, Spinner } from './ui'
 import { Avatar, AvatarPicker } from './Avatar'
 
@@ -17,12 +18,8 @@ import { Avatar, AvatarPicker } from './Avatar'
  * 至少他知道發生了什麼事。
  */
 
-const ROLE_LABEL: Record<WorkspaceRole, string> = {
-  OWNER: '擁有者', ADMIN: '管理者', MEMBER: '成員', GUEST: '訪客',
-}
-
 const errText = (e: unknown) =>
-  e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '操作失敗'
+  e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : T.common.failed
 
 export default function AccountPanel() {
   const { refreshUser, logout } = useAuth()
@@ -53,7 +50,7 @@ export default function AccountPanel() {
     mutationFn: () => Api.updateProfile({ displayName, email }),
     onSuccess: async () => {
       setProfileErr(null)
-      setProfileMsg('已儲存')
+      setProfileMsg(T.common.saved)
       await refetch()
       await refreshUser()
     },
@@ -84,7 +81,7 @@ export default function AccountPanel() {
     onError: e => setPwErr(errText(e)),
   })
 
-  if (isLoading || !data) return <Spinner label="載入帳號資料…" />
+  if (isLoading || !data) return <Spinner label={T.account.loading} />
 
   const busyAvatar = saveAvatar.isPending || dropAvatar.isPending
   const dirty = displayName !== data.user.displayName || email !== data.user.email
@@ -92,13 +89,18 @@ export default function AccountPanel() {
     && newPassword === confirmPassword
 
   return (
-    <div className="h-full overflow-auto bg-slate-50">
+    <div className="h-full overflow-auto bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <h1 className="mb-6 text-lg font-semibold text-slate-800">帳號設定</h1>
+        <h1 className="mb-6 text-lg font-semibold text-slate-800 dark:text-slate-100">
+          {T.account.title}
+        </h1>
 
         {/* ── 頭像 ── */}
-        <section className="mb-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">頭像</h2>
+        <section className="mb-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                            dark:bg-slate-900 dark:ring-slate-700">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {T.account.avatar.title}
+          </h2>
 
           <div className="flex items-center gap-5">
             <Avatar userId={data.user.id} name={data.user.displayName}
@@ -107,51 +109,60 @@ export default function AccountPanel() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <AvatarPicker disabled={busyAvatar} onPick={img => saveAvatar.mutate(img)}>
-                  {data.user.avatarFile ? '換一張' : '選一張圖'}
+                  {data.user.avatarFile ? T.account.avatar.replace : T.account.avatar.pick}
                 </AvatarPicker>
                 {data.user.avatarFile && (
                   <button disabled={busyAvatar} onClick={() => dropAvatar.mutate()}
-                          className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50">
-                    移除
+                          className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50
+                                     dark:text-slate-500 dark:hover:text-slate-300">
+                    {T.common.remove}
                   </button>
                 )}
-                {busyAvatar && <span className="text-xs text-slate-400">處理中…</span>}
+                {busyAvatar && (
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                    {T.account.avatar.working}
+                  </span>
+                )}
               </div>
-              <p className="mt-2 text-xs text-slate-400">
-                支援 PNG、JPEG、WebP。圖會自動取中間的正方形、縮成 256 見方再上傳。
-                沒有頭像時顯示名字算出來的色塊。
+              <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                {T.account.avatar.hint}
               </p>
             </div>
           </div>
 
           {avatarErr && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                            dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
               {avatarErr}
             </div>
           )}
         </section>
 
         {/* ── 基本資料 ── */}
-        <section className="rounded-xl bg-white p-5 ring-1 ring-slate-200">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">基本資料</h2>
+        <section className="rounded-xl bg-white p-5 ring-1 ring-slate-200
+                            dark:bg-slate-900 dark:ring-slate-700">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {T.account.profile.title}
+          </h2>
 
           <div className="space-y-3">
-            <Field label="顯示名稱">
+            <Field label={T.account.profile.displayName}>
               <Input value={displayName} maxLength={80}
                      onChange={e => setDisplayName(e.target.value)} />
             </Field>
-            <Field label="email（也是登入帳號）">
+            <Field label={T.account.profile.email}>
               <Input value={email} type="email" maxLength={254}
                      onChange={e => setEmail(e.target.value)} />
             </Field>
           </div>
 
-          <p className="mt-2 text-xs text-slate-400">
-            改了 email 之後就要用新的 email 登入。站上沒有寄驗證信的機制，改完立刻生效。
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            {T.account.profile.hint}
           </p>
 
           {profileErr && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                            dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
               {profileErr}
             </div>
           )}
@@ -159,55 +170,62 @@ export default function AccountPanel() {
           <div className="mt-4 flex items-center gap-3">
             <Button variant="primary"
                     disabled={!dirty || !displayName.trim() || !email.trim() || saveProfile.isPending}
-                    onClick={() => saveProfile.mutate()}>儲存</Button>
+                    onClick={() => saveProfile.mutate()}>{T.common.save}</Button>
             {dirty && (
               <button onClick={() => {
                 setDisplayName(data.user.displayName)
                 setEmail(data.user.email)
                 setProfileErr(null); setProfileMsg(null)
-              }} className="text-xs text-slate-400 hover:text-slate-600">還原</button>
+              }} className="text-xs text-slate-400 hover:text-slate-600
+                            dark:text-slate-500 dark:hover:text-slate-300">{T.common.restore}</button>
             )}
             {profileMsg && !dirty && (
-              <span className="text-xs text-emerald-600">{profileMsg}</span>
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">{profileMsg}</span>
             )}
           </div>
         </section>
 
         {/* ── 密碼 ── */}
-        <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">變更密碼</h2>
+        <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                            dark:bg-slate-900 dark:ring-slate-700">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {T.account.password.title}
+          </h2>
 
           <div className="space-y-3">
-            <Field label="目前的密碼">
+            <Field label={T.account.password.current}>
               <Input type="password" value={currentPassword} autoComplete="current-password"
                      onChange={e => setCurrentPassword(e.target.value)} />
             </Field>
-            <Field label="新密碼（至少 8 個字元）">
+            <Field label={T.account.password.next}>
               <Input type="password" value={newPassword} autoComplete="new-password"
                      onChange={e => setNewPassword(e.target.value)} />
             </Field>
-            <Field label="再輸入一次新密碼">
+            <Field label={T.account.password.again}>
               <Input type="password" value={confirmPassword} autoComplete="new-password"
                      onChange={e => setConfirmPassword(e.target.value)} />
             </Field>
           </div>
 
           {confirmPassword.length > 0 && newPassword !== confirmPassword && (
-            <p className="mt-2 text-xs text-red-600">兩次輸入的新密碼不一樣。</p>
+            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+              {T.account.password.mismatch}
+            </p>
           )}
-          <p className="mt-2 text-xs text-slate-400">
-            改完密碼所有裝置都要重新登入，包含現在這一台。
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            {T.account.password.hint}
           </p>
 
           {pwErr && (
-            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                            dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
               {pwErr}
             </div>
           )}
 
           <div className="mt-4">
             <Button variant="primary" disabled={!pwReady || changePassword.isPending}
-                    onClick={() => changePassword.mutate()}>變更密碼並重新登入</Button>
+                    onClick={() => changePassword.mutate()}>{T.account.password.submit}</Button>
           </div>
         </section>
 
@@ -215,18 +233,25 @@ export default function AccountPanel() {
         <ApiTokenSection />
 
         {/* ── 工作區 ── */}
-        <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
-          <h2 className="mb-3 text-sm font-semibold text-slate-700">我在哪些工作區</h2>
-          <div className="divide-y divide-slate-100">
+        <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                            dark:bg-slate-900 dark:ring-slate-700">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+            {T.account.workspaces.title}
+          </h2>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {data.workspaces.map(w => (
               <div key={w.id} className="flex items-center gap-3 py-2">
-                <span className="flex-1 truncate text-sm text-slate-700">{w.name}</span>
-                <span className="text-xs text-slate-500">{ROLE_LABEL[w.role] ?? w.role}</span>
+                <span className="flex-1 truncate text-sm text-slate-700 dark:text-slate-300">
+                  {w.name}
+                </span>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {T.account.workspaceRole[w.role] ?? w.role}
+                </span>
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-slate-400">
-            這裡的角色管的是「誰能登入這個站、誰能開帳號」，跟你在各專案裡的角色是兩回事。
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            {T.account.workspaces.hint}
           </p>
         </section>
       </div>
@@ -236,7 +261,7 @@ export default function AccountPanel() {
 
 /** 給人看的時間戳。權杖這一區只在乎「大概什麼時候」，不需要秒 */
 function stamp(s: string | null): string {
-  if (!s) return '—'
+  if (!s) return T.common.none
   const d = new Date(s)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
@@ -296,30 +321,39 @@ function ApiTokenSection() {
   const today = todayYmd()
 
   return (
-    <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
-      <h2 className="mb-1 text-sm font-semibold text-slate-700">API 權杖</h2>
-      <p className="mb-4 text-xs text-slate-400">
-        讓別的系統或腳本代替你呼叫這個站的介面，例如自動建立任務。
-        用權杖呼叫等於你本人在呼叫，看得到、改得動的東西跟你登入時完全一樣，
-        所以請把它當成密碼保管。改密碼不會讓權杖失效，要停用請在下面撤銷。
+    <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                        dark:bg-slate-900 dark:ring-slate-700">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+        {T.account.token.title}
+      </h2>
+      <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">
+        {T.account.token.hint}
       </p>
 
       {/* 明文只會出現這一次，所以給它整段最醒目的位置 */}
       {plaintext && (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
-          <p className="text-xs font-medium text-amber-900">
-            這是新權杖的內容，只會顯示這一次。關掉之後就再也看不到了，請先複製並貼到要用的系統裡。
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3
+                        dark:border-amber-500/30 dark:bg-amber-500/15">
+          <p className="text-xs font-medium text-amber-900 dark:text-amber-200">
+            {T.account.token.plaintextWarning}
           </p>
-          <code className="mt-2 block break-all rounded bg-white px-2.5 py-2 font-mono text-xs text-slate-800 ring-1 ring-amber-200">
+          <code className="mt-2 block break-all rounded bg-white px-2.5 py-2 font-mono text-xs
+                           text-slate-800 ring-1 ring-amber-200
+                           dark:bg-slate-950 dark:text-slate-100 dark:ring-amber-500/30">
             {plaintext}
           </code>
           <div className="mt-2 flex items-center gap-3">
-            <Button onClick={() => copy(plaintext)}>複製</Button>
+            <Button onClick={() => copy(plaintext)}>{T.account.token.copy}</Button>
             <button onClick={() => { setPlaintext(null); setCopied(false) }}
-                    className="text-xs text-slate-500 hover:text-slate-700">
-              我收好了，關閉
+                    className="text-xs text-slate-500 hover:text-slate-700
+                               dark:text-slate-400 dark:hover:text-slate-200">
+              {T.account.token.dismiss}
             </button>
-            {copied && <span className="text-xs text-emerald-600">已複製</span>}
+            {copied && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                {T.account.token.copied}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -327,67 +361,75 @@ function ApiTokenSection() {
       {/* ── 建立 ── */}
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-[14rem] flex-1">
-          <Field label="用途名稱（例如：報修系統、每日匯入腳本）">
-            <Input value={name} maxLength={80} placeholder="這把權杖給誰用"
+          <Field label={T.account.token.name}>
+            <Input value={name} maxLength={80} placeholder={T.account.token.namePlaceholder}
                    onChange={e => setName(e.target.value)} />
           </Field>
         </div>
         <div className="w-44">
-          <Field label="用到哪一天（可留空）">
+          <Field label={T.account.token.expiresOn}>
             <Input type="date" value={expiresOn} min={today}
                    onChange={e => setExpiresOn(e.target.value)} />
           </Field>
         </div>
         <Button variant="primary" disabled={!name.trim() || create.isPending}
-                onClick={() => create.mutate()}>建立權杖</Button>
+                onClick={() => create.mutate()}>{T.account.token.create}</Button>
       </div>
-      <p className="mt-2 text-xs text-slate-400">
-        留空代表不會過期。到期日填的那一天當天仍然可以使用。
+      <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+        {T.account.token.createHint}
       </p>
 
       {err && (
-        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                        dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
           {err}
         </div>
       )}
 
       {/* ── 清單 ── */}
-      <div className="mt-4 border-t border-slate-100 pt-3">
+      <div className="mt-4 border-t border-slate-100 pt-3 dark:border-slate-800">
         {isLoading ? (
-          <Spinner label="載入權杖…" />
+          <Spinner label={T.account.token.loading} />
         ) : tokens.length === 0 ? (
-          <p className="py-3 text-center text-xs text-slate-400">還沒有建立任何權杖。</p>
+          <p className="py-3 text-center text-xs text-slate-400 dark:text-slate-500">
+            {T.account.token.empty}
+          </p>
         ) : (
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {tokens.map(t => {
               const expired = !!t.expiresOn && t.expiresOn < today
               return (
                 <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate text-sm text-slate-700">{t.name}</span>
+                      <span className="truncate text-sm text-slate-700 dark:text-slate-300">
+                        {t.name}
+                      </span>
                       {expired && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-                          已過期
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500
+                                         dark:bg-slate-800 dark:text-slate-400">
+                          {T.account.token.expired}
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 text-xs text-slate-400">
+                    <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
                       <code className="font-mono">{t.prefix}…</code>
                       <span className="mx-2">·</span>
-                      建立於 {stamp(t.createdAt)}
+                      {T.account.token.createdAt(stamp(t.createdAt))}
                       <span className="mx-2">·</span>
-                      最後使用 {t.lastUsedAt ? stamp(t.lastUsedAt) : '從未使用'}
+                      {T.account.token.lastUsedAt(
+                        t.lastUsedAt ? stamp(t.lastUsedAt) : T.account.token.neverUsed
+                      )}
                       <span className="mx-2">·</span>
-                      {t.expiresOn ? `用到 ${t.expiresOn}` : '不會過期'}
+                      {t.expiresOn ? T.account.token.until(t.expiresOn) : T.account.token.noExpiry}
                     </div>
                   </div>
                   <Button variant="danger" disabled={revoke.isPending}
                           onClick={() => {
-                            if (confirm(`撤銷「${t.name}」之後，用它呼叫的系統會立刻失效。確定要撤銷嗎？`)) {
+                            if (confirm(T.account.token.confirmRevoke(t.name))) {
                               revoke.mutate(t.id)
                             }
-                          }}>撤銷</Button>
+                          }}>{T.account.token.revoke}</Button>
                 </div>
               )
             })}
