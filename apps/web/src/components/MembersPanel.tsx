@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type ProjectRole } from '../lib/api'
 import { Button, Empty, Spinner, cx } from '../components/ui'
+import { Avatar } from './Avatar'
 
 /**
  * 專案成員管理。
@@ -174,6 +175,7 @@ export default function MembersPanel({
             <div className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">
               {members.map(m => (
                 <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                  <Avatar userId={m.id} name={m.displayName} hasAvatar={m.hasAvatar} size="md" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-slate-800">

@@ -3,11 +3,12 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Api, ApiError, type WorkspaceRole } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { Button, Field, Input, Spinner } from './ui'
+import { Avatar, AvatarPicker } from './Avatar'
 
 /**
  * 自己的帳號設定。
  *
- * 只做三件事：改顯示名稱、改 email、改密碼。刻意不做頭像、通知偏好、
+ * 只做四件事：換頭像、改顯示名稱、改 email、改密碼。刻意不做通知偏好、
  * 兩階段驗證 —— 這個站沒有寄信的能力，做了也走不完流程。
  *
  * 改密碼會把**所有裝置**的登入作廢，包含現在這一台（後端會把 refresh token
@@ -33,6 +34,8 @@ export default function AccountPanel() {
   const [profileMsg, setProfileMsg] = useState<string | null>(null)
   const [profileErr, setProfileErr] = useState<string | null>(null)
 
+  const [avatarErr, setAvatarErr] = useState<string | null>(null)
+
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -56,6 +59,20 @@ export default function AccountPanel() {
     onError: e => { setProfileMsg(null); setProfileErr(errText(e)) },
   })
 
+  // 換完之後 refetch 是為了拿到新檔名 —— 檔名帶時間戳，也就是 <Avatar> 的 version，
+  // 沒有它畫面會停在瀏覽器快取的舊圖上
+  const saveAvatar = useMutation({
+    mutationFn: (image: string) => Api.uploadAvatar(image),
+    onSuccess: async () => { setAvatarErr(null); await refetch(); await refreshUser() },
+    onError: e => setAvatarErr(errText(e)),
+  })
+
+  const dropAvatar = useMutation({
+    mutationFn: () => Api.removeAvatar(),
+    onSuccess: async () => { setAvatarErr(null); await refetch(); await refreshUser() },
+    onError: e => setAvatarErr(errText(e)),
+  })
+
   const changePassword = useMutation({
     mutationFn: () => Api.changePassword({ currentPassword, newPassword }),
     onSuccess: async () => {
@@ -68,6 +85,7 @@ export default function AccountPanel() {
 
   if (isLoading || !data) return <Spinner label="載入帳號資料…" />
 
+  const busyAvatar = saveAvatar.isPending || dropAvatar.isPending
   const dirty = displayName !== data.user.displayName || email !== data.user.email
   const pwReady = currentPassword.length > 0 && newPassword.length >= 8
     && newPassword === confirmPassword
@@ -76,6 +94,41 @@ export default function AccountPanel() {
     <div className="h-full overflow-auto bg-slate-50">
       <div className="mx-auto max-w-2xl px-6 py-8">
         <h1 className="mb-6 text-lg font-semibold text-slate-800">帳號設定</h1>
+
+        {/* ── 頭像 ── */}
+        <section className="mb-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">頭像</h2>
+
+          <div className="flex items-center gap-5">
+            <Avatar userId={data.user.id} name={data.user.displayName}
+                    hasAvatar={!!data.user.avatarFile} version={data.user.avatarFile}
+                    size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <AvatarPicker disabled={busyAvatar} onPick={img => saveAvatar.mutate(img)}>
+                  {data.user.avatarFile ? '換一張' : '選一張圖'}
+                </AvatarPicker>
+                {data.user.avatarFile && (
+                  <button disabled={busyAvatar} onClick={() => dropAvatar.mutate()}
+                          className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50">
+                    移除
+                  </button>
+                )}
+                {busyAvatar && <span className="text-xs text-slate-400">處理中…</span>}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                支援 PNG、JPEG、WebP。圖會自動取中間的正方形、縮成 256 見方再上傳。
+                沒有頭像時顯示名字算出來的色塊。
+              </p>
+            </div>
+          </div>
+
+          {avatarErr && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {avatarErr}
+            </div>
+          )}
+        </section>
 
         {/* ── 基本資料 ── */}
         <section className="rounded-xl bg-white p-5 ring-1 ring-slate-200">

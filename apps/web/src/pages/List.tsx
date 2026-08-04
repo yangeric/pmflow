@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, Empty, Input, cx } from '../components/ui'
+import { Avatar } from '../components/Avatar'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 
 const TYPE_LABEL: Partial<Record<Task['type'], string>> = {
@@ -154,10 +155,8 @@ export default function ListView({
                   {t.assigneeName ? (
                     <span className="inline-flex items-center gap-1.5 text-xs text-slate-600"
                           title={t.assigneeName}>
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center
-                                       rounded-full bg-slate-200 text-[10px] font-medium text-slate-600">
-                        {initial(t.assigneeName)}
-                      </span>
+                      <Avatar userId={t.assigneeId} name={t.assigneeName}
+                              hasAvatar={t.assigneeHasAvatar} />
                       <span className="truncate">{t.assigneeName}</span>
                     </span>
                   ) : (
@@ -276,12 +275,6 @@ export default function ListView({
       </table>
     </div>
   )
-}
-
-/** 頭像上的字：中文取最後一個字（名），英文取第一個字母 */
-const initial = (name: string) => {
-  const t = name.trim()
-  return /[A-Za-z]/.test(t[0] ?? '') ? t[0].toUpperCase() : t.slice(-1)
 }
 
 const fmt = (d: string | null) => (d ? d.slice(0, 10).replaceAll('-', '/').slice(5) : '—')
