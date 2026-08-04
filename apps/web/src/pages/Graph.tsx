@@ -148,6 +148,14 @@ type TaskNodeData = {
   /** 卡住這張任務的上游（任務編號）。空陣列＝沒被卡住，或使用者關掉了這個標記 */
   blockedBy: string[]
   /**
+   * 目前遇到的問題（人自己寫下的那一段字），沒寫就是 null。
+   *
+   * 跟 blockedBy 分成兩個欄位而不是合成一個「有狀況」：卡住是這張圖自己
+   * 算出來的、上游一完成就消失；問題只有人能寫、也只有人能清。
+   * 併成一個的話畫面就沒辦法回答「這是系統推的還是人講的」。
+   */
+  problem: string | null
+  /**
    * 可以跟這張任務同時做的任務（任務編號），依「怎麼個同時法」分開。同上，關掉標記時是空的。
    *
    * 三者互斥：同一對任務只會落在其中一類，先判同時開始／同時完成，都不是才算單純重疊。
@@ -202,6 +210,11 @@ const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
     text: '這張任務現在動不了：上游還沒完成，或同時開始的那一張還沒開始。\n' +
           '滑到節點上的紅色徽章可以看它在等誰 —— 會直接指到真正的源頭，\n' +
           '不是中間那一張。' },
+  { label: '⚑ 有問題', className: 'text-fuchsia-700',
+    text: '有人在這張任務上寫下了「目前遇到的問題」。\n' +
+          '跟紅色的「卡住」是兩回事：卡住是系統看任務關聯算出來的，\n' +
+          '上游一完成就自己不見；問題是人自己打字寫的，要有人去解決、\n' +
+          '在任務裡把它清掉才會消失。滑到節點上的旗子可以看寫了什麼。' },
   { label: '⇉ 同時開始', className: 'text-amber-700',
     text: '跟別的任務同一天開始。排人力時這幾張要一起看，同一天都得到位。' },
   { label: '⇥ 同時完成', className: 'text-purple-700',
@@ -288,6 +301,10 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           <span className={BADGE + ' bg-red-50 font-medium text-red-700'}
                 title={`卡住：要等 ${data.blockedBy.join('、')}`}>卡住</span>
         )}
+        {data.problem && (
+          <span className={BADGE + ' bg-fuchsia-50 font-medium text-fuchsia-700'}
+                title={`目前遇到的問題：${data.problem}`}>⚑ 有問題</span>
+        )}
         <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
           {data.title}
         </span>
@@ -351,6 +368,13 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
           {data.blockedBy.length > 0 && (
             <span className={BADGE + ' bg-red-50 font-medium text-red-700'}
                   title={`卡住：要等 ${data.blockedBy.join('、')}`}>卡住</span>
+          )}
+          {/* 刻意就排在「卡住」旁邊，而且刻意長得不一樣：兩個常常同時出現，
+              紅色的是圖自己算出來的，這個紫紅色旗子是人打字寫下的。
+              同色同形的話，使用者會以為系統知道他遇到什麼事 */}
+          {data.problem && (
+            <span className={BADGE + ' bg-fuchsia-50 font-medium text-fuchsia-700'}
+                  title={`目前遇到的問題：${data.problem}`}>⚑ 有問題</span>
           )}
           {/* 同一張任務可能同時掛「卡住」與「同時開始」，那不是矛盾：
               上游還沒開始所以現在動不了，它一開始，兩張就並肩跑。
@@ -913,6 +937,9 @@ function GraphCanvas({
           focused: false,
           kin: null,
           blockedBy: [],           // 佔位，實際內容在 styledNodes 補
+          // 問題是任務身上就有的欄位，不像卡住要看整張圖才算得出來，
+          // 所以在這裡直接放進去，不必等 styledNodes
+          problem: n.problem,
           parallel: NO_PARALLEL,
         },
       }
@@ -1547,6 +1574,13 @@ function GraphCanvas({
                 {(blockedBy.get(focused.id)?.length ?? 0) > 0 && (
                   <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">
                     🚧 現在動不了：要等 {blockedBy.get(focused.id)!.join('、')}
+                  </div>
+                )}
+                {/* 面板寬得下，這裡就把問題整句寫出來，不像節點上只放三個字 */}
+                {focused.problem && (
+                  <div className="mt-2 whitespace-pre-wrap rounded bg-fuchsia-50 px-2 py-1
+                                  text-xs text-fuchsia-700">
+                    ⚑ 目前遇到的問題：{focused.problem}
                   </div>
                 )}
                 {(parallelWith.get(focused.id)?.sameStart.length ?? 0) > 0 && (

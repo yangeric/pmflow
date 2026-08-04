@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
-import { InquiryBadge, Empty, Input, cx } from '../components/ui'
+import { InquiryBadge, ProblemBadge, Empty, Input, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 
@@ -132,6 +132,9 @@ export default function ListView({
                     <span className={cx(t.type === 'EPIC' ? 'font-medium text-slate-900' : 'text-slate-800')}>
                       {t.title}
                     </span>
+                    {/* 緊跟在標題後面，不另外開一欄：有問題的任務是少數，
+                        為它固定讓出一欄寬度，換來的是整張表每一列都變窄 */}
+                    <ProblemBadge problem={t.problem} />
                     {/* 一直看得到。藏在 hover 底下的話，等於還是只有右上角那一個入口 ——
                         找得到才叫入口，顏色淡一點就不會吵 */}
                     <button

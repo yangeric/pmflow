@@ -1,6 +1,6 @@
 import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Api, type AppNotification, type Task } from './lib/api'
+import { Api, type AppNotification, type Task, type WorkspaceRole } from './lib/api'
 import { useAuth } from './lib/auth'
 import { Button, Spinner, cx } from './components/ui'
 import { TaskDrawer } from './components/TaskDrawer'
@@ -112,7 +112,8 @@ export default function App() {
         <div className="min-h-0 flex-1">
           {account === 'profile'
             ? <AccountPanel />
-            : <AdminPanel workspaceId={workspaceId} />}
+            : <AdminPanel workspaceId={workspaceId}
+                          myRole={(workspaces[0]?.role ?? 'MEMBER') as WorkspaceRole} />}
         </div>
       </div>
     )

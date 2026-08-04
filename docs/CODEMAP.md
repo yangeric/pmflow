@@ -106,3 +106,46 @@ pages/
 - **快取鍵裡沒有使用者**（`['projects']`、`['tasks', id]`），所以換帳號一定要 `qc.clear()`。
 - **migration 檔加了就不能改**，`db.ts` 會比對 checksum，改了會開不起來。
 - **git tag 沒有 `v` 前綴**。
+
+---
+
+## 讓別的系統呼叫 API（API 權杖）
+
+登入換來的 access token 只有 15 分鐘，換新的要靠瀏覽器的 refresh cookie，
+腳本與外部系統走不了那條路。要整合就發一把**API 權杖**：
+
+1. 網站右上角進「帳號設定」→「API 權杖」→ 填用途名稱（到期日可留空）→ 建立。
+2. 明文**只會顯示這一次**，馬上複製走。伺服器只留 sha256 雜湊，事後誰都看不回來。
+3. 弄丟就撤銷舊的、重發一把；不用了也請撤銷，撤銷立刻生效。
+
+權杖以 `pmflow_` 開頭（誤貼進程式碼時掃得出來），用法就是原本的
+`Authorization: Bearer`，**其餘端點與參數一個字都沒變**。
+權限完全等於發權杖的那個人 —— 他在某專案是 EDITOR，這把權杖就是 EDITOR。
+
+建任務（`POST /api/v1/projects/{專案 id}/tasks`，需要該專案 EDITOR 以上）：
+
+```bash
+TOKEN=pmflow_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+BASE=http://localhost:8480/api/v1
+
+# 先找出專案 id（回傳的 projects[].id）
+curl -s -H "Authorization: Bearer $TOKEN" "$BASE/projects"
+
+# 建一張任務
+curl -s -X POST "$BASE/projects/<專案 id>/tasks" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "title": "外部系統送進來的請修單",
+        "description": "三樓走廊燈不亮",
+        "type": "TASK",
+        "priority": "HIGH",
+        "dueDate": "2026-08-31"
+      }'
+```
+
+回傳就是一般的任務物件（含 `id` 與 `ref`，例如 `OPS-42`）。
+可帶的欄位跟前端建任務時一樣，見 `routes/tasks.ts` 的 `createBody`。
+
+失敗時回的是 problem+json：`401` 代表權杖無效／已撤銷／已過期，
+`403` 代表這把權杖背後的人在那個專案裡權限不夠（或帳號被停用了）。

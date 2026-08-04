@@ -10,7 +10,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
-import { InquiryBadge, cx } from '../components/ui'
+import { InquiryBadge, ProblemBadge, cx } from '../components/ui'
 
 /**
  * 看板：dnd-kit 拖曳。
@@ -180,9 +180,12 @@ function Card({
       </div>
       <div className="text-sm leading-snug text-slate-800">{task.title}</div>
 
-      {task.inquiryState !== 'NONE' && (
-        <div className="mt-1.5">
+      {/* 兩種徽章放同一排：卡片本來就窄，各自佔一行會把卡片撐高，
+          一欄能看到的卡片數就少了 */}
+      {(task.inquiryState !== 'NONE' || task.problem) && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           <InquiryBadge state={task.inquiryState} />
+          <ProblemBadge problem={task.problem} />
         </div>
       )}
 

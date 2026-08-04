@@ -5,6 +5,7 @@ import { env } from './lib/env.js'
 import { sql, migrate } from './lib/db.js'
 import { registerErrorHandler } from './lib/errors.js'
 import { sweepOverdue } from './lib/inquiry.js'
+import { sweepPasswordResets, RESET_SWEEP_MS } from './lib/breakglass.js'
 import authRoutes from './routes/auth.js'
 import projectRoutes from './routes/projects.js'
 import memberRoutes from './routes/members.js'
@@ -67,6 +68,17 @@ setInterval(async () => {
 }, HOUR).unref()
 
 await sweepOverdue(sql).catch(() => {})
+
+// 主機上的密碼重置檔（break-glass，預設關閉，見 lib/breakglass.ts）
+if (env.passwordResetDir) {
+  app.log.warn({ dir: env.passwordResetDir },
+    '已啟用「從主機檔案重置密碼」。拿得到這個目錄的人可以改任何人的密碼')
+  setInterval(() => {
+    sweepPasswordResets(app.log).catch(err =>
+      app.log.error({ err }, '密碼重置檔掃描失敗'))
+  }, RESET_SWEEP_MS).unref()
+  await sweepPasswordResets(app.log).catch(() => {})
+}
 
 await app.listen({ port: env.port, host: env.host })
 app.log.info(`PMFlow API 啟動於 http://${env.host}:${env.port}`)

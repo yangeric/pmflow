@@ -39,4 +39,9 @@ export const env = {
   seedDemo: req('PMFLOW_SEED_DEMO', 'true') !== 'false',
   /** 上傳的檔案放這裡。容器把它掛成 volume，換版本不會把圖弄丟 */
   attachmentsDir: req('PMFLOW_ATTACHMENTS_DIR', '/data/attachments'),
+  /**
+   * 從主機上重置密碼用的目錄（見 lib/breakglass.ts）。
+   * **預設空字串＝整組關掉**，要用的人自己開 —— 這是 break-glass，不是常設功能。
+   */
+  passwordResetDir: req('PMFLOW_PASSWORD_RESET_DIR', '').trim(),
 }

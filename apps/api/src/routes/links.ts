@@ -113,7 +113,10 @@ export default async function linkRoutes(app: FastifyInstance) {
     const nodes = await sql`
       SELECT t.id, p.key || '-' || t.number AS ref, t.title, t.type,
              t.status_key AS "statusKey", t.progress, t.parent_id AS "parentId",
-             t.inquiry_state AS "inquiryState"
+             t.inquiry_state AS "inquiryState",
+             -- 問題的內容也一起帶：圖上只放一個小標記，但滑過去要看得到寫了什麼，
+             -- 否則使用者得為了讀一句話跳去別的視圖
+             t.problem
       FROM task t JOIN project p ON p.id = t.project_id
       WHERE t.project_id = ${req.params.id} AND t.deleted_at IS NULL`
 

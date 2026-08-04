@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Api, ApiError, type WorkspaceRole } from '../lib/api'
+import { Api, ApiError, type ApiToken, type WorkspaceRole } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { todayYmd } from '../lib/date'
 import { Button, Field, Input, Spinner } from './ui'
 import { Avatar, AvatarPicker } from './Avatar'
 
 /**
  * 自己的帳號設定。
  *
- * 只做四件事：換頭像、改顯示名稱、改 email、改密碼。刻意不做通知偏好、
- * 兩階段驗證 —— 這個站沒有寄信的能力，做了也走不完流程。
+ * 只做五件事：換頭像、改顯示名稱、改 email、改密碼、管理 API 權杖。
+ * 刻意不做通知偏好、兩階段驗證 —— 這個站沒有寄信的能力，做了也走不完流程。
  *
  * 改密碼會把**所有裝置**的登入作廢，包含現在這一台（後端會把 refresh token
  * 全部撤掉）。與其讓使用者在下次開頁時莫名被登出，不如當場登出、當場重登，
@@ -210,6 +211,9 @@ export default function AccountPanel() {
           </div>
         </section>
 
+        {/* ── API 權杖 ── */}
+        <ApiTokenSection />
+
         {/* ── 工作區 ── */}
         <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">我在哪些工作區</h2>
@@ -227,5 +231,169 @@ export default function AccountPanel() {
         </section>
       </div>
     </div>
+  )
+}
+
+/** 給人看的時間戳。權杖這一區只在乎「大概什麼時候」，不需要秒 */
+function stamp(s: string | null): string {
+  if (!s) return '—'
+  const d = new Date(s)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/**
+ * API 權杖：讓外部系統代替你呼叫這個站的 API。
+ *
+ * 拿權杖呼叫等於你本人在呼叫，所以這裡沒有任何權限設定可以調 ——
+ * 能不能建某個專案的任務，看的仍然是你在那個專案裡的角色。
+ *
+ * 建立完成後的明文是一個**獨立的畫面狀態**，不是清單的一部分：伺服器只存雜湊，
+ * 重新整理就再也拿不回來。所以明文出現後不會自己消失，要使用者自己按「我收好了」，
+ * 免得他手滑重整就得重發一把。
+ */
+function ApiTokenSection() {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['myApiTokens'], queryFn: () => Api.apiTokens(),
+  })
+
+  const [name, setName] = useState('')
+  const [expiresOn, setExpiresOn] = useState('')
+  const [plaintext, setPlaintext] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const create = useMutation({
+    mutationFn: () => Api.createApiToken({
+      name: name.trim(), expiresOn: expiresOn || null,
+    }),
+    onSuccess: async r => {
+      setErr(null); setCopied(false); setPlaintext(r.plaintext)
+      setName(''); setExpiresOn('')
+      await refetch()
+    },
+    onError: e => setErr(errText(e)),
+  })
+
+  const revoke = useMutation({
+    mutationFn: (id: string) => Api.revokeApiToken(id),
+    onSuccess: async () => { setErr(null); await refetch() },
+    onError: e => setErr(errText(e)),
+  })
+
+  async function copy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      // 沒有剪貼簿權限（非 https 的內網就會這樣）時不當成錯誤，
+      // 反正明文就在畫面上，使用者自己選取複製即可
+      setCopied(false)
+    }
+  }
+
+  const tokens: ApiToken[] = data?.tokens ?? []
+  const today = todayYmd()
+
+  return (
+    <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">API 權杖</h2>
+      <p className="mb-4 text-xs text-slate-400">
+        讓別的系統或腳本代替你呼叫這個站的介面，例如自動建立任務。
+        用權杖呼叫等於你本人在呼叫，看得到、改得動的東西跟你登入時完全一樣，
+        所以請把它當成密碼保管。改密碼不會讓權杖失效，要停用請在下面撤銷。
+      </p>
+
+      {/* 明文只會出現這一次，所以給它整段最醒目的位置 */}
+      {plaintext && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3">
+          <p className="text-xs font-medium text-amber-900">
+            這是新權杖的內容，只會顯示這一次。關掉之後就再也看不到了，請先複製並貼到要用的系統裡。
+          </p>
+          <code className="mt-2 block break-all rounded bg-white px-2.5 py-2 font-mono text-xs text-slate-800 ring-1 ring-amber-200">
+            {plaintext}
+          </code>
+          <div className="mt-2 flex items-center gap-3">
+            <Button onClick={() => copy(plaintext)}>複製</Button>
+            <button onClick={() => { setPlaintext(null); setCopied(false) }}
+                    className="text-xs text-slate-500 hover:text-slate-700">
+              我收好了，關閉
+            </button>
+            {copied && <span className="text-xs text-emerald-600">已複製</span>}
+          </div>
+        </div>
+      )}
+
+      {/* ── 建立 ── */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[14rem] flex-1">
+          <Field label="用途名稱（例如：報修系統、每日匯入腳本）">
+            <Input value={name} maxLength={80} placeholder="這把權杖給誰用"
+                   onChange={e => setName(e.target.value)} />
+          </Field>
+        </div>
+        <div className="w-44">
+          <Field label="用到哪一天（可留空）">
+            <Input type="date" value={expiresOn} min={today}
+                   onChange={e => setExpiresOn(e.target.value)} />
+          </Field>
+        </div>
+        <Button variant="primary" disabled={!name.trim() || create.isPending}
+                onClick={() => create.mutate()}>建立權杖</Button>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">
+        留空代表不會過期。到期日填的那一天當天仍然可以使用。
+      </p>
+
+      {err && (
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {err}
+        </div>
+      )}
+
+      {/* ── 清單 ── */}
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        {isLoading ? (
+          <Spinner label="載入權杖…" />
+        ) : tokens.length === 0 ? (
+          <p className="py-3 text-center text-xs text-slate-400">還沒有建立任何權杖。</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {tokens.map(t => {
+              const expired = !!t.expiresOn && t.expiresOn < today
+              return (
+                <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm text-slate-700">{t.name}</span>
+                      {expired && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+                          已過期
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      <code className="font-mono">{t.prefix}…</code>
+                      <span className="mx-2">·</span>
+                      建立於 {stamp(t.createdAt)}
+                      <span className="mx-2">·</span>
+                      最後使用 {t.lastUsedAt ? stamp(t.lastUsedAt) : '從未使用'}
+                      <span className="mx-2">·</span>
+                      {t.expiresOn ? `用到 ${t.expiresOn}` : '不會過期'}
+                    </div>
+                  </div>
+                  <Button variant="danger" disabled={revoke.isPending}
+                          onClick={() => {
+                            if (confirm(`撤銷「${t.name}」之後，用它呼叫的系統會立刻失效。確定要撤銷嗎？`)) {
+                              revoke.mutate(t.id)
+                            }
+                          }}>撤銷</Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }

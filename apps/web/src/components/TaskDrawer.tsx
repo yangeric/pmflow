@@ -53,6 +53,9 @@ export function TaskDrawer({
     qc.invalidateQueries({ queryKey: ['task', taskId] })
     qc.invalidateQueries({ queryKey: ['tasks'] })
     qc.invalidateQueries({ queryKey: ['schedule'] })
+    // 關聯圖是另一支查詢，節點上也掛著任務的標記（例如「有問題」），
+    // 不一起失效的話，改完切過去看到的還是舊的那一張圖
+    qc.invalidateQueries({ queryKey: ['graph'] })
   }
   const patch = useMutation({
     mutationFn: (v: Record<string, unknown>) => Api.patchTask(taskId, v), onSuccess: invalidate,
@@ -146,6 +149,40 @@ export function TaskDrawer({
                     <option value="MANUAL">人工鎖定（日期固定不被推動）</option>
                   </select>
                 </Field>
+              </div>
+
+              {/* ── 目前遇到的問題 ──
+                  放在基本欄位下面、發文追蹤上面：它比日期進度更要緊，
+                  但它常常就是「發文出去在等回覆」的那個原因，兩者要挨著看 */}
+              <div>
+                <div className="mb-2 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-700">目前遇到的問題</h3>
+                  {data.problem && (
+                    <Button variant="ghost" className="text-xs text-slate-500"
+                            onClick={() => patch.mutate({ problem: null })}>
+                      已解決，清空
+                    </Button>
+                  )}
+                </div>
+                <textarea
+                  /* 清空之後輸入框裡的字也要跟著不見。defaultValue 只在掛載時讀一次，
+                     換 key 逼它重新掛載 —— 改成受控值的話每打一個字都要重畫整個抽屜 */
+                  key={data.problem ?? ''}
+                  defaultValue={data.problem ?? ''}
+                  rows={2}
+                  onBlur={e => {
+                    if (e.target.value.trim() === (data.problem ?? '')) return
+                    patch.mutate({ problem: e.target.value })
+                  }}
+                  placeholder="現在卡在哪裡？例如：等對方確認規格、測試機還沒到、預算還沒下來"
+                  className="w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-sm
+                             placeholder:text-slate-400 focus:border-blue-500 focus:outline-none
+                             focus:ring-2 focus:ring-blue-500/40"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  寫了之後，清單、看板、關聯圖上都會標一個「有問題」。
+                  解決了就按「已解決，清空」—— 寫過的內容會留在下面的活動紀錄裡。
+                </p>
               </div>
 
               {/* ── 發文追蹤：核心功能 ── */}
@@ -278,6 +315,17 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
       return body?.action === 'ask'
         ? `發文給 ${String(body?.unit ?? '')}`
         : `登錄回覆${body?.repliedByUnit ? `（${String(body.repliedByUnit)}）` : ''}`
-    default: return '更新了欄位'
+    default:
+      /*
+       * 問題被清空之後，任務上就沒有它了 —— 這一行是唯一查得回「當初卡在哪」
+       * 的地方，所以把清掉之前那段字一起寫出來，而不是只說「更新了欄位」。
+       */
+      if (body && 'problem' in body) {
+        const before = body.problemBefore ? String(body.problemBefore) : ''
+        return body.problem
+          ? `記下目前遇到的問題：${String(body.problem)}`
+          : `把問題標為已解決${before ? `（原本：${before}）` : ''}`
+      }
+      return '更新了欄位'
   }
 }

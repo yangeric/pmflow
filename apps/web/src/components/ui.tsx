@@ -72,6 +72,29 @@ export function InquiryBadge({ state, detail }: { state: InquiryState; detail?: 
   )
 }
 
+/**
+ * 「目前遇到的問題」標記 —— 清單、看板、關聯圖共用同一個長相。
+ *
+ * 刻意不跟關聯圖的「卡住」共用顏色與符號：卡住是系統依任務關聯算出來的
+ * （紅色🚧，上游一完成它自己就不見），這個是人打字寫下的，只有人能清掉。
+ * 同一張任務常常兩個都掛著，長得一樣就分不出畫面在講哪一件事。
+ *
+ * 標記上只放三個字，寫了什麼留給游標停著看 ——
+ * 問題通常是一整句話，塞進卡片與節點只會把標題擠掉。
+ */
+export function ProblemBadge({ problem }: { problem: string | null | undefined }) {
+  if (!problem) return null
+  return (
+    <span
+      title={`目前遇到的問題：${problem}`}
+      className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px]
+                 font-medium text-fuchsia-700 ring-1 ring-inset ring-fuchsia-600/20
+                 bg-fuchsia-50">
+      <span aria-hidden>⚑</span>有問題
+    </span>
+  )
+}
+
 export function Spinner({ label = '載入中…' }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-400">

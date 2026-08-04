@@ -89,12 +89,36 @@ export interface MyProfile {
   avatarFile: string | null
 }
 
+/**
+ * 給外部系統用的長期憑證。
+ *
+ * 這裡永遠拿不到明文 —— 只有建立那一次的回應會帶 plaintext，之後看得到的
+ * 只有 prefix（開頭幾碼），用來認出手上那把是清單裡的哪一把。
+ */
+export interface ApiToken {
+  id: string; name: string; prefix: string
+  createdAt: string
+  lastUsedAt: string | null
+  /** 用到哪一天為止（YYYY-MM-DD，含當天）。null 代表不會過期 */
+  expiresOn: string | null
+}
+
 /** 管理者看到的帳號一覽 */
 export interface AdminUser {
   id: string; email: string; displayName: string
   status: 'PENDING' | 'ACTIVE' | 'SUSPENDED'
   role: WorkspaceRole; joinedAt: string
   projectCount: string; createdCount: string
+}
+
+/**
+ * 擁有者指派管理者時看到的名單。
+ * 刻意只有名字與 email —— 擁有者的職權只剩指派管理者，帳號的狀態、
+ * 參與幾個專案這些細節不該讓他看（見 api/src/lib/auth.ts）。
+ */
+export interface AdminCandidate {
+  id: string; displayName: string; email: string
+  isAdmin: boolean; isOwner: boolean
 }
 
 export interface ProjectMember {
@@ -155,6 +179,11 @@ export type InquiryState = 'NONE' | 'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIE
 export interface Task {
   id: string; projectId: string; ref: string; number: number
   parentId: string | null; title: string; description?: string | null
+  /**
+   * 目前遇到的問題。人自己打字寫的，解決了就清成 null。
+   * 跟關聯圖算出來的「卡住」是兩回事 —— 那個沒有欄位，是看關聯推出來的。
+   */
+  problem: string | null
   type: 'TASK' | 'MILESTONE' | 'BUG' | 'EPIC'
   statusKey: string; priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
   assigneeId: string | null; assigneeName: string | null
@@ -263,6 +292,12 @@ export const Api = {
   changePassword: (json: { currentPassword: string; newPassword: string }) =>
     api('/me/password', { method: 'POST', json }),
 
+  // ── 自己的 API 權杖。明文只有建立時那一次拿得到 ──
+  apiTokens: () => api<{ tokens: ApiToken[] }>('/me/api-tokens'),
+  createApiToken: (json: { name: string; expiresOn?: string | null }) =>
+    api<{ token: ApiToken; plaintext: string }>('/me/api-tokens', { method: 'POST', json }),
+  revokeApiToken: (id: string) => api(`/me/api-tokens/${id}`, { method: 'DELETE' }),
+
   /** 頭像用 data URL 上傳，前端會先縮到 256 見方（見 components/Avatar.tsx） */
   uploadAvatar: (image: string) =>
     api<{ avatarFile: string }>('/me/avatar', { method: 'PUT', json: { image } }),
@@ -284,6 +319,17 @@ export const Api = {
     role?: WorkspaceRole; status?: 'ACTIVE' | 'SUSPENDED'
     displayName?: string; newPassword?: string
   }) => api(`/admin/users/${userId}?workspaceId=${workspaceId}`, { method: 'PATCH', json }),
+  /** 回傳的是「轉移了幾個專案」—— 被刪的人開的專案會落到執行刪除的管理者手上 */
+  adminDeleteUser: (workspaceId: string, userId: string) =>
+    api<{ projectsTransferred: number }>(
+      `/admin/users/${userId}?workspaceId=${workspaceId}`, { method: 'DELETE' }),
+
+  // ── 工作區擁有者：他只剩這一件事能做 ──
+  adminAdministrators: (workspaceId: string) =>
+    api<{ users: AdminCandidate[] }>(`/admin/administrators?workspaceId=${workspaceId}`),
+  adminSetAdministrator: (workspaceId: string, userId: string, isAdmin: boolean) =>
+    api(`/admin/administrators/${userId}?workspaceId=${workspaceId}`,
+        { method: 'PUT', json: { isAdmin } }),
 
   tasks: (projectId: string, q: Record<string, string> = {}) =>
     api<{ tasks: Task[] }>(`/projects/${projectId}/tasks?${new URLSearchParams(q)}`),
@@ -302,7 +348,7 @@ export const Api = {
   graph: (projectId: string) => api<{
     nodes: Array<{ id: string; ref: string; title: string; type: string
                    statusKey: string; progress: number; parentId: string | null
-                   inquiryState: InquiryState }>
+                   inquiryState: InquiryState; problem: string | null }>
     edges: Array<{ id: string; sourceId: string; targetId: string
                    linkType: LinkType; lagDays: number }>
   }>(`/projects/${projectId}/graph`),

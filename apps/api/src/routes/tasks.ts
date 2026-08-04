@@ -11,7 +11,7 @@ import { badRequest, notFound } from '../lib/errors.js'
 const TASK_COLUMNS = sql`
   t.id, t.project_id AS "projectId", t.workspace_id AS "workspaceId",
   p.key || '-' || t.number AS "ref", t.number, t.parent_id AS "parentId",
-  t.title, t.description, t.type, t.status_key AS "statusKey", t.priority,
+  t.title, t.description, t.problem, t.type, t.status_key AS "statusKey", t.priority,
   t.assignee_id AS "assigneeId", u.display_name AS "assigneeName",
   (u.avatar_file IS NOT NULL) AS "assigneeHasAvatar",
   t.start_date AS "startDate", t.due_date AS "dueDate",
@@ -20,9 +20,14 @@ const TASK_COLUMNS = sql`
   t.inquiry_state AS "inquiryState", t.earliest_due_date AS "earliestDueDate",
   t.created_at AS "createdAt", t.updated_at AS "updatedAt"`
 
+/** 空白只有空白，就是「沒有問題」。資料庫也擋著空字串，兩種空值不要並存 */
+const cleanProblem = (v: string | null | undefined) => (v?.trim() ? v.trim() : null)
+
 const createBody = z.object({
   title: z.string().min(1, '請填寫任務標題').max(500),
   description: z.string().max(20000).optional(),
+  /** 目前遇到的問題。解決了就送 null（或空字串）清掉 */
+  problem: z.string().max(5000).nullable().optional(),
   type: z.enum(['TASK', 'MILESTONE', 'BUG', 'EPIC']).optional(),
   statusKey: z.string().max(40).optional(),
   priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).optional(),
@@ -98,10 +103,11 @@ export default async function taskRoutes(app: FastifyInstance) {
 
       const [t] = await tx<{ id: string }[]>`
         INSERT INTO task (workspace_id, project_id, number, parent_id, title, description,
-                          type, status_key, priority, assignee_id, start_date, due_date,
+                          problem, type, status_key, priority, assignee_id, start_date, due_date,
                           estimate_hours, schedule_mode, rank, created_by)
         VALUES (${workspaceId}, ${req.params.id}, ${next_number}, ${body.parentId ?? null},
-                ${body.title}, ${body.description ?? null}, ${body.type ?? 'TASK'},
+                ${body.title}, ${body.description ?? null},
+                ${cleanProblem(body.problem)}, ${body.type ?? 'TASK'},
                 ${body.statusKey ?? 'todo'}, ${body.priority ?? 'NORMAL'},
                 ${body.assigneeId ?? null}, ${body.startDate ?? null}, ${body.dueDate ?? null},
                 ${body.estimateHours ?? null}, ${body.scheduleMode ?? 'AUTO'},
@@ -181,14 +187,19 @@ export default async function taskRoutes(app: FastifyInstance) {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
 
       // 舊的負責人要在 UPDATE 之前讀，不然就分不出「換人」和「本來就是他」——
-      // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看
-      const [before] = await tx<{ assignee_id: string | null }[]>`
-        SELECT assignee_id FROM task WHERE id = ${req.params.id}`
+      // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看。
+      // 舊的問題內容同理，而且更嚴重：清空之後任務身上就沒有它了，
+      // 這裡不撈起來，活動紀錄只會留下「被清空」而查不到當初卡在哪。
+      const [before] = await tx<{ assignee_id: string | null; problem: string | null }[]>`
+        SELECT assignee_id, problem FROM task WHERE id = ${req.params.id}`
+
+      const problem = cleanProblem(b.problem)
 
       await tx`
         UPDATE task SET
           title          = coalesce(${b.title ?? null}, title),
           description    = ${b.description !== undefined ? b.description : sql`description`},
+          problem        = ${b.problem !== undefined ? problem : sql`problem`},
           type           = coalesce(${b.type ?? null}, type),
           status_key     = coalesce(${b.statusKey ?? null}, status_key),
           priority       = coalesce(${b.priority ?? null}, priority),
@@ -204,9 +215,28 @@ export default async function taskRoutes(app: FastifyInstance) {
 
       if (b.parentId !== undefined) await rebuildClosure(tx, req.params.id)
 
+      /*
+       * 活動紀錄沿用既有的 FIELD_CHANGE，不新增一種 kind ——
+       * 問題本來就是任務的一個欄位，時間軸也只有一條。
+       *
+       * 只有兩件事要特別處理：真的動到問題時，把清空前的內容一起收進 body
+       * （見上面 before 的說明）；沒真的動到就把它從 body 拿掉，
+       * 否則每次改別的欄位順手把同一段問題送回來，時間軸上就會多出一排
+       * 「記下了問題」，把真正發生變化的那幾筆淹掉。
+       */
+      const logged: Record<string, unknown> = { ...b }
+      if (b.problem !== undefined) {
+        if (problem !== (before?.problem ?? null)) {
+          logged.problem = problem
+          logged.problemBefore = before?.problem ?? null
+        } else {
+          delete logged.problem
+        }
+      }
+
       await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
                VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
-                       ${user.id}, ${user.displayName}, ${sql.json(b as Record<string, never>)})`
+                       ${user.id}, ${user.displayName}, ${sql.json(logged as Record<string, never>)})`
 
       if (b.assigneeId !== undefined && b.assigneeId !== before?.assignee_id) {
         await notify({
