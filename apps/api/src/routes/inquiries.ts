@@ -42,6 +42,17 @@ const markRepliedBody = z.object({
 
 export default async function inquiryRoutes(app: FastifyInstance) {
 
+  /**
+   * 發文追蹤的站台設定。目前只有一個「預設幾個工作天回覆」。
+   *
+   * 前端要在畫面上先把期望回覆日算出來給人看，就必須知道這個數字；
+   * 寫死在前端的話，站台把環境變數調成別的天數時兩邊就對不上了。
+   */
+  app.get('/inquiry-settings', async req => {
+    await authenticate(req)
+    return { defaultDueDays: env.inquiryDefaultDueDays }
+  })
+
   app.get<{ Params: { id: string } }>('/tasks/:id/inquiries', async req => {
     const user = await authenticate(req)
     await requireTaskAccess(user.id, req.params.id, 'VIEWER')

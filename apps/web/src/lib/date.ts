@@ -34,6 +34,40 @@ export function addDays(d: Date, n: number): Date {
 
 export const shiftYmd = (s: string, n: number): string => ymd(addDays(parseYmd(s), n))
 
+/**
+ * 往後推 N 個工作天（跳過六日），字串進、字串出。
+ *
+ * 這是後端 `api/src/lib/inquiry.ts` 的 `addWorkingDays` 的同一套算法 ——
+ * 期望回覆日現在由前端先算出來給人看，兩邊算法只要差一天，使用者就會
+ * 覺得系統偷偷改掉他選的日期。改這裡請連後端一起改。
+ */
+export function addWorkingDaysYmd(from: string, days: number): string {
+  const d = parseYmd(from)
+  let left = days
+  while (left > 0) {
+    d.setDate(d.getDate() + 1)
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) left--
+  }
+  return ymd(d)
+}
+
+/**
+ * 往後推 N 個月，日期不變。
+ *
+ * 遇到短月份要收在該月最後一天（1/31 推一個月 = 2/28），
+ * 否則 Date 會自己滾到下個月，跑出使用者根本沒選的日期。
+ */
+export function addMonthsYmd(from: string, n: number): string {
+  const d = parseYmd(from)
+  const day = d.getDate()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + n)
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  d.setDate(Math.min(day, lastDay))
+  return ymd(d)
+}
+
 /** b - a，以天為單位 */
 export function diffDays(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000)

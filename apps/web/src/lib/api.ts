@@ -361,6 +361,8 @@ export const Api = {
     api(`/tasks/${taskId}/links`, { method: 'POST', json }),
   deleteLink: (id: string) => api(`/links/${id}`, { method: 'DELETE' }),
 
+  /** 期望回覆日的預設工作天數（後端環境變數），前端算日期時要跟它一致 */
+  inquirySettings: () => api<{ defaultDueDays: number }>('/inquiry-settings'),
   inquiries: (taskId: string) => api<{ inquiries: Inquiry[] }>(`/tasks/${taskId}/inquiries`),
   addInquiry: (taskId: string, json: Record<string, unknown>) =>
     api<Inquiry>(`/tasks/${taskId}/inquiries`, { method: 'POST', json }),
