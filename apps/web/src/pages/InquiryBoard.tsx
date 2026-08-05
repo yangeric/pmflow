@@ -5,36 +5,47 @@ import { Spinner, Empty, cx } from '../components/ui'
 import { T } from '../strings'
 
 /**
- * 發文追蹤看板：跨專案，三欄（待回覆 / 逾期未回 / 已回覆）。
+ * 發文追蹤：專案裡的一個頁籤，三欄（待回覆 / 逾期未回 / 已回覆）。
  * 可切換「依單位分組」—— 一眼看出「資訊部身上壓著 8 件、其中 3 件逾期」。
+ *
+ * 只顯示目前這個專案的。後端那個端點是工作區層級的，每一筆都帶 projectId，
+ * 所以跟行事曆一樣「拿回工作區的再依專案濾」；查詢的 key 也跟行事曆一致，
+ * 兩個畫面共用同一份快取，不會各抓一次。
  */
-export default function InquiryBoard({ workspaceId, onOpenTask }: {
+export default function InquiryBoard({ workspaceId, projectId, onOpenTask }: {
   workspaceId: string
-  /** 點卡片 → 跳到那張任務所屬的專案並打開詳情抽屜 */
-  onOpenTask: (projectId: string, taskId: string) => void
+  projectId: string
+  /** 點卡片 → 在右邊打開那張任務的詳情 */
+  onOpenTask: (taskId: string) => void
 }) {
   const [groupByUnit, setGroupByUnit] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['inquiry-board', workspaceId],
     queryFn: () => Api.inquiryBoard(workspaceId),
-  })
-  const { data: stats } = useQuery({
-    queryKey: ['inquiry-stats', workspaceId],
-    queryFn: () => Api.inquiryStats(workspaceId),
+    enabled: !!workspaceId,
   })
 
+  const items = useMemo(
+    () => (data?.inquiries ?? []).filter(i => i.projectId === projectId),
+    [data, projectId]
+  )
+
   // 欄名直接用徽章那組字：同一個狀態在看板與卡片上要是同一個說法
-  const cols = useMemo(() => {
-    const all = data?.inquiries ?? []
-    return [
-      { key: 'AWAITING', title: T.inquiry.badge.awaiting, color: 'bg-blue-500',
-        items: all.filter(i => i.status === 'AWAITING') },
-      { key: 'OVERDUE', title: T.inquiry.badge.overdue, color: 'bg-red-500',
-        items: all.filter(i => i.status === 'OVERDUE') },
-      { key: 'REPLIED', title: T.inquiry.badge.replied, color: 'bg-emerald-500',
-        items: all.filter(i => i.status === 'REPLIED') },
-    ]
-  }, [data])
+  const cols = useMemo(() => [
+    { key: 'AWAITING', title: T.inquiry.badge.awaiting, color: 'bg-blue-500',
+      items: items.filter(i => i.status === 'AWAITING') },
+    { key: 'OVERDUE', title: T.inquiry.badge.overdue, color: 'bg-red-500',
+      items: items.filter(i => i.status === 'OVERDUE') },
+    { key: 'REPLIED', title: T.inquiry.badge.replied, color: 'bg-emerald-500',
+      items: items.filter(i => i.status === 'REPLIED') },
+  ], [items])
+
+  /**
+   * 單位統計就地算，不另外打統計端點 —— 那個端點是把整個工作區的單位加總起來的，
+   * 沒有專案這一維，拿回來也濾不出「這個專案」。看板這份資料每一筆都在手上，
+   * 要的幾個數字都算得出來，順便少一次連線。
+   */
+  const stats = useMemo(() => byUnitStats(items), [items])
 
   if (isLoading) return <Spinner />
 
@@ -44,7 +55,7 @@ export default function InquiryBoard({ workspaceId, onOpenTask }: {
         <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">
           {T.inquiry.board.title}
         </h2>
-        <span className="text-sm text-slate-400 dark:text-slate-500">{T.inquiry.board.subtitle}</span>
+        <span className="text-sm text-slate-400 dark:text-slate-400">{T.inquiry.board.subtitle}</span>
         <label className="ml-auto flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-300">
           <input type="checkbox" className="accent-blue-600 dark:accent-blue-500"
                  checked={groupByUnit}
@@ -66,20 +77,20 @@ export default function InquiryBoard({ workspaceId, onOpenTask }: {
             </div>
             <div className="space-y-2 px-2 pb-3">
               {col.items.length === 0 && (
-                <div className="py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+                <div className="py-6 text-center text-xs text-slate-400 dark:text-slate-400">
                   {T.inquiry.board.emptyColumn}
                 </div>
               )}
               {groupByUnit
-                ? Object.entries(groupBy(col.items, i => i.askedToUnit)).map(([unit, items]) => (
+                ? Object.entries(groupBy(col.items, i => i.askedToUnit)).map(([unit, list]) => (
                     <div key={unit}>
                       <div className="px-1 py-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-                        {unit} <span className="text-slate-400 dark:text-slate-500">
-                          {T.inquiry.board.groupCount(items.length)}
+                        {unit} <span className="text-slate-400 dark:text-slate-400">
+                          {T.inquiry.board.groupCount(list.length)}
                         </span>
                       </div>
                       <div className="space-y-2">
-                        {items.map(i => <InquiryCard key={i.id} item={i} onOpen={onOpenTask} />)}
+                        {list.map(i => <InquiryCard key={i.id} item={i} onOpen={onOpenTask} />)}
                       </div>
                     </div>
                   ))
@@ -90,7 +101,7 @@ export default function InquiryBoard({ workspaceId, onOpenTask }: {
       </div>
 
       {/* ── 單位統計：因為單位是獨立欄位而不是埋在留言裡，這些才查得出來 ── */}
-      {stats && stats.byUnit.length > 0 && (
+      {stats.byUnit.length > 0 && (
         <div className="mt-6">
           <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
             {T.inquiry.board.stats.title}
@@ -117,7 +128,7 @@ export default function InquiryBoard({ workspaceId, onOpenTask }: {
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{u.totalReplied}</td>
                     <td className={cx('px-3 py-2', u.currentOverdue > 0
                       ? 'font-medium text-red-600 dark:text-red-400'
-                      : 'text-slate-400 dark:text-slate-500')}>
+                      : 'text-slate-400 dark:text-slate-400')}>
                       {u.currentOverdue || T.common.none}
                     </td>
                     <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
@@ -153,7 +164,7 @@ export default function InquiryBoard({ workspaceId, onOpenTask }: {
         </div>
       )}
 
-      {(data?.inquiries.length ?? 0) === 0 && (
+      {items.length === 0 && (
         <Empty>{T.inquiry.board.empty}</Empty>
       )}
     </div>
@@ -164,13 +175,14 @@ type BoardItem = Awaited<ReturnType<typeof Api.inquiryBoard>>['inquiries'][numbe
 
 function InquiryCard({ item, onOpen }: {
   item: BoardItem
-  onOpen: (projectId: string, taskId: string) => void
+  onOpen: (taskId: string) => void
 }) {
   const transferred = item.repliedByUnit && item.repliedByUnit !== item.askedToUnit
+  const replyDays = daysToReply(item)
   return (
     <button
       type="button"
-      onClick={() => onOpen(item.projectId, item.taskId)}
+      onClick={() => onOpen(item.taskId)}
       title={T.inquiry.board.card.open(item.taskRef, item.taskTitle)}
       className="w-full cursor-pointer rounded-lg bg-white p-2.5 text-left ring-1 ring-slate-200
                  transition hover:ring-2 hover:ring-slate-400
@@ -178,11 +190,10 @@ function InquiryCard({ item, onOpen }: {
                  dark:bg-slate-900 dark:ring-slate-700 dark:hover:ring-slate-500
                  dark:focus-visible:ring-slate-100"
     >
+      {/* 同一個專案裡才看得到這張看板，所以卡片上不再重複專案名稱與顏色 */}
       <div className="mb-1 flex items-center gap-1.5">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: item.projectColor }} />
-        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{item.taskRef}</span>
-        <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">{item.projectName}</span>
-        <span aria-hidden className="ml-auto text-[11px] text-slate-300 dark:text-slate-600">↗</span>
+        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{item.taskRef}</span>
+        <span aria-hidden className="ml-auto text-[11px] text-slate-300 dark:text-slate-500">↗</span>
       </div>
       <div className="text-sm leading-snug text-slate-800 dark:text-slate-100">{item.taskTitle}</div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
@@ -190,7 +201,7 @@ function InquiryCard({ item, onOpen }: {
                          dark:bg-slate-800 dark:text-slate-200">
           {item.askedToUnit}
         </span>
-        {item.askedToPerson && <span className="text-slate-400 dark:text-slate-500">{item.askedToPerson}</span>}
+        {item.askedToPerson && <span className="text-slate-400 dark:text-slate-400">{item.askedToPerson}</span>}
         {transferred && (
           <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800
                            dark:bg-amber-500/15 dark:text-amber-300">
@@ -198,20 +209,20 @@ function InquiryCard({ item, onOpen }: {
           </span>
         )}
       </div>
-      <div className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+      <div className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-400">
         {item.status === 'OVERDUE' && (
           <span className="font-medium text-red-600 dark:text-red-400">
             {T.inquiry.overdueDays(item.daysOverdue ?? 0)}
           </span>
         )}
         {item.status === 'AWAITING' && <span>{T.inquiry.waitedDays(item.daysElapsed)}</span>}
-        {item.status === 'REPLIED' && item.daysToReply != null && (
+        {item.status === 'REPLIED' && replyDays != null && (
           <span className="text-emerald-600 dark:text-emerald-400">
-            {T.inquiry.repliedInDays(item.daysToReply)}
+            {T.inquiry.repliedInDays(replyDays)}
           </span>
         )}
         {item.dueDate && <span className="ml-2">
-          {T.inquiry.board.card.due(String(item.dueDate).slice(5, 10))}
+          {T.inquiry.board.card.due(ymd(item.dueDate).slice(5, 10))}
         </span>}
       </div>
     </button>
@@ -222,4 +233,63 @@ function groupBy<T>(items: T[], key: (t: T) => string): Record<string, T[]> {
   const out: Record<string, T[]> = {}
   for (const i of items) (out[key(i)] ??= []).push(i)
   return out
+}
+
+/** 日期一律當字串處理。看板端點回來的可能帶時間，切掉只留 YYYY-MM-DD */
+function ymd(v: unknown): string {
+  return String(v).slice(0, 10)
+}
+
+/** 兩個日期字串相差幾天。用 UTC 中午起算，不會被時區推掉一天 */
+function diffDays(from: string, to: string): number {
+  const a = Date.parse(ymd(from) + 'T00:00:00Z')
+  const b = Date.parse(ymd(to) + 'T00:00:00Z')
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0
+  return Math.round((b - a) / 86_400_000)
+}
+
+/** 幾天回覆的。看板端點沒送這個欄位，用提問日與回覆日算 */
+function daysToReply(i: BoardItem): number | null {
+  if (!i.isReplied || !i.repliedAt) return null
+  return diffDays(String(i.askedAt), String(i.repliedAt))
+}
+
+/** 小數一位，跟後端統計端點的呈現一致 */
+function round1(n: number): number {
+  return Math.round(n * 10) / 10
+}
+
+/**
+ * 依單位彙總這個專案的發文紀錄：發了幾次、回了幾次、現在還逾期幾件、
+ * 平均幾天回、有幾成是超過期望回覆日才回的。另外把「提問單位 ≠ 回覆單位」
+ * 的案例挑出來 —— 那是提問側與回覆側分開存才問得出來的問題。
+ */
+function byUnitStats(items: BoardItem[]) {
+  const byUnit = Object.entries(groupBy(items, i => i.askedToUnit)).map(([unit, list]) => {
+    const replied = list.filter(i => i.isReplied && i.repliedAt)
+    const late = replied.filter(i => i.dueDate && ymd(i.repliedAt) > ymd(i.dueDate))
+    const days = replied.map(i => daysToReply(i) ?? 0)
+    return {
+      unit,
+      totalAsked: list.length,
+      totalReplied: replied.length,
+      currentOverdue: list.filter(i => i.status === 'OVERDUE').length,
+      avgDaysToReply: days.length ? round1(days.reduce((a, b) => a + b, 0) / days.length) : null,
+      lateReplyRate: replied.length ? round1(100 * late.length / replied.length) : null,
+    }
+  }).sort((a, b) => b.totalAsked - a.totalAsked)
+
+  const transfers = new Map<string, { askedToUnit: string; repliedByUnit: string; count: number }>()
+  for (const i of items) {
+    if (!i.isReplied || !i.repliedByUnit || i.repliedByUnit === i.askedToUnit) continue
+    const key = i.askedToUnit + ' ' + i.repliedByUnit
+    const hit = transfers.get(key)
+    if (hit) hit.count++
+    else transfers.set(key, { askedToUnit: i.askedToUnit, repliedByUnit: i.repliedByUnit, count: 1 })
+  }
+
+  return {
+    byUnit,
+    transferred: [...transfers.values()].sort((a, b) => b.count - a.count),
+  }
 }

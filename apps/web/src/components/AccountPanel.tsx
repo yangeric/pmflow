@@ -114,17 +114,17 @@ export default function AccountPanel() {
                 {data.user.avatarFile && (
                   <button disabled={busyAvatar} onClick={() => dropAvatar.mutate()}
                           className="text-xs text-slate-400 hover:text-slate-600 disabled:opacity-50
-                                     dark:text-slate-500 dark:hover:text-slate-300">
+                                     dark:text-slate-400 dark:hover:text-slate-300">
                     {T.common.remove}
                   </button>
                 )}
                 {busyAvatar && (
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                  <span className="text-xs text-slate-400 dark:text-slate-400">
                     {T.account.avatar.working}
                   </span>
                 )}
               </div>
-              <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+              <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
                 {T.account.avatar.hint}
               </p>
             </div>
@@ -156,7 +156,7 @@ export default function AccountPanel() {
             </Field>
           </div>
 
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
             {T.account.profile.hint}
           </p>
 
@@ -177,7 +177,7 @@ export default function AccountPanel() {
                 setEmail(data.user.email)
                 setProfileErr(null); setProfileMsg(null)
               }} className="text-xs text-slate-400 hover:text-slate-600
-                            dark:text-slate-500 dark:hover:text-slate-300">{T.common.restore}</button>
+                            dark:text-slate-400 dark:hover:text-slate-300">{T.common.restore}</button>
             )}
             {profileMsg && !dirty && (
               <span className="text-xs text-emerald-600 dark:text-emerald-400">{profileMsg}</span>
@@ -212,7 +212,7 @@ export default function AccountPanel() {
               {T.account.password.mismatch}
             </p>
           )}
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
             {T.account.password.hint}
           </p>
 
@@ -250,7 +250,7 @@ export default function AccountPanel() {
               </div>
             ))}
           </div>
-          <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+          <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
             {T.account.workspaces.hint}
           </p>
         </section>
@@ -326,7 +326,7 @@ function ApiTokenSection() {
       <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
         {T.account.token.title}
       </h2>
-      <p className="mb-4 text-xs text-slate-400 dark:text-slate-500">
+      <p className="mb-4 text-xs text-slate-400 dark:text-slate-400">
         {T.account.token.hint}
       </p>
 
@@ -375,7 +375,7 @@ function ApiTokenSection() {
         <Button variant="primary" disabled={!name.trim() || create.isPending}
                 onClick={() => create.mutate()}>{T.account.token.create}</Button>
       </div>
-      <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+      <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
         {T.account.token.createHint}
       </p>
 
@@ -391,7 +391,7 @@ function ApiTokenSection() {
         {isLoading ? (
           <Spinner label={T.account.token.loading} />
         ) : tokens.length === 0 ? (
-          <p className="py-3 text-center text-xs text-slate-400 dark:text-slate-500">
+          <p className="py-3 text-center text-xs text-slate-400 dark:text-slate-400">
             {T.account.token.empty}
           </p>
         ) : (
@@ -412,7 +412,7 @@ function ApiTokenSection() {
                         </span>
                       )}
                     </div>
-                    <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">
+                    <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-400">
                       <code className="font-mono">{t.prefix}…</code>
                       <span className="mx-2">·</span>
                       {T.account.token.createdAt(stamp(t.createdAt))}

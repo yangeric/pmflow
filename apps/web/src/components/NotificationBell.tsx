@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type AppNotification, type LinkType, type ProjectRole } from '../lib/api'
-import { linkSentence } from '../lib/linkText'
+import { T } from '../strings'
 import { cx } from './ui'
 
 /**
@@ -18,9 +18,7 @@ import { cx } from './ui'
 
 const POLL_MS = 30_000
 
-const ROLE_LABEL: Record<ProjectRole, string> = {
-  MANAGER: '管理者', EDITOR: '編輯者', COMMENTER: '可留言', VIEWER: '唯讀',
-}
+const N = T.nav.notification
 
 export function NotificationBell({
   onOpen, placement = 'down',
@@ -79,11 +77,11 @@ export function NotificationBell({
     <div ref={boxRef} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        aria-label={unread > 0 ? `通知，${unread} 則未讀` : '通知'}
+        aria-label={unread > 0 ? N.unreadAria(unread) : N.title}
         aria-expanded={open}
         className={cx(
           'relative rounded-md px-2 py-1 text-base leading-none transition-colors',
-          open ? 'bg-slate-100' : 'hover:bg-slate-100'
+          open ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800'
         )}>
         <span aria-hidden className={unread > 0 ? '' : 'opacity-50 grayscale'}>🔔</span>
         {unread > 0 && (
@@ -100,23 +98,27 @@ export function NotificationBell({
       {open && (
         <div className={cx(
           'absolute z-50 w-80 overflow-hidden rounded-lg bg-white shadow-lg ring-1 ring-slate-200',
+          'dark:bg-slate-800 dark:ring-slate-700',
           placement === 'up' ? 'bottom-full left-0 mb-2' : 'top-full right-0 mt-2'
         )}>
-          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
-            <span className="text-xs font-medium text-slate-500">通知</span>
+          <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2
+                          dark:border-slate-700">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{N.title}</span>
             {unread > 0 && (
               <button onClick={() => markAll.mutate()} disabled={markAll.isPending}
-                      className="ml-auto text-xs text-slate-400 hover:text-slate-600">
-                全部標為已讀
+                      className="ml-auto text-xs text-slate-400 hover:text-slate-600
+                                 dark:text-slate-400 dark:hover:text-slate-300">
+                {N.markAllRead}
               </button>
             )}
           </div>
 
           <div className="max-h-96 overflow-y-auto">
             {items.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs leading-relaxed text-slate-400">
-                目前沒有通知。<br />
-                任務被指向、被指派，或有人申請加入你開的專案時會出現在這裡。
+              <div className="px-3 py-6 text-center text-xs leading-relaxed text-slate-400
+                              dark:text-slate-400">
+                {N.emptyTitle}<br />
+                {N.emptyHint}
               </div>
             ) : items.map(n => (
               <button
@@ -124,20 +126,28 @@ export function NotificationBell({
                 onClick={() => pick(n)}
                 className={cx(
                   'block w-full border-b border-slate-100 px-3 py-2.5 text-left last:border-0',
-                  n.readAt ? 'hover:bg-slate-50' : 'bg-blue-50/50 hover:bg-blue-50'
+                  'dark:border-slate-700',
+                  n.readAt
+                    ? 'hover:bg-slate-50 dark:hover:bg-slate-700'
+                    : 'bg-blue-50/50 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20'
                 )}>
                 <div className="flex items-start gap-2">
                   <span aria-hidden className="mt-0.5 shrink-0 text-sm">{ICON[n.kind]}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] leading-snug text-slate-700">{headline(n)}</div>
+                    <div className="text-[13px] leading-snug text-slate-700 dark:text-slate-200">
+                      {headline(n)}
+                    </div>
                     {detail(n) && (
-                      <div className="mt-0.5 text-xs leading-snug text-slate-500">{detail(n)}</div>
+                      <div className="mt-0.5 text-xs leading-snug text-slate-500 dark:text-slate-400">
+                        {detail(n)}
+                      </div>
                     )}
-                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400
+                                    dark:text-slate-400">
                       <span>{relativeTime(n.createdAt)}</span>
                       {n.projectKey && (
                         <>
-                          <span className="text-slate-300">·</span>
+                          <span className="text-slate-300 dark:text-slate-500">·</span>
                           <span className="truncate">{n.projectName ?? n.projectKey}</span>
                         </>
                       )}
@@ -162,25 +172,25 @@ const ICON: Record<AppNotification['kind'], string> = {
 
 /** 一句話講完發生了什麼事，主詞是做這件事的人 */
 function headline(n: AppNotification): string {
-  const who = n.actorName ?? '有人'
-  const task = n.taskTitle ? `「${n.taskTitle}」` : '一張你負責的任務'
-  const project = n.projectName ? `「${n.projectName}」` : '你開的專案'
+  const who = n.actorName ?? N.someone
+  const task = n.taskTitle ? N.quoted(n.taskTitle) : N.someTask
+  const project = n.projectName ? N.quoted(n.projectName) : N.yourProject
   switch (n.kind) {
     case 'TASK_LINKED': {
       // 兩張任務都要指名道姓。只講「指向你的任務」的話，看的人不知道是誰關聯了誰
       const other = n.body?.otherTitle as string | undefined
       return other
-        ? `${who} 把「${other}」關聯到你的${task}`
-        : `${who} 建立了一條關聯到你的${task}`
+        ? N.linkedTo(who, N.quoted(other), task)
+        : N.linkedPlain(who, task)
     }
     case 'TASK_ASSIGNED':
-      return `${who} 把${task}指派給你`
+      return N.assigned(who, task)
     case 'JOIN_REQUESTED':
-      return `${who} 申請加入${project}`
+      return N.joinRequested(who, project)
     case 'JOIN_APPROVED':
       return n.body?.direct
-        ? `${who} 把你加入${project}`
-        : `${who} 核准了你加入${project}的申請`
+        ? N.joinAdded(who, project)
+        : N.joinApproved(who, project)
   }
 }
 
@@ -191,8 +201,8 @@ function detail(n: AppNotification): string | null {
     case 'TASK_LINKED': {
       const type = b.linkType as LinkType | undefined
       if (!type) return null
-      const other = [b.otherRef, b.otherTitle].filter(Boolean).join(' ') || '另一張任務'
-      return linkedSentence(type, `「${n.taskTitle ?? '你的任務'}」`, other)
+      const other = [b.otherRef, b.otherTitle].filter(Boolean).join(' ') || N.otherTask
+      return linkedSentence(type, N.quoted(n.taskTitle ?? N.yourTask), other)
     }
     case 'TASK_ASSIGNED':
       return n.taskRef
@@ -201,7 +211,7 @@ function detail(n: AppNotification): string | null {
     case 'JOIN_APPROVED': {
       const role = b.role as ProjectRole | undefined
       const note = (b.note as string | null) || null
-      const parts = [role ? `你的身分是${ROLE_LABEL[role]}` : null, note]
+      const parts = [role ? N.roleIs(N.role[role]) : null, note]
       return parts.filter(Boolean).join('　') || null
     }
   }
@@ -217,16 +227,7 @@ function detail(n: AppNotification): string | null {
  * mine＝被指向的任務（收通知的人負責的），other＝對方建立關聯的那張。
  */
 function linkedSentence(type: LinkType, mine: string, other: string): string {
-  switch (type) {
-    case 'FS': return `你的${mine}要等 ${other} 完成才能開始`
-    case 'SS': return `你的${mine}要等 ${other} 開始才能開始`
-    case 'FF': return `你的${mine}要等 ${other} 完成才能完成`
-    case 'SF': return `你的${mine}要等 ${other} 開始才能完成`
-    case 'RELATES':    return `${other} 與你的${mine}相關`
-    case 'BLOCKS':     return `${other} 阻擋你的${mine}`
-    case 'DUPLICATES': return `${other} 被標記為與你的${mine}重複`
-    case 'REQUIRES':   return `${other} 需要你的${mine}`
-  }
+  return N.link[type](mine, other)
 }
 
 /**
@@ -236,12 +237,12 @@ function linkedSentence(type: LinkType, mine: string, other: string): string {
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const min = Math.floor(diff / 60_000)
-  if (min < 1) return '剛剛'
-  if (min < 60) return `${min} 分鐘前`
+  if (min < 1) return N.time.justNow
+  if (min < 60) return N.time.minutes(min)
   const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小時前`
+  if (hr < 24) return N.time.hours(hr)
   const day = Math.floor(hr / 24)
-  if (day < 7) return `${day} 天前`
+  if (day < 7) return N.time.days(day)
   const d = new Date(iso)
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
 }

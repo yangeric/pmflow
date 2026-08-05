@@ -214,11 +214,13 @@ Danger Zone → Change visibility → Public，`pmflow-web` 再做一次。只�
 
 ## 已知限制
 
-- 行事曆視圖還沒做（規格書 §4.3 已設計，用 react-big-calendar）
-- 關聯網路圖的後端 API 已經好了（`/projects/:id/graph`），前端 React Flow 還沒接
 - 儀表板圖表（燃盡圖、負載熱圖）還沒做
 - 即時多人同步還沒接 WebSocket，目前靠 TanStack Query 的重新抓取
+- **系統不會寄信**：新帳號的密碼、重設密碼都要管理者當面給；逾期提醒也只出現在
+  站內的通知鈴鐺，不會寄出去
 - 附件上傳的資料表與 volume 都在，端點還沒實作
+- `docs/ARCHITECTURE.md` 是最早的設計稿（Spring Boot / Flyway），**跟實作對不上**，
+  要找檔案請看 `docs/CODEMAP.md`
 
 ---
 

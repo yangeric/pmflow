@@ -44,8 +44,7 @@ function rememberCollapsed(v: boolean): void {
 
 export function EpicSidebar({
   project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
-  onSwitchProject, onInquiryBoard, inquiryActive, overdueTotal,
-  onMembers, membersActive, pendingJoins,
+  onSwitchProject,
 }: {
   project?: Project
   tasks: Task[]
@@ -57,14 +56,6 @@ export function EpicSidebar({
   /** 點小項目 → 在右邊顯示那張任務 */
   onOpenTask: (id: string) => void
   onSwitchProject: () => void
-  onInquiryBoard: () => void
-  inquiryActive: boolean
-  /** 成員管理。不放在任務視圖那一排頁籤 —— 它是專案的設定，不是另一種看任務的方式 */
-  onMembers: () => void
-  membersActive: boolean
-  /** 待審的加入申請數。沒有通知信，有人敲門就只靠這個數字被看見 */
-  pendingJoins: number
-  overdueTotal: number
 }) {
   const qc = useQueryClient()
   const [adding, setAdding] = useState(false)
@@ -149,11 +140,11 @@ export function EpicSidebar({
   })
 
   /**
-   * 收起來之後留一條窄條，不是整個消失。
+   * 收起來之後留一條窄條，不是整個消失 ——
+   * 整個藏掉的話，「怎麼把它叫回來」就變成一個要學的秘密。
    *
-   * 整個藏掉的話，「怎麼把它叫回來」就變成一個要學的秘密；而且待審申請與
-   * 單位逾期是有時效的事，收起側欄就看不到紅點，等於把提醒關掉。
-   * 窄條上只留三件事：展開、發文追蹤、成員，紅點照樣亮。
+   * 窄條上只剩展開與專案色點：發文追蹤已經是上面那排頁籤的一個，
+   * 成員搬到右上角的頭像選單，兩個都不再需要側欄的入口。
    */
   if (collapsed) {
     return (
@@ -163,7 +154,7 @@ export function EpicSidebar({
                 title={T.nav.sidebar.expandSidebar}
                 aria-label={T.nav.sidebar.expandSidebar}
                 className="rounded-md px-2 py-1.5 text-sm text-slate-400 hover:bg-slate-100
-                           hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800
+                           hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800
                            dark:hover:text-slate-300">
           »
         </button>
@@ -171,20 +162,6 @@ export function EpicSidebar({
         <span className="my-1 h-2.5 w-2.5 shrink-0 rounded-full"
               title={project?.name ?? T.common.none}
               style={{ background: project?.color ?? '#94a3b8' }} />
-
-        <RailButton icon="📮"
-                    label={T.nav.inquiryBoard}
-                    active={inquiryActive}
-                    onClick={onInquiryBoard}
-                    dot={overdueTotal > 0}
-                    dotLabel={T.nav.sidebar.overdueHint(overdueTotal)} />
-
-        <RailButton icon="👥"
-                    label={T.nav.sidebar.members}
-                    active={membersActive}
-                    onClick={onMembers}
-                    dot={pendingJoins > 0}
-                    dotLabel={T.nav.sidebar.pendingJoinsHint(pendingJoins)} />
       </aside>
     )
   }
@@ -206,53 +183,22 @@ export function EpicSidebar({
                   title={T.nav.sidebar.collapseSidebar}
                   aria-label={T.nav.sidebar.collapseSidebar}
                   className="shrink-0 rounded px-1 text-sm text-slate-400 hover:text-slate-700
-                             dark:text-slate-500 dark:hover:text-slate-300">
+                             dark:text-slate-400 dark:hover:text-slate-300">
             «
           </button>
         </div>
         <button onClick={onSwitchProject}
                 className="mt-1.5 text-xs text-slate-400 hover:text-slate-600
-                           dark:text-slate-500 dark:hover:text-slate-300">
+                           dark:text-slate-400 dark:hover:text-slate-300">
           ⇄ {T.nav.sidebar.switchProject}
         </button>
       </div>
 
-      <button onClick={onInquiryBoard}
-              className={cx(
-                'mx-2 mt-2 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm',
-                inquiryActive
-                  ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-              )}>
-        <span>📮</span> {T.nav.inquiryBoard}
-        {overdueTotal > 0 && (
-          <span className="ml-auto rounded bg-red-100 px-1.5 text-xs font-medium text-red-700
-                           dark:bg-red-500/15 dark:text-red-300">
-            {overdueTotal}
-          </span>
-        )}
-      </button>
-
-      <button onClick={onMembers}
-              className={cx(
-                'mx-2 mt-1 flex items-center gap-2 rounded-md px-2.5 py-2 text-sm',
-                membersActive
-                  ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                  : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-              )}>
-        <span>👥</span> {T.nav.sidebar.members}
-        {pendingJoins > 0 && (
-          <span className="ml-auto rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-            {pendingJoins}
-          </span>
-        )}
-      </button>
-
       <div className="px-4 pb-1 pt-3">
-        <div className="text-xs font-medium tracking-wide text-slate-400 dark:text-slate-500">
+        <div className="text-xs font-medium tracking-wide text-slate-400 dark:text-slate-400">
           {T.nav.sidebar.epics}
         </div>
-        <div className="mt-0.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+        <div className="mt-0.5 text-[11px] leading-snug text-slate-400 dark:text-slate-400">
           {T.nav.sidebar.epicsHint}
         </div>
       </div>
@@ -262,19 +208,19 @@ export function EpicSidebar({
           onClick={() => onSelectEpic(null)}
           className={cx(
             'mb-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm',
-            !inquiryActive && selectedEpicId === null
+            selectedEpicId === null
               ? 'bg-slate-100 font-medium text-slate-800 dark:bg-slate-800 dark:text-slate-100'
               : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
           )}>
-          <span className="text-slate-400 dark:text-slate-500">☰</span>
+          <span className="text-slate-400 dark:text-slate-400">☰</span>
           <span className="flex-1">{T.nav.sidebar.allTasks}</span>
-          <span className="text-xs tabular-nums text-slate-400 dark:text-slate-500">
+          <span className="text-xs tabular-nums text-slate-400 dark:text-slate-400">
             {tasks.length}
           </span>
         </button>
 
         {epics.length === 0 && (
-          <div className="px-2.5 py-3 text-xs leading-relaxed text-slate-400 dark:text-slate-500">
+          <div className="px-2.5 py-3 text-xs leading-relaxed text-slate-400 dark:text-slate-400">
             {T.nav.sidebar.emptyTitle}<br />
             {T.nav.sidebar.emptyHint}
           </div>
@@ -282,7 +228,7 @@ export function EpicSidebar({
 
         {epics.map(epic => {
           const s = stat.get(epic.id)!
-          const active = !inquiryActive && selectedEpicId === epic.id && !selectedTaskId
+          const active = selectedEpicId === epic.id && !selectedTaskId
           const kids = childrenOf.get(epic.id) ?? []
           const open = expanded.has(epic.id) || autoOpen === epic.id
           return (
@@ -296,7 +242,7 @@ export function EpicSidebar({
               aria-expanded={open}
               className={cx('w-6 shrink-0 py-2.5 text-xs',
                 kids.length
-                  ? 'text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-300'
+                  ? 'text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                   : 'text-transparent')}>
               {open ? '▾' : '▸'}
             </button>
@@ -327,11 +273,11 @@ export function EpicSidebar({
                           s.progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500')}
                         style={{ width: `${s.progress}%` }} />
                 </span>
-                <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
                   {s.progress}%
                 </span>
                 {s.hasChildren && (
-                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
                     {s.done}/{s.total}
                   </span>
                 )}
@@ -369,7 +315,7 @@ export function EpicSidebar({
         })}
 
         {looseCount > 0 && (
-          <div className="mt-2 px-2.5 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+          <div className="mt-2 px-2.5 text-[11px] leading-snug text-slate-400 dark:text-slate-400">
             {T.nav.sidebar.loose(looseCount)}
           </div>
         )}
@@ -395,44 +341,12 @@ export function EpicSidebar({
           <button onClick={() => setAdding(true)} disabled={!project}
                   className="mt-1 w-full rounded-md px-2.5 py-2 text-left text-sm text-slate-400
                              hover:bg-slate-50 disabled:opacity-50
-                             dark:text-slate-500 dark:hover:bg-slate-800">
+                             dark:text-slate-400 dark:hover:bg-slate-800">
             ＋ {T.nav.sidebar.addEpic}
           </button>
         )}
       </nav>
 
     </aside>
-  )
-}
-
-/**
- * 窄條上的一顆按鈕。文字塞不下，所以字只留在 title 與 aria-label；
- * 紅點不帶數字 —— 44px 寬放不下兩位數，而且這裡只需要回答「有沒有事」。
- */
-function RailButton({ icon, label, active, onClick, dot, dotLabel }: {
-  icon: string
-  label: string
-  active: boolean
-  onClick: () => void
-  dot: boolean
-  dotLabel: string
-}) {
-  return (
-    <button onClick={onClick}
-            title={dot ? `${label}　${dotLabel}` : label}
-            aria-label={label}
-            className={cx(
-              'relative rounded-md px-2 py-1.5 text-sm',
-              active
-                ? 'bg-blue-50 dark:bg-blue-500/15'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-            )}>
-      <span aria-hidden>{icon}</span>
-      {dot && (
-        <span aria-hidden
-              className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-500
-                         ring-2 ring-white dark:ring-slate-900" />
-      )}
-    </button>
   )
 }

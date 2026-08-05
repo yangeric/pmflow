@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type AdminUser, type WorkspaceRole } from '../lib/api'
 import { useAuth } from '../lib/auth'
-import { Button, Field, Input, Spinner, cx } from './ui'
+import { Button, Field, Input, Select, Spinner, cx } from './ui'
+import { T } from '../strings'
 import { Avatar } from './Avatar'
 
 /**
@@ -21,27 +22,20 @@ import { Avatar } from './Avatar'
  * 連管理者自己都進不來的時候，最後一招是在主機上放檔案（api/src/lib/breakglass.ts）。
  */
 
-const ROLE_LABEL: Record<WorkspaceRole, string> = {
-  OWNER: '擁有者', ADMIN: '管理者', MEMBER: '成員', GUEST: '訪客',
-}
-const ROLE_HINT: Record<WorkspaceRole, string> = {
-  OWNER: '開站的人。只能決定誰是管理者，看不到也管不了別人的帳號',
-  ADMIN: '能開帳號、停用帳號、刪除帳號、調整成員與訪客的角色',
-  MEMBER: '一般使用者：能開專案、能申請加入別人的專案',
-  GUEST: '只能被邀請進專案，開不了新專案',
-}
+const ROLE_LABEL = T.account.workspaceRole
+const ROLE_HINT = T.account.workspaceRoleHint
+const STATUS_LABEL = T.account.userStatus
+const A = T.account.admin
+const O = T.account.owner
 
-const STATUS_LABEL: Record<AdminUser['status'], string> = {
-  ACTIVE: '正常', PENDING: '未啟用', SUSPENDED: '已停用',
-}
 const STATUS_CLS: Record<AdminUser['status'], string> = {
-  ACTIVE: 'bg-emerald-50 text-emerald-700',
-  PENDING: 'bg-slate-100 text-slate-500',
-  SUSPENDED: 'bg-red-50 text-red-700',
+  ACTIVE: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  PENDING: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
+  SUSPENDED: 'bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300',
 }
 
 const errText = (e: unknown) =>
-  e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '操作失敗'
+  e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : T.common.failed
 
 export default function AdminPanel(
   { workspaceId, myRole }: { workspaceId: string; myRole: WorkspaceRole }
@@ -72,12 +66,12 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
   const patch = useMutation({
     mutationFn: (v: { userId: string; json: Parameters<typeof Api.adminPatchUser>[2] }) =>
       Api.adminPatchUser(workspaceId, v.userId, v.json),
-    onSuccess: () => done('已更新'), onError: fail,
+    onSuccess: () => done(A.updated), onError: fail,
   })
   const create = useMutation({
     mutationFn: () => Api.adminCreateUser({ workspaceId, ...form }),
     onSuccess: () => {
-      done(`已建立 ${form.displayName}，請把密碼當面給他`)
+      done(A.created(form.displayName))
       setForm({ email: '', displayName: '', password: '', role: 'MEMBER' })
       setCreating(false)
     },
@@ -87,13 +81,13 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
     mutationFn: (u: AdminUser) => Api.adminDeleteUser(workspaceId, u.id),
     onSuccess: (r, u) => done(
       r.projectsTransferred > 0
-        ? `已刪除 ${u.displayName}，他開的 ${r.projectsTransferred} 個專案已經轉到你名下`
-        : `已刪除 ${u.displayName}`
+        ? A.deletedWithProjects(u.displayName, r.projectsTransferred)
+        : A.deleted(u.displayName)
     ),
     onError: fail,
   })
 
-  if (isLoading || !data) return <Spinner label="載入帳號…" />
+  if (isLoading || !data) return <Spinner label={A.loading} />
 
   const users = data.users
   // 這些都是後端的規則，前端把按鈕收起來只是不要讓人按了才被拒絕：
@@ -103,16 +97,17 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
   const canChangeRole = (u: AdminUser) => canEdit(u) && u.role !== 'ADMIN'
 
   return (
-    <div className="h-full overflow-auto bg-slate-50">
+    <div className="h-full overflow-auto bg-slate-50 dark:bg-slate-950">
       <div className="mx-auto max-w-4xl px-6 py-8">
         <div className="mb-6 flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-slate-800">系統管理</h1>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-            你的身分：{ROLE_LABEL[data.myRole]}
+          <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{A.title}</h1>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500
+                           dark:bg-slate-800 dark:text-slate-400">
+            {A.myRole(ROLE_LABEL[data.myRole])}
           </span>
           <Button className="ml-auto" variant="primary"
                   onClick={() => { setCreating(c => !c); setMsg(null); setErr(null) }}>
-            {creating ? '取消' : '新增帳號'}
+            {creating ? T.common.cancel : A.createToggle}
           </Button>
         </div>
 
@@ -125,40 +120,43 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
         )}
         {msg && (
           <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50
-                          px-3 py-2 text-sm text-emerald-700">{msg}</div>
+                          px-3 py-2 text-sm text-emerald-700
+                          dark:border-emerald-500/30 dark:bg-emerald-500/15
+                          dark:text-emerald-300">{msg}</div>
         )}
 
         {/* ── 新增帳號 ── */}
         {creating && (
-          <section className="mb-6 rounded-xl bg-white p-5 ring-1 ring-slate-200">
-            <h2 className="mb-3 text-sm font-semibold text-slate-700">新增帳號</h2>
+          <section className="mb-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                              dark:bg-slate-900 dark:ring-slate-700">
+            <h2 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+              {A.createTitle}
+            </h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="email（登入帳號）">
+              <Field label={A.email}>
                 <Input value={form.email} type="email"
                        onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
               </Field>
-              <Field label="顯示名稱">
+              <Field label={A.displayName}>
                 <Input value={form.displayName}
                        onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))} />
               </Field>
-              <Field label="初始密碼（至少 8 個字元）">
+              <Field label={A.initialPassword}>
                 <Input value={form.password} type="text" autoComplete="off"
                        onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
               </Field>
-              <Field label="工作區角色">
-                <select value={form.role}
-                        onChange={e => setForm(f => ({ ...f, role: e.target.value as WorkspaceRole }))}
-                        className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm">
+              <Field label={A.role}>
+                <Select value={form.role} className="w-full"
+                        onChange={e => setForm(f => ({ ...f, role: e.target.value as WorkspaceRole }))}>
                   {data.roles.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-                </select>
+                </Select>
               </Field>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               {ROLE_HINT[form.role]}
             </p>
-            <p className="mt-1 text-xs text-amber-700">
-              站上沒有寄信的機制 —— 密碼不會寄給對方，請當面或用其他管道給他，
-              並請他登入後自己到「帳號設定」改掉。
+            <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              {A.noMailHint}
             </p>
             <div className="mt-4">
               <Button variant="primary"
@@ -166,23 +164,25 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
                         !form.email.trim() || !form.displayName.trim()
                         || form.password.length < 8 || create.isPending
                       }
-                      onClick={() => create.mutate()}>建立</Button>
+                      onClick={() => create.mutate()}>{T.common.create}</Button>
             </div>
           </section>
         )}
 
         {/* ── 帳號清單 ── */}
-        <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">
+        <div className="overflow-hidden rounded-xl bg-white ring-1 ring-slate-200
+                        dark:bg-slate-900 dark:ring-slate-700">
           <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-2
-                          text-xs font-medium text-slate-500">
-            <span className="flex-1">帳號</span>
-            <span className="w-24 text-center">狀態</span>
-            <span className="w-28 text-center">參與專案</span>
-            <span className="w-28 text-center">角色</span>
+                          text-xs font-medium text-slate-500
+                          dark:border-slate-800 dark:text-slate-400">
+            <span className="flex-1">{A.colAccount}</span>
+            <span className="w-24 text-center">{A.colStatus}</span>
+            <span className="w-28 text-center">{A.colProjects}</span>
+            <span className="w-28 text-center">{A.colRole}</span>
             <span className="w-40" />
           </div>
 
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
             {users.map(u => (
               <UserRow key={u.id} user={u} isMe={u.id === user?.id} editable={canEdit(u)}
                        roleEditable={canChangeRole(u)} roles={data.roles}
@@ -193,10 +193,7 @@ function UserAdminPanel({ workspaceId }: { workspaceId: string }) {
           </div>
         </div>
 
-        <p className="mt-3 text-xs text-slate-400">
-          這裡的角色管的是「誰能登入這個站、誰能開帳號」。
-          誰進得了哪個專案，仍然由那個專案的建立者決定 —— 管理者看不到別人的專案內容。
-        </p>
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-400">{A.footHint}</p>
       </div>
     </div>
   )
@@ -216,18 +213,22 @@ function UserRow({
 }) {
   const suspended = u.status === 'SUSPENDED'
   return (
-    <div className={cx('flex items-center gap-3 px-4 py-3', suspended && 'bg-slate-50')}>
+    <div className={cx('flex items-center gap-3 px-4 py-3',
+                       suspended && 'bg-slate-50 dark:bg-slate-950/60')}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className={cx('truncate text-sm font-medium',
-                              suspended ? 'text-slate-400' : 'text-slate-800')}>
+                              suspended
+                                ? 'text-slate-400 dark:text-slate-400'
+                                : 'text-slate-800 dark:text-slate-100')}>
             {u.displayName}
           </span>
           {isMe && (
-            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">你</span>
+            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700
+                             dark:bg-blue-500/15 dark:text-blue-300">{A.me}</span>
           )}
         </div>
-        <div className="truncate text-xs text-slate-400">{u.email}</div>
+        <div className="truncate text-xs text-slate-400 dark:text-slate-400">{u.email}</div>
       </div>
 
       <span className={cx('w-24 rounded px-2 py-0.5 text-center text-[11px]', STATUS_CLS[u.status])}>
@@ -235,22 +236,23 @@ function UserRow({
       </span>
 
       {/* 停用之前先看得到他手上有什麼，不然沒人知道誰要接手 */}
-      <span className="w-28 text-center text-xs text-slate-500">
-        {u.projectCount} 個
+      <span className="w-28 text-center text-xs text-slate-500 dark:text-slate-400">
+        {A.projectCount(Number(u.projectCount))}
         {Number(u.createdCount) > 0 && (
-          <span className="text-slate-400">（開了 {u.createdCount}）</span>
+          <span className="text-slate-400 dark:text-slate-400">
+            {A.createdCount(Number(u.createdCount))}
+          </span>
         )}
       </span>
 
       <div className="w-28 text-center">
         {roleEditable ? (
-          <select value={u.role} disabled={busy}
-                  onChange={e => onPatch({ role: e.target.value as WorkspaceRole })}
-                  className="w-full rounded-md border border-slate-300 px-1.5 py-1 text-xs">
+          <Select value={u.role} disabled={busy} className="w-full px-1.5 py-1 text-xs"
+                  onChange={e => onPatch({ role: e.target.value as WorkspaceRole })}>
             {roles.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-          </select>
+          </Select>
         ) : (
-          <span className="text-xs text-slate-500">{ROLE_LABEL[u.role]}</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">{ROLE_LABEL[u.role]}</span>
         )}
       </div>
 
@@ -259,26 +261,29 @@ function UserRow({
           <>
             <button
               onClick={() => {
-                const pw = window.prompt(`要幫 ${u.displayName} 設一組新密碼嗎？（至少 8 個字元）`)
+                const pw = window.prompt(A.promptNewPassword(u.displayName))
                 if (pw && pw.length >= 8) onPatch({ newPassword: pw })
-                else if (pw) window.alert('密碼至少要 8 個字元')
+                else if (pw) window.alert(A.passwordTooShort)
               }}
-              className="rounded px-1.5 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-              重設密碼
+              className="rounded px-1.5 py-1 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700
+                         dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+              {A.resetPassword}
             </button>
             <button
               onClick={() => {
                 const next = suspended ? 'ACTIVE' : 'SUSPENDED'
                 const ask = suspended
-                  ? `要讓 ${u.displayName} 重新登入嗎？`
-                  : `要停用 ${u.displayName} 嗎？他會立刻被登出，資料不會刪除。`
+                  ? A.confirmResume(u.displayName)
+                  : A.confirmSuspend(u.displayName)
                 if (window.confirm(ask)) onPatch({ status: next })
               }}
               className={cx('rounded px-1.5 py-1 text-xs',
                             suspended
-                              ? 'text-emerald-600 hover:bg-emerald-50'
-                              : 'text-slate-400 hover:bg-red-50 hover:text-red-600')}>
-              {suspended ? '復用' : '停用'}
+                              ? 'text-emerald-600 hover:bg-emerald-50 '
+                                + 'dark:text-emerald-400 dark:hover:bg-emerald-500/10'
+                              : 'text-slate-400 hover:bg-red-50 hover:text-red-600 '
+                                + 'dark:text-slate-400 dark:hover:bg-red-500/10 dark:hover:text-red-400')}>
+              {suspended ? A.resume : A.suspend}
             </button>
             {/* 刪除只給成員與訪客 —— 管理者要先請擁有者取消他的身分，這是後端的規則 */}
             {roleEditable && (
@@ -286,19 +291,18 @@ function UserRow({
                 onClick={() => {
                   const created = Number(u.createdCount)
                   const ask = [
-                    `要刪除 ${u.displayName} 的帳號嗎？這個動作無法復原。`,
-                    created > 0
-                      ? `他開的 ${created} 個專案會轉到你名下（不然那些專案就沒有人能管成員了）。`
-                      : '',
-                    '他負責的任務不會被刪除，只會變成未指派。',
-                    '只是暫時不讓他登入的話，請用「停用」。',
+                    A.confirmDelete(u.displayName),
+                    created > 0 ? A.confirmDeleteProjects(created) : '',
+                    A.confirmDeleteTasks,
+                    A.confirmDeleteSuspendInstead,
                   ].filter(Boolean).join('\n')
                   if (window.confirm(ask)) onDelete()
                 }}
                 disabled={busy}
                 className="rounded px-1.5 py-1 text-xs text-slate-400
-                           hover:bg-red-50 hover:text-red-600 disabled:opacity-50">
-                刪除
+                           hover:bg-red-50 hover:text-red-600 disabled:opacity-50
+                           dark:text-slate-400 dark:hover:bg-red-500/10 dark:hover:text-red-400">
+                {T.common.delete}
               </button>
             )}
           </>
@@ -333,7 +337,7 @@ function OwnerPanel({ workspaceId }: { workspaceId: string }) {
     onError: e => setErr(errText(e)),
   })
 
-  if (isLoading || !data) return <Spinner label="載入名單…" />
+  if (isLoading || !data) return <Spinner label={O.loading} />
 
   const admins = data.users.filter(u => u.isAdmin)
 
@@ -341,49 +345,52 @@ function OwnerPanel({ workspaceId }: { workspaceId: string }) {
     <div className="h-full overflow-auto bg-slate-50">
       <div className="mx-auto max-w-3xl px-6 py-8">
         <div className="mb-2 flex items-center gap-3">
-          <h1 className="text-lg font-semibold text-slate-800">系統管理</h1>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-            你的身分：擁有者
+          <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{A.title}</h1>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500
+                           dark:bg-slate-800 dark:text-slate-400">
+            {O.myRole}
           </span>
         </div>
-        <p className="mb-6 text-sm text-slate-500">
-          你能決定誰是管理者，其餘的帳號管理都由管理者處理 ——
-          你看不到別人的帳號狀態，也不能開帳號、停用或刪除帳號。
-        </p>
+        <p className="mb-6 text-sm text-slate-500 dark:text-slate-400">{O.intro}</p>
 
         {err && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                          dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
             {err}
           </div>
         )}
 
         {admins.length === 0 && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            目前沒有任何管理者，這個站沒有人能開帳號或重設密碼。請先指派一位。
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800
+                          dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
+            {O.noAdmins}
           </div>
         )}
 
-        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200">
+        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl bg-white ring-1 ring-slate-200
+                        dark:divide-slate-800 dark:bg-slate-900 dark:ring-slate-700">
           {data.users.map(u => (
             <div key={u.id} className="flex items-center gap-3 px-4 py-3">
               <Avatar userId={u.id} name={u.displayName} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium text-slate-800">
+                  <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
                     {u.displayName}
                   </span>
                   {u.isOwner && (
-                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700">
-                      你（擁有者）
+                    <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] text-blue-700
+                                     dark:bg-blue-500/15 dark:text-blue-300">
+                      {O.meOwner}
                     </span>
                   )}
                   {u.isAdmin && (
-                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">
-                      管理者
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700
+                                     dark:bg-emerald-500/15 dark:text-emerald-300">
+                      {O.isAdmin}
                     </span>
                   )}
                 </div>
-                <div className="truncate text-xs text-slate-400">{u.email}</div>
+                <div className="truncate text-xs text-slate-400 dark:text-slate-400">{u.email}</div>
               </div>
 
               {!u.isOwner && (
@@ -392,23 +399,20 @@ function OwnerPanel({ workspaceId }: { workspaceId: string }) {
                   disabled={setAdmin.isPending}
                   onClick={() => {
                     const ask = u.isAdmin
-                      ? `要取消 ${u.displayName} 的管理者身分嗎？他會變回一般成員。`
-                      : `要讓 ${u.displayName} 當管理者嗎？他就能看到、也能管理這個站上所有人的帳號。`
+                      ? O.confirmRevoke(u.displayName)
+                      : O.confirmGrant(u.displayName)
                     if (window.confirm(ask)) {
                       setAdmin.mutate({ userId: u.id, isAdmin: !u.isAdmin })
                     }
                   }}>
-                  {u.isAdmin ? '取消管理者' : '指派為管理者'}
+                  {u.isAdmin ? O.revoke : O.grant}
                 </Button>
               )}
             </div>
           ))}
         </div>
 
-        <p className="mt-3 text-xs text-slate-400">
-          管理者管的是「誰能登入這個站」，看不到任何專案的內容 ——
-          誰進得了哪個專案，仍然由那個專案的建立者決定。
-        </p>
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-400">{O.footHint}</p>
       </div>
     </div>
   )

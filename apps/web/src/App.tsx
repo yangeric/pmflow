@@ -37,8 +37,11 @@ const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'calendar', label: T.nav.views.calendar },
   { key: 'gantt', label: T.nav.views.gantt },
   { key: 'graph', label: T.nav.views.graph },
+  // 發文追蹤放在這一排：它跟其他頁籤一樣是「這個專案的任務」的一種看法 ——
+  // 只是看的是「發出去的事情回了沒」。不再是跨專案的入口。
+  { key: 'inquiry', label: T.nav.views.inquiry },
   // 成員刻意不放在這一排。這排是「同一批任務的不同看法」，
-  // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口移到側欄。
+  // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口在右上角的頭像選單。
 ]
 
 export default function App() {
@@ -91,12 +94,13 @@ export default function App() {
   const bell = <NotificationBell onOpen={openNotification} />
 
   const workspaceId = workspaces[0]?.id ?? projects[0]?.workspaceId ?? ''
-  const totalOverdue = projects.reduce((n, p) => n + (p.overdueInquiryCount ?? 0), 0)
   // 「系統管理」只給工作區的擁有者與管理者看到。後端也會再擋一次，
   // 這裡收起來只是不要讓人按了才被拒絕
   const isWorkspaceAdmin = ['OWNER', 'ADMIN'].includes(workspaces[0]?.role ?? '')
+  const pendingJoins = projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0
 
-  // 帳號設定、系統管理、外觀、登出都收在右上角的頭像底下（見 components/UserMenu.tsx）
+  // 成員、帳號設定、系統管理、外觀、登出都收在右上角的頭像底下（見 components/UserMenu.tsx）。
+  // 成員只有人在專案裡的時候才給 —— 沒選專案時「這個專案的成員」是句空話
   const userMenu = (
     <UserMenu
       userName={user.displayName}
@@ -104,6 +108,10 @@ export default function App() {
       onAccount={() => setAccount('profile')}
       onAdmin={() => setAccount('admin')}
       onLogout={logout}
+      onMembers={projectId
+        ? () => { setAccount(null); setView('members'); setOpenTask(null) }
+        : undefined}
+      pendingJoins={pendingJoins}
     />
   )
 
@@ -114,7 +122,7 @@ export default function App() {
         <header className="flex items-center gap-1 border-b border-slate-200 bg-white px-4 py-2.5
                            dark:border-slate-700 dark:bg-slate-900">
           <Button variant="ghost" onClick={() => setAccount(null)}>← {T.common.back}</Button>
-          <span className="mx-2 text-slate-200 dark:text-slate-600">|</span>
+          <span className="mx-2 text-slate-200 dark:text-slate-500">|</span>
           <AccountTab active={account === 'profile'}
                       onClick={() => setAccount('profile')}>{T.nav.accountSettings}</AccountTab>
           {isWorkspaceAdmin && (
@@ -134,35 +142,16 @@ export default function App() {
   }
 
   // ── 還沒選專案 → 選擇頁 ──
-  if (!projectId && view !== 'inquiry') {
+  // 發文追蹤不再是這一頁的入口：它是專案裡的頁籤，要進到專案才看得到
+  if (!projectId) {
     return (
       <ProjectPicker
         projects={projects}
         workspaceId={workspaceId}
         onPick={id => { setProjectId(id); setView('list') }}
-        onInquiryBoard={() => setView('inquiry')}
         bell={bell}
         menu={userMenu}
       />
-    )
-  }
-
-  // ── 從選擇頁點進發文追蹤（跨專案，沒有側欄）──
-  if (!projectId) {
-    return (
-      <div className="flex h-full flex-col">
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
-                           dark:border-slate-700 dark:bg-slate-900">
-          <Button variant="ghost" onClick={() => setView('list')}>← {T.nav.backToPicker}</Button>
-          <div className="ml-auto">{bell}</div>
-        </header>
-        <div className="min-h-0 flex-1">
-          <InquiryBoard
-            workspaceId={workspaceId}
-            onOpenTask={(pid, tid) => { setProjectId(pid); setView('list'); setOpenTask(tid) }}
-          />
-        </div>
-      </div>
     )
   }
 
@@ -173,8 +162,6 @@ export default function App() {
       workspaceId={workspaceId}
       view={view} setView={setView}
       openTask={openTask} setOpenTask={setOpenTask}
-      totalOverdue={totalOverdue}
-      pendingJoins={projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
       bell={bell}
       menu={userMenu}
@@ -202,7 +189,7 @@ function AccountTab({ active, onClick, children }: {
  */
 function ProjectWorkspace({
   projectId, workspaceId, view, setView, openTask, setOpenTask,
-  totalOverdue, pendingJoins, onSwitchProject, bell, menu,
+  onSwitchProject, bell, menu,
 }: {
   projectId: string
   workspaceId: string
@@ -210,9 +197,6 @@ function ProjectWorkspace({
   setView: (v: View) => void
   openTask: string | null
   setOpenTask: (id: string | null) => void
-  totalOverdue: number
-  /** 待審的加入申請數。不是建立者的話後端一律回 0 */
-  pendingJoins: number
   onSwitchProject: () => void
   /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
   bell: ReactNode
@@ -264,167 +248,152 @@ function ProjectWorkspace({
         onSelectEpic={id => {
           setEpicId(id)
           setOpenTask(null)                    // 回到總覽
-          if (view === 'inquiry') setView('list')
+          // 發文追蹤與成員不吃大項目這個篩選，選了大項目就回到清單，
+          // 不然按下去畫面沒有任何反應
+          if (view === 'inquiry' || view === 'members') setView('list')
         }}
         selectedTaskId={openTask}
-        onOpenTask={id => { setOpenTask(id); if (view === 'inquiry') setView('list') }}
+        onOpenTask={id => {
+          setOpenTask(id)
+          if (view === 'inquiry' || view === 'members') setView('list')
+        }}
         onSwitchProject={onSwitchProject}
-        onInquiryBoard={() => setView('inquiry')}
-        inquiryActive={view === 'inquiry'}
-        onMembers={() => { setView('members'); setOpenTask(null) }}
-        membersActive={view === 'members'}
-        pendingJoins={pendingJoins}
-        overdueTotal={totalOverdue}
       />
 
       <main className="flex min-w-0 flex-1 flex-col">
-        {view === 'inquiry' ? (
-          <>
-            <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
-                               dark:border-slate-700 dark:bg-slate-900">
-              <Button variant="ghost" onClick={() => setView('list')}>← {T.nav.backToProject}</Button>
-              <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
-            </header>
-            <div className="min-h-0 flex-1">
-              <InquiryBoard
-                workspaceId={workspaceId}
-                onOpenTask={(_pid, tid) => { setView('list'); setEpicId(null); setOpenTask(tid) }}
-              />
-            </div>
-          </>
-        ) : (
-          <>
-            {openTask ? (
-              /* 看單張任務時，上面只留一條麵包屑，把版面讓給內容 */
-              <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
-                                 text-sm dark:border-slate-700 dark:bg-slate-900">
-                <button onClick={() => setOpenTask(null)}
-                        className="text-slate-400 hover:text-slate-700
-                                   dark:text-slate-500 dark:hover:text-slate-300">
-                  ← {T.nav.backToOverview}
-                </button>
-                <span className="text-slate-300 dark:text-slate-600">|</span>
-                <button onClick={() => { setEpicId(null); setOpenTask(null) }}
-                        className="text-slate-400 hover:text-slate-700
-                                   dark:text-slate-500 dark:hover:text-slate-300">{project?.name}</button>
-                {(() => {
-                  const t = tasks.find(x => x.id === openTask)
-                  const parent = t?.parentId ? tasks.find(x => x.id === t.parentId) : undefined
-                  return parent ? (
-                    <>
-                      <span className="text-slate-300 dark:text-slate-600">/</span>
-                      <button onClick={() => { setEpicId(parent.id); setOpenTask(null) }}
-                              className="text-slate-400 hover:text-slate-700
-                                         dark:text-slate-500 dark:hover:text-slate-300">{parent.title}</button>
-                    </>
-                  ) : null
-                })()}
-                <span className="text-slate-300 dark:text-slate-600">/</span>
-                <span className="font-medium text-slate-700 dark:text-slate-300">
-                  {tasks.find(x => x.id === openTask)?.title ?? T.nav.fallbackTaskTitle}
-                </span>
-                <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
-              </header>
-            ) : (
-            <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-              <div className="flex items-center gap-3 px-4 pt-3">
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500
-                                 dark:bg-slate-800 dark:text-slate-400">
-                  {project?.key}
-                </span>
-                {epic ? (
-                  <>
-                    <button onClick={() => setEpicId(null)}
-                            className="text-sm text-slate-400 hover:text-slate-600
-                                       dark:text-slate-500 dark:hover:text-slate-300">
-                      {project?.name}
-                    </button>
-                    <span className="text-slate-300 dark:text-slate-600">/</span>
-                    <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
-                      {epic.title}
-                    </h1>
-                    <button onClick={() => setEpicId(null)}
-                            className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500
-                                       hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400
-                                       dark:hover:bg-slate-700">
-                      ✕ {T.nav.showAll}
-                    </button>
-                  </>
-                ) : (
-                  <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
-                    {project?.name ?? T.common.none}
-                  </h1>
-                )}
-                {overdue > 0 && (
-                  <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700
-                                   dark:bg-red-500/15 dark:text-red-300">
-                    ⚠️ {T.nav.overdueHere(overdue)}
-                  </span>
-                )}
-                <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
-              </div>
-              <nav className="flex gap-1 px-3 pt-2">
-                {VIEWS.map(v => (
-                  <button key={v.key} onClick={() => { setView(v.key); setOpenTask(null) }}
-                          className={cx(
-                            'flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-sm font-medium',
-                            'transition-colors',
-                            view === v.key
-                              ? 'border-b-2 border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300'
-                              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                          )}>
-                    {v.label}
-                  </button>
-                ))}
-              </nav>
-            </header>
-            )}
-
-            <div className="min-h-0 flex-1 overflow-hidden">
-              {isLoading ? <Spinner /> : openTask ? (
-                // 主從式：左邊選了任務，右邊就是那張任務的詳情
-                <TaskDrawer
-                  key={openTask}
-                  taskId={openTask}
-                  workspaceId={workspaceId}
-                  statuses={project?.statuses ?? []}
-                  allTasks={tasks}
-                  onClose={() => setOpenTask(null)}
-                />
-              ) : (
+        {openTask ? (
+          /* 看單張任務時，上面只留一條麵包屑，把版面讓給內容 */
+          <header className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5
+                             text-sm dark:border-slate-700 dark:bg-slate-900">
+            <button onClick={() => setOpenTask(null)}
+                    className="text-slate-400 hover:text-slate-700
+                               dark:text-slate-400 dark:hover:text-slate-300">
+              ← {T.nav.backToOverview}
+            </button>
+            <span className="text-slate-300 dark:text-slate-500">|</span>
+            <button onClick={() => { setEpicId(null); setOpenTask(null) }}
+                    className="text-slate-400 hover:text-slate-700
+                               dark:text-slate-400 dark:hover:text-slate-300">{project?.name}</button>
+            {(() => {
+              const t = tasks.find(x => x.id === openTask)
+              const parent = t?.parentId ? tasks.find(x => x.id === t.parentId) : undefined
+              return parent ? (
                 <>
-                  {view === 'list' && (
-                    <ListView projectId={projectId} tasks={visible} parentForNew={epicId}
-                              statuses={project?.statuses ?? []} onOpen={setOpenTask} />
-                  )}
-                  {view === 'board' && (
-                    <Board projectId={projectId} tasks={visible}
-                           statuses={project?.statuses ?? []} onOpen={setOpenTask} />
-                  )}
-                  {view === 'calendar' && (
-                    <CalendarView projectId={projectId} workspaceId={workspaceId}
-                                  tasks={visible} statuses={project?.statuses ?? []}
-                                  onOpen={setOpenTask} />
-                  )}
-                  {view === 'gantt' && (
-                    <Suspense fallback={<Spinner label={T.nav.loadingGantt} />}>
-                      <GanttView projectId={projectId} tasks={visible} onOpen={setOpenTask} />
-                    </Suspense>
-                  )}
-                  {view === 'graph' && (
-                    <Suspense fallback={<Spinner label={T.nav.loadingGraph} />}>
-                      <GraphView projectId={projectId} tasks={visible}
-                                 statuses={project?.statuses ?? []} onOpen={setOpenTask} />
-                    </Suspense>
-                  )}
-                  {view === 'members' && (
-                    <MembersPanel projectId={projectId} workspaceId={workspaceId} />
-                  )}
+                  <span className="text-slate-300 dark:text-slate-500">/</span>
+                  <button onClick={() => { setEpicId(parent.id); setOpenTask(null) }}
+                          className="text-slate-400 hover:text-slate-700
+                                     dark:text-slate-400 dark:hover:text-slate-300">{parent.title}</button>
                 </>
-              )}
-            </div>
-          </>
+              ) : null
+            })()}
+            <span className="text-slate-300 dark:text-slate-500">/</span>
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              {tasks.find(x => x.id === openTask)?.title ?? T.nav.fallbackTaskTitle}
+            </span>
+            <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
+          </header>
+        ) : (
+        <header className="border-b border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex items-center gap-3 px-4 pt-3">
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500
+                             dark:bg-slate-800 dark:text-slate-400">
+              {project?.key}
+            </span>
+            {epic ? (
+              <>
+                <button onClick={() => setEpicId(null)}
+                        className="text-sm text-slate-400 hover:text-slate-600
+                                   dark:text-slate-400 dark:hover:text-slate-300">
+                  {project?.name}
+                </button>
+                <span className="text-slate-300 dark:text-slate-500">/</span>
+                <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                  {epic.title}
+                </h1>
+                <button onClick={() => setEpicId(null)}
+                        className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500
+                                   hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400
+                                   dark:hover:bg-slate-700">
+                  ✕ {T.nav.showAll}
+                </button>
+              </>
+            ) : (
+              <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
+                {project?.name ?? T.common.none}
+              </h1>
+            )}
+            {overdue > 0 && (
+              <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700
+                               dark:bg-red-500/15 dark:text-red-300">
+                ⚠️ {T.nav.overdueHere(overdue)}
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
+          </div>
+          <nav className="flex gap-1 px-3 pt-2">
+            {VIEWS.map(v => (
+              <button key={v.key} onClick={() => { setView(v.key); setOpenTask(null) }}
+                      className={cx(
+                        'flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-sm font-medium',
+                        'transition-colors',
+                        view === v.key
+                          ? 'border-b-2 border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-300'
+                          : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      )}>
+                {v.label}
+              </button>
+            ))}
+          </nav>
+        </header>
         )}
+
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {isLoading ? <Spinner /> : openTask ? (
+            // 主從式：左邊選了任務，右邊就是那張任務的詳情
+            <TaskDrawer
+              key={openTask}
+              taskId={openTask}
+              workspaceId={workspaceId}
+              statuses={project?.statuses ?? []}
+              allTasks={tasks}
+              onClose={() => setOpenTask(null)}
+            />
+          ) : (
+            <>
+              {view === 'list' && (
+                <ListView projectId={projectId} tasks={visible} parentForNew={epicId}
+                          statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+              )}
+              {view === 'board' && (
+                <Board projectId={projectId} tasks={visible}
+                       statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+              )}
+              {view === 'calendar' && (
+                <CalendarView projectId={projectId} workspaceId={workspaceId}
+                              tasks={visible} statuses={project?.statuses ?? []}
+                              onOpen={setOpenTask} />
+              )}
+              {view === 'gantt' && (
+                <Suspense fallback={<Spinner label={T.nav.loadingGantt} />}>
+                  <GanttView projectId={projectId} tasks={visible} onOpen={setOpenTask} />
+                </Suspense>
+              )}
+              {view === 'graph' && (
+                <Suspense fallback={<Spinner label={T.nav.loadingGraph} />}>
+                  <GraphView projectId={projectId} tasks={visible}
+                             statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+                </Suspense>
+              )}
+              {view === 'inquiry' && (
+                <InquiryBoard projectId={projectId} workspaceId={workspaceId}
+                              onOpenTask={setOpenTask} />
+              )}
+              {view === 'members' && (
+                <MembersPanel projectId={projectId} workspaceId={workspaceId} />
+              )}
+            </>
+          )}
+        </div>
       </main>
     </div>
   )

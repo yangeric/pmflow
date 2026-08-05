@@ -25,13 +25,20 @@ const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string; icon: string }> 
 ]
 
 export function UserMenu({
-  userName, isWorkspaceAdmin, onAccount, onAdmin, onLogout,
+  userName, isWorkspaceAdmin, onAccount, onAdmin, onLogout, onMembers, pendingJoins = 0,
 }: {
   userName: string
   isWorkspaceAdmin: boolean
   onAccount: () => void
   onAdmin: () => void
   onLogout: () => void
+  /**
+   * 專案成員。**只有人在專案裡的時候才會傳進來** ——
+   * 成員講的是「這個專案的成員」，在專案選擇頁沒有專案可言，那時就不畫這一項。
+   */
+  onMembers?: () => void
+  /** 待審的加入申請數。不是建立者的話後端一律回 0 */
+  pendingJoins?: number
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -87,12 +94,33 @@ export function UserMenu({
                 {userName}
               </div>
               {me?.email && (
-                <div className="truncate text-xs text-slate-400 dark:text-slate-500">{me.email}</div>
+                <div className="truncate text-xs text-slate-400 dark:text-slate-400">{me.email}</div>
               )}
             </div>
           </div>
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+
+          {/*
+            成員跟底下那些是不同性質的東西：這一項是「目前這個專案」的設定，
+            下面講的是「我這個人」，所以中間隔一條線。
+          */}
+          {onMembers && (
+            <>
+              <MenuItem onClick={go(onMembers)}>
+                <span className="flex items-center gap-2">
+                  {T.nav.members}
+                  {pendingJoins > 0 && (
+                    <span title={T.nav.pendingJoinsHint(pendingJoins)}
+                          className="rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+                      {pendingJoins}
+                    </span>
+                  )}
+                </span>
+              </MenuItem>
+              <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+            </>
+          )}
 
           <MenuItem onClick={go(onAccount)}>{T.account.menu.account}</MenuItem>
           {isWorkspaceAdmin && <MenuItem onClick={go(onAdmin)}>{T.account.menu.admin}</MenuItem>}
@@ -100,7 +128,7 @@ export function UserMenu({
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
           <div className="px-3 py-1.5">
-            <div className="mb-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">{T.account.menu.appearance}</div>
+            <div className="mb-1.5 text-xs font-medium text-slate-400 dark:text-slate-400">{T.account.menu.appearance}</div>
             <div className="flex gap-1">
               {THEME_OPTIONS.map(o => (
                 <button
