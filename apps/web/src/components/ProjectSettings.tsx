@@ -31,9 +31,13 @@ import { T } from '../strings'
  * 上下箭頭沒有拿掉：拖曳對觸控筆、手抖的人、只用鍵盤的人都不是最省力的路，
  * 箭頭是那條保底的路（鍵盤本身走 KeyboardSensor 也能拖，兩條都留著）。
  *
+ * 最上面另外有一個「專案代碼」區塊，那是專案本身的欄位，不是三份清單之一 ——
+ * 但要改它的人就是會來這一頁找，所以擺在一起。
+ *
  * 有一件事刻意不做：
- *  - **不給改代碼。** 任務是靠代碼指回來的，改了等於把既有任務指向不存在的值。
- *    畫面上連看都不給看 —— 那是程式用的東西，擺出來只會有人想動它。
+ *  - **參數的代碼（key）不給改。** 任務是靠它指回來的，改了等於把既有任務
+ *    指向不存在的值。畫面上連看都不給看 —— 那是程式用的東西，擺出來只會有人想動它。
+ *    專案代碼是另一回事：任務編號是查詢時拼出來的，改了會整批跟著換，不會壞掉。
  *
  * 所有按鈕都掛在後端回的 canManage 底下，跟成員頁同一個做法。
  */
@@ -161,6 +165,10 @@ export default function ProjectSettings({ projectId }: { projectId: string }) {
           </div>
         )}
 
+        {/* 專案代碼擺在三份清單之前：它是整頁最上層的東西（任務編號的開頭），
+            而且只有能管這個專案的人動得了 */}
+        {canManage && <ProjectKeySection projectId={projectId} />}
+
         {SECTIONS.map(sec => (
           <Section
             key={sec.kind}
@@ -180,6 +188,111 @@ export default function ProjectSettings({ projectId }: { projectId: string }) {
 
       </div>
     </div>
+  )
+}
+
+const K = S.projectKey
+
+/** 跟後端 createBody 的正則同一份（api/src/routes/projects.ts）。兩邊都擋，訊息才講得出是哪裡不對 */
+const KEY_RE = /^[A-Z][A-Z0-9]{1,9}$/
+
+/**
+ * 專案代碼＝任務編號的前綴（`MRG-2` 的 MRG）。
+ *
+ * 改得動是因為**任務編號沒有存成欄位**：後端每次都用 `p.key || '-' || t.number`
+ * 拼出來，所以代碼一改，舊任務的編號立刻跟著換，不需要回填任何資料。
+ * 反過來說，抄在信件、報告裡的舊編號就對不上了 —— 所以 warning 那句話
+ * **貼著按鈕放**，不能藏在游標停著才看得到的地方：按下去就回不來了。
+ */
+function ProjectKeySection({ projectId }: { projectId: string }) {
+  const qc = useQueryClient()
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId],
+    queryFn: () => Api.project(projectId),
+  })
+
+  const [key, setKey] = useState('')
+  // 專案資料回來（或別人改過）之後，把輸入框對回伺服器上的那一份
+  // ——「render 期間依變化調整 state」，跟上面 Row 改名字同一個做法
+  const [seen, setSeen] = useState<string | null>(null)
+  const current = project?.key ?? null
+  if (current !== null && current !== seen) { setSeen(current); setKey(current) }
+
+  const [done, setDone] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const save = useMutation({
+    mutationFn: (v: string) => Api.patchProject(projectId, { key: v }),
+    onSuccess: () => {
+      setErr(null)
+      setDone(true)
+      // 編號在很多份快取裡已經是拼好的字串，代碼換了就全部過期：
+      // 專案清單（選專案頁）、這個專案本身、以及任務清單裡的 ref
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['project', projectId] })
+      qc.invalidateQueries({ queryKey: ['tasks', projectId] })
+    },
+    onError: e => {
+      setDone(false)
+      // 格式在送出前就擋掉了，所以後端這時候回 400／409 只可能是撞號
+      // （見 routes/projects.ts 的重複檢查）。其餘一律當成沒存成功。
+      setErr(e instanceof ApiError && (e.status === 400 || e.status === 409)
+        ? K.duplicate : K.failed)
+    },
+  })
+
+  const invalid = key.length > 0 && !KEY_RE.test(key)
+  const changed = current !== null && key !== current
+  const submit = () => {
+    if (!changed || !KEY_RE.test(key)) return
+    save.mutate(key)
+  }
+
+  return (
+    <section className="mt-8">
+      <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-300">{K.title}</h2>
+      <p className="mb-2 mt-0.5 text-xs text-slate-500 dark:text-slate-400">{K.hint}</p>
+
+      <div className="rounded-xl bg-white px-4 py-3 ring-1 ring-slate-200
+                      dark:bg-slate-900 dark:ring-slate-700">
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label={K.label}>
+            <Input
+              value={key}
+              // 代碼一律大寫，讓他自己按 Shift 只會換來一個「格式不對」
+              onChange={e => { setKey(e.target.value.toUpperCase()); setDone(false); setErr(null) }}
+              onKeyDown={e => { if (e.key === 'Enter') submit() }}
+              placeholder={K.placeholder}
+              disabled={save.isPending}
+              aria-invalid={invalid}
+              className="w-40 font-mono tracking-wider"
+            />
+          </Field>
+          <Button
+            variant="primary"
+            disabled={save.isPending || !changed || invalid || !key}
+            onClick={submit}>
+            {K.save}
+          </Button>
+        </div>
+
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">{K.rule}</p>
+
+        {/* 按下去之前一定要看到這句：所有任務的編號都會跟著換 */}
+        <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800
+                      dark:bg-amber-500/10 dark:text-amber-300">
+          {K.warning}
+        </p>
+
+        {invalid && (
+          <p className="mt-2 text-xs text-red-600 dark:text-red-400">{K.invalid}</p>
+        )}
+        {err && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{err}</p>}
+        {done && !changed && (
+          <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-400">{K.saved}</p>
+        )}
+      </div>
+    </section>
   )
 }
 

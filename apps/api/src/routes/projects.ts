@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import { authenticate, requireProjectRole } from '../lib/auth.js'
-import { forbidden, notFound } from '../lib/errors.js'
+import { badRequest, forbidden, notFound } from '../lib/errors.js'
 import { listProjectParams, DEFAULT_PARAMS } from './parameters.js'
 
 /**
@@ -152,8 +152,37 @@ export default async function projectRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     await requireProjectRole(user.id, req.params.id, 'MANAGER')
     const body = createBody.partial().omit({ workspaceId: true }).parse(req.body)
-    const [row] = await sql`
+
+    /**
+     * 專案代碼可以改，格式檢查直接吃 createBody 那一份 —— 建立與修改共用
+     * 同一個 zod schema 片段，另外抄一份正則遲早會有一邊沒跟上。
+     *
+     * **改代碼不需要回填任何資料。** 任務編號沒有存成欄位，是查詢時用
+     * `p.key || '-' || t.number` 拼出來的（routes/tasks.ts、links.ts、
+     * inquiries.ts、notifications.ts、lib/graph.ts 全部都是這樣），
+     * 所以代碼一改，舊任務的編號立刻跟著換，不會有新舊兩種編號並存的狀態。
+     * 這是刻意的設計，不要為了「保留舊編號」把 ref 存成欄位。
+     *
+     * 撞號自己先擋：資料表上有 UNIQUE (workspace_id, key)，讓它直接噴出來的話
+     * 使用者看到的是「資料重複」加一段 Postgres 的 constraint 名稱，
+     * 根本看不出是代碼撞號。同工作區內比對，封存的專案也算（UNIQUE 沒有排除它們）。
+     */
+    if (body.key) {
+      const [dup] = await sql<{ id: string }[]>`
+        SELECT id FROM project
+        WHERE workspace_id = (SELECT workspace_id FROM project WHERE id = ${req.params.id})
+          AND key = ${body.key}
+          AND id <> ${req.params.id}`
+      if (dup) {
+        throw badRequest(
+          `已經有專案用「${body.key}」這個代碼了`,
+          '同一個工作區裡的專案代碼不能重複，請換一個。')
+      }
+    }
+
+    const rows = await sql`
       UPDATE project SET
+        key         = coalesce(${body.key ?? null}, key),
         name        = coalesce(${body.name ?? null}, name),
         description = coalesce(${body.description ?? null}, description),
         color       = coalesce(${body.color ?? null}, color),
@@ -164,6 +193,16 @@ export default async function projectRoutes(app: FastifyInstance) {
       RETURNING id, key, name, description, color,
                 start_date AS "startDate", end_date AS "endDate",
                 is_public AS "isPublic"`
-    return row
+      // 上面查過還是撞號，代表另一個人在這短短幾毫秒間把同一個代碼佔走了。
+      // 這條路很難走到，但走到時要講同一句話，不能突然變成 constraint 名稱。
+      .catch((e: { code?: string }) => {
+        if (e.code === '23505' && body.key) {
+          throw badRequest(
+            `已經有專案用「${body.key}」這個代碼了`,
+            '同一個工作區裡的專案代碼不能重複，請換一個。')
+        }
+        throw e
+      })
+    return rows[0]
   })
 }

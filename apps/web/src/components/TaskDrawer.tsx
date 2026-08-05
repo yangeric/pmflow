@@ -14,7 +14,7 @@ import { T } from '../strings'
  * variant='overlay'：舊的覆蓋式抽屜，保留給之後可能需要的浮動情境。
  */
 export function TaskDrawer({
-  taskId, workspaceId, statuses, allTasks, onClose, variant = 'pane',
+  taskId, workspaceId, statuses, allTasks, onClose, variant = 'pane', flash = false,
 }: {
   taskId: string
   workspaceId: string
@@ -22,6 +22,12 @@ export function TaskDrawer({
   allTasks: Task[]
   onClose: () => void
   variant?: 'pane' | 'overlay'
+  /**
+   * 從通知點進來的就閃一下紅框，指出「就是這一張」——
+   * 那一下畫面上換掉太多東西，眼睛不知道該看哪裡。
+   * 動畫在 `index.css` 的 `.pmflow-flash`，閃三下就停。
+   */
+  flash?: boolean
 }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => Api.task(taskId) })
@@ -133,13 +139,17 @@ export function TaskDrawer({
       <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/20 dark:bg-slate-950/60"
            onClick={onClose}>
         {/* 覆蓋式抽屜是疊在卡片上的浮層，深色底要比卡片再亮一階才分得出層次 */}
-        <div className="flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl dark:bg-slate-800"
+        <div className={cx('flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl',
+                           'dark:bg-slate-800', flash && 'pmflow-flash')}
              onClick={e => e.stopPropagation()}>
           {children}
         </div>
       </div>
     ) : (
-      <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-900">{children}</div>
+      <div className={cx('flex h-full min-h-0 flex-col bg-white dark:bg-slate-900',
+                         flash && 'pmflow-flash')}>
+        {children}
+      </div>
     )
 
   return (
@@ -156,9 +166,15 @@ export function TaskDrawer({
                     {data.ref}
                   </span>
                   <InquiryBadge state={data.inquiryState} />
+                  {/* 顏色是那一種種類自己的（系統參數頁裡挑的），不是寫死的紫色；
+                      只畫成左邊那條細槓，理由見 pages/List.tsx 同一段註解 */}
                   {typeOf(data.type) && (
-                    <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700
-                                     dark:bg-violet-500/15 dark:text-violet-300">
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded
+                                     bg-slate-100 py-0.5 pr-1.5 pl-1 text-[11px] text-slate-600
+                                     dark:bg-slate-800 dark:text-slate-300">
+                      <span className="h-3 w-0.5 rounded-full"
+                            style={{ background: types.find(t => t.key === data.type)?.color
+                                                 ?? '#94a3b8' }} />
                       {typeOf(data.type)}
                     </span>
                   )}

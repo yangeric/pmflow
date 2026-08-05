@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Api, type Task, type TaskStatus } from '../lib/api'
-import { InquiryBadge, ProblemBadge, Empty, Input, cx } from '../components/ui'
+import { Api, type ProjectParam, type Task, type TaskStatus } from '../lib/api'
+import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../lib/auth'
 import { rollup, isTaskOverdue } from '../lib/rollup'
@@ -34,6 +34,8 @@ export default function ListView({
 
   /** 類型的中文由專案自己定（0011_project_parameters.sql），查不到就不顯示徽章 */
   const typeOf = (key: string) => project?.types?.find(t => t.key === key)?.name ?? ''
+  const typeColorOf = (key: string) =>
+    project?.types?.find(t => t.key === key)?.color ?? '#94a3b8'
   /*
    * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
    * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
@@ -93,9 +95,18 @@ export default function ListView({
            displayName: T.task.reassign.optionFormerMember(t.assigneeName ?? '') }]
       : members
 
+  /*
+   * 新增任務時就能選種類。原本一律開成「任務」，開完再進抽屜改一次 ——
+   * 而在清單上連開五張的時候，那等於五趟來回。
+   * 選過的種類**留著不重設**：要連開三張問題的人不必每一張都再選一次。
+   */
+  const [newType, setNewType] = useState('')
+  const typeOptions = project?.types ?? []
+  const pickedType = newType || typeOptions[0]?.key || 'TASK'
+
   const create = useMutation({
     mutationFn: (v: { parentId: string | null; title: string }) =>
-      Api.createTask(projectId, { title: v.title, parentId: v.parentId }),
+      Api.createTask(projectId, { title: v.title, parentId: v.parentId, type: pickedType }),
     onSuccess: () => {
       setTitle('')
       setTopTitle('')
@@ -179,9 +190,20 @@ export default function ListView({
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
                     {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-500">└</span>}
                     {t.type === 'MILESTONE' && <span className="text-violet-500">◆</span>}
+                    {/*
+                      * 徽章的顏色是**那一種種類自己的顏色**（系統參數頁裡他挑的），
+                      * 不是寫死的紫色 —— 四種種類本來就各有顏色，寫死等於把它吃掉，
+                      * 畫面上就分不出任務與問題。
+                      *
+                      * 只拿來畫左邊那條細槓，不當底色也不當文字色：顏色是使用者挑的，
+                      * 深淺不受控，拿去當底色在深色模式下會有一半讀不到。
+                      */}
                     {typeOf(t.type) && t.type !== 'MILESTONE' && (
-                      <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700
-                                       dark:bg-violet-500/15 dark:text-violet-300">
+                      <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded
+                                       bg-slate-100 py-0.5 pr-1.5 pl-1 text-[10px] text-slate-600
+                                       dark:bg-slate-800 dark:text-slate-300">
+                        <span className="h-2.5 w-0.5 rounded-full"
+                              style={{ background: typeColorOf(t.type) }} />
                         {typeOf(t.type)}
                       </span>
                     )}
@@ -323,6 +345,7 @@ export default function ListView({
                     <div className="flex items-center gap-2"
                          style={{ paddingLeft: (t.depth + 1) * 20 }}>
                       <span className="select-none text-slate-300 dark:text-slate-500">└</span>
+                      <NewTaskType value={pickedType} options={typeOptions} onChange={setNewType} />
                       <Input
                         autoFocus
                         value={title}
@@ -336,15 +359,23 @@ export default function ListView({
                         placeholder={T.task.list.addChildPlaceholder(t.title)}
                         className="max-w-md"
                       />
-                      <button onClick={() => { setAddingTo(null); setTitle('') }}
-                              className="text-xs text-slate-400 hover:text-slate-600
-                                         dark:text-slate-400 dark:hover:text-slate-300">
+                      {/* 新增與取消都畫成真的按鈕。原本兩顆都是裸文字，
+                          在一排輸入框旁邊看起來像說明文字，沒有人知道那可以按 */}
+                      <Button variant="primary" className="shrink-0" disabled={!title.trim()}
+                              onClick={() => title.trim()
+                                && create.mutate({ parentId: t.id, title: title.trim() })}>
+                        {T.task.list.addSubmit}
+                      </Button>
+                      <Button className="shrink-0" onClick={() => { setAddingTo(null); setTitle('') }}>
                         {T.common.cancel}
-                      </button>
-                      <span className="text-xs text-slate-400 dark:text-slate-400">
-                        {T.task.list.keepOpenHint}
-                      </span>
+                      </Button>
                     </div>
+                    {/* 提示自己一行。跟種類、標題、兩顆按鈕擠在同一行的話，
+                        中文會在任何兩個字之間斷開，那句話就被折成兩截 */}
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-400"
+                       style={{ paddingLeft: (t.depth + 1) * 20 }}>
+                      {T.task.list.keepOpenHint}
+                    </p>
                   </td>
                 </tr>
               )}
@@ -361,7 +392,9 @@ export default function ListView({
           <tr className="border-t border-slate-100 dark:border-slate-800">
             <td colSpan={7} className="px-3 py-2">
               {addingTop ? (
+                <>
                 <div className="flex items-center gap-2">
+                  <NewTaskType value={pickedType} options={typeOptions} onChange={setNewType} />
                   <Input
                     autoFocus
                     value={topTitle}
@@ -374,15 +407,17 @@ export default function ListView({
                                         : T.task.list.addTaskPlaceholder}
                     className="max-w-md"
                   />
-                  <button onClick={() => { setAddingTop(false); setTopTitle('') }}
-                          className="text-xs text-slate-400 hover:text-slate-600
-                                     dark:text-slate-400 dark:hover:text-slate-300">
+                  <Button variant="primary" className="shrink-0" disabled={!topTitle.trim()} onClick={newTop}>
+                    {T.task.list.addSubmit}
+                  </Button>
+                  <Button className="shrink-0" onClick={() => { setAddingTop(false); setTopTitle('') }}>
                     {T.common.cancel}
-                  </button>
-                  <span className="text-xs text-slate-400 dark:text-slate-400">
-                    {T.task.list.keepOpenHint}
-                  </span>
+                  </Button>
                 </div>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">
+                  {T.task.list.keepOpenHint}
+                </p>
+                </>
               ) : (
                 <button onClick={() => { setAddingTop(true); setTopTitle('') }}
                         className="rounded px-1.5 py-0.5 text-sm text-slate-400
@@ -397,6 +432,28 @@ export default function ListView({
         )}
       </table>
     </div>
+  )
+}
+
+/**
+ * 新增任務時的種類下拉。兩個新增入口（列上的「＋ 子任務」與清單最後的
+ * 「＋ 新增任務」）共用同一顆，選項與寬度才不會兩邊長得不一樣。
+ *
+ * 沒有標籤只有 `aria-label`：這一列是「種類 + 標題 + 取消」擠在一起的輸入列，
+ * 再加一個文字標籤會把輸入框推掉一半寬度。下拉裡的選項本身就講得清楚了。
+ */
+function NewTaskType({ value, options, onChange }: {
+  value: string
+  options: ProjectParam[]
+  onChange: (v: string) => void
+}) {
+  if (options.length === 0) return null
+  return (
+    <Select value={value} onChange={e => onChange(e.target.value)}
+            aria-label={T.task.drawer.fieldTaskType}
+            className="w-28 shrink-0">
+      {options.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+    </Select>
   )
 }
 

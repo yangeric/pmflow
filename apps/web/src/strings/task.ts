@@ -19,7 +19,7 @@ export const task = {
   type: {
     EPIC: '大項目',
     MILESTONE: '里程碑',
-    BUG: '缺陷',
+    BUG: '問題',
   },
   priority: {
     LOW: '低',
@@ -137,9 +137,11 @@ export const task = {
     colProgress: '進度',
     addChild: '＋ 子任務',
     addChildTip: (title: string) => `在「${title}」底下新增子任務`,
-    addChildPlaceholder: (title: string) => `在「${title}」底下新增，按 Enter 建立`,
+    addChildPlaceholder: (title: string) => `在「${title}」底下新增子任務`,
     addTask: '＋ 新增任務',
-    addTaskPlaceholder: '輸入標題後按 Enter 新增任務',
+    addTaskPlaceholder: '任務標題',
+    /** 新增那一列的送出鈕。Enter 一樣有效，但不能只有 Enter —— 沒人看得出來 */
+    addSubmit: '新增',
     keepOpenHint: '建立後輸入框會留著，可以連續加好幾張',
     overdueTip: '已過結束日且尚未完成',
     derivedProgressTip: (total: number, done: number) =>

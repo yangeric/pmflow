@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Api, type AppNotification, type Task, type WorkspaceRole } from './lib/api'
 import { useAuth } from './lib/auth'
@@ -70,6 +70,19 @@ export default function App() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [view, setView] = useState<View>('list')
   const [openTask, setOpenTask] = useState<string | null>(null)
+  /**
+   * 從通知點進來的那張任務，要閃紅框指出來是哪一張。
+   *
+   * 存的是 id 不是布林值：連點兩則不同的通知時，第二則要能重新觸發
+   * （`key` 換掉 → 元素重掛 → 動畫從頭跑）。動畫跑完就自己清掉，
+   * 不然回頭再打開同一張任務會莫名其妙又閃一次。
+   */
+  const [flashTask, setFlashTask] = useState<string | null>(null)
+  useEffect(() => {
+    if (!flashTask) return
+    const id = setTimeout(() => setFlashTask(null), 2500)
+    return () => clearTimeout(id)
+  }, [flashTask])
   const [account, setAccount] = useState<AccountView>(null)
 
   /**
@@ -107,6 +120,12 @@ export default function App() {
     if (!n.projectId) return
     setProjectId(n.projectId)
     setOpenTask(n.taskId)
+    /*
+     * 閃一下紅框指出「就是這一張」。一次點下去畫面上換掉太多東西
+     * （可能換專案、換頁籤、再開抽屜），眼睛不知道該看哪裡。
+     * 動畫本身在 index.css 的 `.pmflow-flash`，閃三下就停。
+     */
+    setFlashTask(n.taskId)
     // 有人來敲門要在「成員」頁籤才處理得了；其他都回到任務清單
     setView(n.kind === 'JOIN_REQUESTED' ? 'members' : 'list')
   }
@@ -188,6 +207,7 @@ export default function App() {
       workspaceId={workspaceId}
       view={view} setView={setView}
       openTask={openTask} setOpenTask={setOpenTask}
+      flashTask={flashTask}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
       bell={bell}
       menu={userMenu}
@@ -214,7 +234,7 @@ function AccountTab({ active, onClick, children }: {
  * 查詢集中在這一層，側欄和主視圖吃同一份資料，不會各抓一次。
  */
 function ProjectWorkspace({
-  projectId, workspaceId, view, setView, openTask, setOpenTask,
+  projectId, workspaceId, view, setView, openTask, setOpenTask, flashTask,
   onSwitchProject, bell, menu,
 }: {
   projectId: string
@@ -223,6 +243,8 @@ function ProjectWorkspace({
   setView: (v: View) => void
   openTask: string | null
   setOpenTask: (id: string | null) => void
+  /** 剛從通知點進來的那張任務，要閃紅框指出來。null＝不閃 */
+  flashTask: string | null
   onSwitchProject: () => void
   /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
   bell: ReactNode
@@ -380,6 +402,7 @@ function ProjectWorkspace({
               workspaceId={workspaceId}
               statuses={project?.statuses ?? []}
               allTasks={tasks}
+              flash={flashTask === openTask}
               onClose={() => setOpenTask(null)}
             />
           ) : (

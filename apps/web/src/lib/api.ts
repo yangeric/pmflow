@@ -421,6 +421,12 @@ export const Api = {
   patchProject: (id: string, json: {
     name?: string; description?: string | null; color?: string
     startDate?: string | null; endDate?: string | null; isPublic?: boolean
+    /**
+     * 專案代碼＝任務編號的前綴（`MRG-2` 的 MRG）。改了之後這個專案所有任務的
+     * 編號會立刻跟著換 —— 編號是查詢時用 `key || '-' || number` 拼出來的，
+     * 沒有存成欄位，所以不會有新舊不一致的問題。同工作區內不可重複。
+     */
+    key?: string
   }) => api<Project>(`/projects/${id}`, { method: 'PATCH', json }),
 
   // ── 成員與加入申請。放人進來只有建立者做得到 ──
