@@ -9,15 +9,17 @@ export const nav = {
 
   /** 麵包屑與返回。箭頭留在畫面上，這裡只放字 */
   backToOverview: '回總覽',
-  backToProject: '回專案',
-  backToPicker: '回專案選擇',
   /** 任務還沒載到名字時的替代標題 */
   fallbackTaskTitle: '任務',
   showAll: '看全部',
   overdueHere: (n: number) => `${n} 張任務有單位逾期未回`,
 
-  /** 跨專案的發文追蹤，選擇頁與側欄都會用到同一個名字 */
-  inquiryBoard: '發文追蹤',
+  /**
+   * 成員的入口在右上角的頭像選單裡，只有人在專案裡的時候才畫。
+   * 那個選單其他項目講的都是「我這個人」，所以這裡要講清楚是「這個專案的」。
+   */
+  members: '專案成員',
+  pendingJoinsHint: (n: number) => `${n} 件加入申請等你核准`,
 
   views: {
     list: '清單',
@@ -25,13 +27,14 @@ export const nav = {
     calendar: '行事曆',
     gantt: '甘特圖',
     graph: '關聯圖',
+    /** 發文追蹤是專案裡的一個頁籤，只看得到這個專案的 */
+    inquiry: '發文追蹤',
   },
   loadingGantt: '載入甘特圖…',
   loadingGraph: '載入關聯圖…',
 
   sidebar: {
     switchProject: '切換專案',
-    members: '成員',
     epics: '大項目',
     epicsHint: '點大項目看總覽，點小項目在右邊開詳情',
     allTasks: '全部任務',
@@ -51,9 +54,6 @@ export const nav = {
     /** 側欄整體的收折 */
     collapseSidebar: '收合側欄',
     expandSidebar: '展開側欄',
-    /** 收起來只剩窄條時，紅點要靠游標停著才說得清楚是什麼 */
-    pendingJoinsHint: (n: number) => `${n} 件加入申請等你核准`,
-    overdueHint: (n: number) => `${n} 件單位逾期未回`,
   },
 
   notification: {

@@ -115,6 +115,15 @@ export const chart = {
       overlapTip: (refs: string) => `可以跟 ${refs} 同時做`,
     },
 
+    /**
+     * 「卡住」是在等什麼。等的是上游「完成」還是「開始」要分清楚 ——
+     * 同時開始的那一張只要動了，這張就跟著能動，不必等它做完。
+     */
+    blockedReason: {
+      finish: (ref: string) => `${ref} 完成`,
+      start: (ref: string) => `${ref} 開始`,
+    },
+
     /** 匯合點：同時開始／同時完成畫成一個時間點，不是兩張任務之間的箭頭 */
     junction: {
       fork: '同時開始',

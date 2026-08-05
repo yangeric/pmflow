@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Api } from '../lib/api'
 import { cx } from './ui'
+import { T } from '../strings'
 
 /**
  * 頭像。有上傳過就顯示圖，沒有就用名字算出來的色塊。
@@ -9,10 +10,16 @@ import { cx } from './ui'
  * 永遠是同一個顏色 —— 掃過去的時候顏色本身就有辨識度。
  */
 
-/** 底色。刻意避開紅（逾期）與綠（已完成），那兩個顏色在這套介面裡有別的意思 */
+/**
+ * 底色。刻意避開紅（逾期）與綠（已完成），那兩個顏色在這套介面裡有別的意思。
+ *
+ * 每個顏色配白字都要有 4.5:1 —— 名字的第一個字是辨識這個人的唯一線索，
+ * 讀不出來就等於沒有頭像。原本的青（#0891b2）與藍綠（#0d9488）只有 3.68 與 3.74，
+ * 各往深一階換成 cyan-700 / teal-700（5.36 / 5.47）。
+ */
 const COLORS = [
-  '#3178c6', '#7c3aed', '#0891b2', '#c2410c', '#4f46e5',
-  '#0d9488', '#9333ea', '#b45309', '#1d4ed8', '#be185d',
+  '#3178c6', '#7c3aed', '#0e7490', '#c2410c', '#4f46e5',
+  '#0f766e', '#9333ea', '#b45309', '#1d4ed8', '#be185d',
 ]
 
 function hueOf(seed: string): string {
@@ -46,7 +53,7 @@ export function Avatar({ userId, name, hasAvatar, size = 'sm', version, classNam
   // 圖讀不到就退回色塊 —— 檔案可能因為換機器、volume 沒掛而不見了，
   // 那不該讓畫面上出現一個破圖
   const [broken, setBroken] = useState(false)
-  const label = name ?? '未指派'
+  const label = name ?? T.common.unassigned
   const base = cx(
     'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full',
     SIZES[size], className
@@ -56,7 +63,7 @@ export function Avatar({ userId, name, hasAvatar, size = 'sm', version, classNam
     return (
       <img src={Api.avatarUrl(userId, version)} alt={label} title={label}
            onError={() => setBroken(true)}
-           className={cx(base, 'bg-slate-100 object-cover')} />
+           className={cx(base, 'bg-slate-100 object-cover dark:bg-slate-800')} />
     )
   }
   return (
@@ -98,7 +105,9 @@ export function AvatarPicker({ onPick, disabled, children }: {
       />
       <button type="button" disabled={disabled} onClick={() => ref.current?.click()}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm
-                         font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                         font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50
+                         dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300
+                         dark:hover:bg-slate-800">
         {children}
       </button>
     </>

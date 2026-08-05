@@ -12,7 +12,8 @@ import '@xyflow/react/dist/style.css'
 import {
   Api, ApiError, type InquiryState, type LinkType, type Task, type TaskStatus,
 } from '../lib/api'
-import { Button, Empty, INQUIRY_META, Spinner, cx } from '../components/ui'
+import { Button, Empty, INQUIRY_META, Select, Spinner, cx } from '../components/ui'
+import { LINK_CHIP, LINK_LABEL } from '../lib/linkText'
 import { useTheme } from '../lib/theme'
 import { T } from '../strings'
 
@@ -32,19 +33,8 @@ import { T } from '../strings'
  * 側欄的關聯清單講完整句型，跟任務詳情頁同一套說法。
  */
 
-// ── 中文說法：與 TaskDrawer 同一套，改的時候兩邊要一起改 ──────────
-const LINK_CHIP: Record<LinkType, string> = {
-  FS: '完成後開始', SS: '同時開始', FF: '同時完成', SF: '開始後完成',
-  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
-}
-
-const LINK_LABEL: Record<LinkType, string> = {
-  FS: '等待任務完成，才能開始',
-  SS: '等待任務開始，才能開始',
-  FF: '等待任務完成，才能完成',
-  SF: '等待任務開始，才能完成',
-  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
-}
+// ── 畫面上的字全在 strings/chart.ts，跟任務詳情與通知講的是同一套說法 ──
+const G = T.chart.graph
 
 const SCHEDULING = ['FS', 'SS', 'FF', 'SF'] as const
 type SchedulingType = (typeof SCHEDULING)[number]
@@ -79,7 +69,11 @@ const HIERARCHY_FOCUS_COLOR = '#8b5cf6'
  * 跟畫布同色的邊（paint-order: stroke 先描邊再填字），字一樣讀得清楚，
  * 但線只被字本身的筆畫遮住，走向仍然看得出來。
  */
-const HALO = '#f8fafc'          // = 畫布的 bg-slate-50
+/**
+ * 描邊要跟畫布同色，深色模式下畫布是 slate-950 —— 寫死淺色的話，
+ * 深色下每個標籤外面會多一圈白暈。用 CSS 變數讓它跟著主題走（定義在 index.css）。
+ */
+const HALO = 'var(--graph-halo)'
 const labelText = (color: string, faded: boolean) => ({
   fontSize: 10,
   fill: color,
@@ -174,77 +168,48 @@ type TaskNode = Node<TaskNodeData, 'task' | 'box'>
 // 同一段文字要給兩個地方用：游標停著出現的 title，以及點一下釘在列上方的說明。
 // 寫成常數才不會兩邊各寫一份、改一邊忘另一邊。
 
-const OPERATION_HELP =
-  '・點節點：只留亮它的鄰居，其餘淡出。再點一次取消\n' +
-  '・雙擊節點：開啟那張任務\n' +
-  '・從節點右側的圓點拉到另一張任務：建立關聯（種類用上面的「拉線建立」選）\n' +
-  '・點線：刪除那條關聯\n' +
-  '・拖節點可以自己排版，按「重新排列」放回自動位置\n' +
-  '・「框選」開著時左鍵拉出範圍選多張，一起拖曳；右鍵平移畫面\n' +
-  '・滾輪縮放，或用左上角的＋／－'
+const HELP = G.help
 
-const SCHEDULING_HELP: Record<LinkType, string> = {
-  FS: '等待任務完成，才能開始。上游做完的隔天下游才動得了 —— 最常見的一種',
-  SS: '等待任務開始，才能開始。兩張要在同一天起跑，人力得同時到位',
-  FF: '等待任務完成，才能完成。兩張要在同一天收尾，驗收會撞在一起',
-  SF: '等待任務開始，才能完成。少見，通常用在交接：新的開始了，舊的才能結束',
-  RELATES: '相關', BLOCKS: '阻擋', DUPLICATES: '重複於', REQUIRES: '需要',
-}
-
-const SEMANTIC_HELP =
-  '相關／阻擋／重複於／需要。\n' +
-  '虛線＝只是註記兩張任務的關係，改其中一張的日期不會推動另一張。'
-
-const BOX_HELP =
-  '大項目畫成一個框，底下的任務就排在框裡面。\n' +
-  '框裡面是「這一包」的內容，不是先後關係 ——\n' +
-  '大項目的日期與進度由裡面那些任務彙總出來。\n' +
-  '框本身也是一張任務，可以指向後續任務：\n' +
-  '一支從框拉出去的箭頭＝「這一整包做完，才能接下去」。'
-
-const JUNCTION_HELP =
-  '「同時開始」與「同時完成」不是兩張任務之間的一支箭頭，而是一個時間點。\n' +
-  '橘＝同時開始（一支箭頭進、多支出）\n' +
-  '紫＝同時完成（多支進、一支出）'
-
+/** 說明列「圖示」那一排。顏色跟節點上的徽章同一組，掃過去對得起來 */
 const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
-  { label: '🚧 卡住',
-    text: '這張任務現在動不了：上游還沒完成，或同時開始的那一張還沒開始。\n' +
-          '滑到節點上的紅色徽章可以看它在等誰 —— 會直接指到真正的源頭，\n' +
-          '不是中間那一張。' },
-  { label: '⚑ 有問題', className: 'text-fuchsia-700',
-    text: '有人在這張任務上寫下了「目前遇到的問題」。\n' +
-          '跟紅色的「卡住」是兩回事：卡住是系統看任務關聯算出來的，\n' +
-          '上游一完成就自己不見；問題是人自己打字寫的，要有人去解決、\n' +
-          '在任務裡把它清掉才會消失。滑到節點上的旗子可以看寫了什麼。' },
-  { label: '⇉ 同時開始', className: 'text-amber-700',
-    text: '跟別的任務同一天開始。排人力時這幾張要一起看，同一天都得到位。' },
-  { label: '⇥ 同時完成', className: 'text-purple-700',
-    text: '跟別的任務同一天完成。驗收、結案會撞在同一天。' },
-  { label: '⇉ 並行', className: 'text-teal-700',
-    text: '期間重疊、彼此沒有先後，可以同時派不同的人做。\n' +
-          '預設不顯示，要在上面的「並行」打勾。' },
-  { label: '起點', className: 'text-emerald-700',
-    text: '這一包從這幾張開始 —— 框裡沒有任何任務排在它前面。\n' +
-          '一包可以有好幾個起點，它們是同時可以動手的。\n' +
-          '要讓整包等別的任務，把線拉到「框」上就好，\n' +
-          '不必一張一張連 —— 擋住框就等於擋住裡面所有起點。' },
-  { label: '內含 N 張', className: 'text-violet-700',
-    text: '框的標題列上寫的數字＝這個框裡直接放著幾張任務。\n' +
-          '框的日期與進度由裡面那些任務彙總出來。' },
-  { label: '里程碑', className: 'text-amber-700',
-    text: '只有一個時間點的任務，用來標「這天要交出什麼」。' },
+  { label: HELP.icon.blocked.label, text: HELP.icon.blocked.text },
+  { label: HELP.icon.problem.label, className: 'text-fuchsia-700 dark:text-fuchsia-400',
+    text: HELP.icon.problem.text },
+  { label: HELP.icon.sameStart.label, className: 'text-amber-700 dark:text-amber-400',
+    text: HELP.icon.sameStart.text },
+  { label: HELP.icon.sameFinish.label, className: 'text-purple-700 dark:text-purple-400',
+    text: HELP.icon.sameFinish.text },
+  { label: HELP.icon.overlap.label, className: 'text-teal-700 dark:text-teal-400',
+    text: HELP.icon.overlap.text },
+  { label: HELP.icon.entry.label, className: 'text-emerald-700 dark:text-emerald-400',
+    text: HELP.icon.entry.text },
+  { label: HELP.icon.childCount.label, className: 'text-violet-700 dark:text-violet-400',
+    text: HELP.icon.childCount.text },
+  { label: HELP.icon.milestone.label, className: 'text-amber-700 dark:text-amber-400',
+    text: HELP.icon.milestone.text },
 ]
-
-const INQUIRY_HELP: Record<'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIED', string> = {
-  AWAITING: '發文追蹤：發出去了，還在等對方回覆，也還沒到期望回覆日。',
-  OVERDUE:  '發文追蹤：過了期望回覆日還沒回。逾期是查詢時算出來的，不是存下來的狀態。',
-  PARTIAL:  '發文追蹤：問了好幾個單位，有的回了、有的還沒。',
-  REPLIED:  '發文追蹤：都回覆了。回覆的單位可能跟提問的單位不同（轉單位）。',
-}
 
 /** 節點上那排小徽章的共同樣式。一律 shrink-0＋不換行，擠不下就被裁掉，不折行 */
 const BADGE = 'shrink-0 whitespace-nowrap rounded px-1 text-[10px]'
+
+/**
+ * 徽章的顏色。深色底下淺色的 bg-X-50 會亮得刺眼，一律照 index.css 那張表
+ * 換成半透明的 X-500/15 —— 節點本身是深色卡片，色塊要透出底色才不會浮起來。
+ */
+const BADGE_VIOLET = 'bg-violet-100 font-medium text-violet-700 '
+  + 'dark:bg-violet-500/20 dark:text-violet-300'
+const BADGE_VIOLET_SOFT = 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300'
+const BADGE_EMERALD = 'bg-emerald-50 font-medium text-emerald-700 '
+  + 'dark:bg-emerald-500/15 dark:text-emerald-300'
+const BADGE_RED = 'bg-red-50 font-medium text-red-700 dark:bg-red-500/15 dark:text-red-300'
+const BADGE_FUCHSIA = 'bg-fuchsia-50 font-medium text-fuchsia-700 '
+  + 'dark:bg-fuchsia-500/15 dark:text-fuchsia-300'
+const BADGE_AMBER = 'bg-amber-50 font-medium text-amber-700 '
+  + 'dark:bg-amber-500/15 dark:text-amber-300'
+const BADGE_AMBER_SOFT = 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+const BADGE_PURPLE = 'bg-purple-50 font-medium text-purple-700 '
+  + 'dark:bg-purple-500/15 dark:text-purple-300'
+const BADGE_TEAL = 'bg-teal-50 font-medium text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'
 
 // ── 節點 ────────────────────────────────────────────────
 
@@ -260,8 +225,8 @@ function frameClass(data: TaskNodeData): string {
       : data.blockedBy.length ? 'border-red-500 ring-2 ring-red-500/25'
       // 紫框＝只是階層上的鄰居（上層或下層），不是依賴。
       // 原本用灰虛線，使用者看不出那是什麼意思，改成跟「大項目」徽章同色系
-      : data.kin ? 'border-violet-400 ring-2 ring-violet-200'
-      : 'border-slate-300',
+      : data.kin ? 'border-violet-400 ring-2 ring-violet-200 dark:ring-violet-500/30'
+      : 'border-slate-300 dark:border-slate-600',
     data.dimmed && 'opacity-20'
   )
 }
@@ -275,39 +240,39 @@ function frameClass(data: TaskNodeData): string {
 function BoxNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
-    <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40')}>
+    <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10')}>
       <Handle id="in" type="target" position={Position.Left}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
       <div className="flex items-center gap-1.5 px-3 py-2">
-        <span className="shrink-0 font-mono text-[10px] text-slate-500">{data.ref}</span>
+        <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+          {data.ref}
+        </span>
         {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
             這裡改成講數量，一眼知道這一包有多大 */}
-        <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
-              title="這個框裡直接放著幾張任務。框的日期與進度由裡面那些任務彙總出來">
-          內含 {data.childCount} 張
+        <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
+          {G.badge.childCount(data.childCount)}
         </span>
         {data.isEntry && (
-          <span className={BADGE + ' bg-emerald-50 font-medium text-emerald-700'}
-                title="這一包的起點：外層框裡沒有任何任務排在它前面">起點</span>
+          <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
+            {G.badge.entry}
+          </span>
         )}
         {data.kin && (
-          <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
-                title={data.kin === 'parent'
-                  ? '這是選中任務的上層，兩者之間沒有依賴關係'
-                  : '這是選中任務底下的任務，兩者之間沒有依賴關係'}>
-            {data.kin === 'parent' ? '這張的上層' : '這張的下層'}
+          <span className={cx(BADGE, BADGE_VIOLET)}
+                title={data.kin === 'parent' ? G.badge.kinParentBoxTip : G.badge.kinChildTip}>
+            {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
           </span>
         )}
         {data.blockedBy.length > 0 && (
-          <span className={BADGE + ' bg-red-50 font-medium text-red-700'}
-                title={`卡住：要等 ${data.blockedBy.join('、')}`}>卡住</span>
+          <span className={cx(BADGE, BADGE_RED)}
+                title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
         )}
         {data.problem && (
-          <span className={BADGE + ' bg-fuchsia-50 font-medium text-fuchsia-700'}
-                title={`目前遇到的問題：${data.problem}`}>⚑ 有問題</span>
+          <span className={cx(BADGE, BADGE_FUCHSIA)}
+                title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
         )}
-        <span className="min-w-0 truncate text-sm font-semibold text-slate-800">
+        <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
           {data.title}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -316,15 +281,17 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
               {meta.icon}
             </span>
           )}
-          <span className="h-1 w-14 overflow-hidden rounded bg-white">
+          <span className="h-1 w-14 overflow-hidden rounded bg-white dark:bg-slate-700">
             <span className="block h-1 rounded"
                   style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
           </span>
-          <span className="text-[10px] tabular-nums text-slate-500">{data.progress}%</span>
+          <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+            {data.progress}%
+          </span>
         </span>
       </div>
       <Handle id="out" type="source" position={Position.Right}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
     </div>
   )
 }
@@ -332,72 +299,72 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
 function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
-    <div className={cx(frameClass(data), 'w-64 bg-white')}>
+    <div className={cx(frameClass(data), 'w-64 bg-white dark:bg-slate-900')}>
       <Handle id="in" type="target" position={Position.Left}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
       <div className="px-2.5 py-2">
         {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
             寧可字少一點也要留在同一行，完整說法在 title 上 */}
         <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
-          <span className="shrink-0 font-mono text-[10px] text-slate-500">{data.ref}</span>
+          <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+            {data.ref}
+          </span>
           {/* 先講「這張為什麼亮著」，再講它自己是什麼 */}
           {data.kin && (
-            <span className={BADGE + ' bg-violet-100 font-medium text-violet-700'}
-                  title={data.kin === 'parent'
-                    ? '這是選中任務的上層大項目，兩者之間沒有依賴關係'
-                    : '這是選中任務底下的任務，兩者之間沒有依賴關係'}>
-              {data.kin === 'parent' ? '這張的上層' : '這張的下層'}
+            <span className={cx(BADGE, BADGE_VIOLET)}
+                  title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
+              {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
             </span>
           )}
           {data.isEntry && (
-            <span className={BADGE + ' bg-emerald-50 font-medium text-emerald-700'}
-                  title="這一包的起點：框裡沒有任何任務排在它前面。指進框的依賴擋住的就是這幾張">
-              起點
+            <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
+              {G.badge.entry}
             </span>
           )}
           {data.isEpic && (
-            <span className={BADGE + ' bg-violet-50 text-violet-700'}
-                  title="這張任務底下還可以掛別的任務">大項目</span>
+            <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
+              {G.badge.epic}
+            </span>
           )}
           {data.isMilestone && (
-            <span className={BADGE + ' bg-amber-50 text-amber-700'}>里程碑</span>
+            <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
           )}
           {/*
            * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
            * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
            */}
           {data.blockedBy.length > 0 && (
-            <span className={BADGE + ' bg-red-50 font-medium text-red-700'}
-                  title={`卡住：要等 ${data.blockedBy.join('、')}`}>卡住</span>
+            <span className={cx(BADGE, BADGE_RED)}
+                  title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
           )}
           {/* 刻意就排在「卡住」旁邊，而且刻意長得不一樣：兩個常常同時出現，
               紅色的是圖自己算出來的，這個紫紅色旗子是人打字寫下的。
               同色同形的話，使用者會以為系統知道他遇到什麼事 */}
           {data.problem && (
-            <span className={BADGE + ' bg-fuchsia-50 font-medium text-fuchsia-700'}
-                  title={`目前遇到的問題：${data.problem}`}>⚑ 有問題</span>
+            <span className={cx(BADGE, BADGE_FUCHSIA)}
+                  title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
           )}
           {/* 同一張任務可能同時掛「卡住」與「同時開始」，那不是矛盾：
               上游還沒開始所以現在動不了，它一開始，兩張就並肩跑。
               分得出來的關鍵是上面那句「要等 ⋯ 開始」還是「要等 ⋯ 完成」。
               徽章顏色跟圖上的匯合點同一組：橘＝同時開始、紫＝同時完成 */}
           {data.parallel.sameStart.length > 0 && (
-            <span className={BADGE + ' bg-amber-50 font-medium text-amber-700'}
-                  title={`跟 ${data.parallel.sameStart.join('、')} 同一天開始`}>
-              同時開始 {data.parallel.sameStart.length}
+            <span className={cx(BADGE, BADGE_AMBER)}
+                  title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
+              {G.badge.sameStart(data.parallel.sameStart.length)}
             </span>
           )}
           {data.parallel.sameFinish.length > 0 && (
-            <span className={BADGE + ' bg-purple-50 font-medium text-purple-700'}
-                  title={`跟 ${data.parallel.sameFinish.join('、')} 同一天完成`}>
-              同時完成 {data.parallel.sameFinish.length}
+            <span className={cx(BADGE, BADGE_PURPLE)}
+                  title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
+              {G.badge.sameFinish(data.parallel.sameFinish.length)}
             </span>
           )}
           {data.parallel.overlap.length > 0 && (
-            <span className={BADGE + ' bg-teal-50 font-medium text-teal-700'}
-                  title={`可以跟 ${data.parallel.overlap.join('、')} 同時做`}>
-              並行 {data.parallel.overlap.length}
+            <span className={cx(BADGE, BADGE_TEAL)}
+                  title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
+              {G.badge.overlap(data.parallel.overlap.length)}
             </span>
           )}
           {data.inquiryState !== 'NONE' && (
@@ -407,16 +374,17 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
             </span>
           )}
         </div>
-        <div className="mt-0.5 line-clamp-2 text-xs font-medium leading-snug text-slate-800">
+        <div className="mt-0.5 line-clamp-2 text-xs font-medium leading-snug text-slate-800
+                        dark:text-slate-100">
           {data.title}
         </div>
-        <div className="mt-1.5 h-1 overflow-hidden rounded bg-slate-100">
+        <div className="mt-1.5 h-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
           <div className="h-1 rounded"
                style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
         </div>
       </div>
       <Handle id="out" type="source" position={Position.Right}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400" />
+              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
     </div>
   )
 }
@@ -443,11 +411,11 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
   const color = SCHEDULING_COLOR[fork ? 'SS' : 'FF']
   return (
     <div className={cx('relative h-full w-full transition-opacity', data.dimmed && 'opacity-20')}
-         title={fork ? '同時開始：從這個時間點分出去' : '同時完成：在這個時間點收在一起'}>
+         title={fork ? G.junction.forkTip : G.junction.joinTip}>
       <Handle id="in" type="target" position={Position.Left} isConnectable={false}
               className="!h-1.5 !w-1.5 !border-0 !bg-transparent" />
       {/* 白色外圈讓圓點在穿過它的線上仍然看得出來 */}
-      <div className="h-full w-full rounded-full ring-2 ring-white"
+      <div className="h-full w-full rounded-full ring-2 ring-white dark:ring-slate-950"
            style={{ backgroundColor: color }} />
       {/* 圓點只有 10px 寬，字掛在下面才不會把線壓住。同樣用描邊代替白底方框 */}
       <span className="absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap
@@ -456,7 +424,7 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
               color,
               textShadow: `0 0 3px ${HALO}, 0 0 3px ${HALO}, 0 0 3px ${HALO}`,
             }}>
-        {fork ? '同時開始' : '同時完成'}
+        {fork ? G.junction.fork : G.junction.join}
       </span>
       <Handle id="out" type="source" position={Position.Right} isConnectable={false}
               className="!h-1.5 !w-1.5 !border-0 !bg-transparent" />
@@ -774,6 +742,8 @@ function GraphCanvas({
   const qc = useQueryClient()
   const { fitView, zoomIn, zoomOut } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
+  // 背景點陣的顏色是 SVG 屬性，吃不到 CSS 變數，只能自己看現在是哪一個主題
+  const dark = useTheme().resolved === 'dark'
 
   /** 使用者拖過的節點位置。只存被動過的那幾個，其餘照自動佈局 */
   const [dragged, setDragged] = useState<Record<string, { x: number; y: number }>>({})
@@ -1071,7 +1041,7 @@ function GraphCanvas({
       if (e.linkType === 'FS' || e.linkType === 'BLOCKS' || e.linkType === 'REQUIRES') {
         if (srcCat === 'DONE') continue
         direct.set(dst.id, [...(direct.get(dst.id) ?? []),
-                            { id: src.id, label: `${src.ref} 完成` }])
+                            { id: src.id, label: G.blockedReason.finish(src.ref) }])
       } else if (e.linkType === 'SS') {
         if (srcCat !== 'TODO') continue
         startsWith.set(dst.id, [...(startsWith.get(dst.id) ?? []), src.id])
@@ -1093,7 +1063,7 @@ function GraphCanvas({
       for (const peerId of startsWith.get(id) ?? []) {
         const upstream = resolve(peerId, seen)
         if (upstream.length) reasons.push(...upstream)
-        else reasons.push({ id: peerId, label: `${byId.get(peerId)!.ref} 開始` })
+        else reasons.push({ id: peerId, label: G.blockedReason.start(byId.get(peerId)!.ref) })
       }
       return reasons
     }
@@ -1372,7 +1342,7 @@ function GraphCanvas({
       const color = scheduling ? SCHEDULING_COLOR[type] : SEMANTIC_COLOR
       const faded = dim(e.sourceId, e.targetId)
       const lag = e.lagDays
-        ? `．間隔 ${e.lagDays > 0 ? '+' : ''}${e.lagDays} 天`
+        ? G.lag(e.lagDays)
         : ''
 
       out.push({
@@ -1413,7 +1383,7 @@ function GraphCanvas({
     onSuccess: () => { setError(null); invalidate() },
     // 後端擋下循環依賴／父子衝突時，把它的中文理由原封不動顯示出來
     onError: (e: unknown) => setError(
-      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : '建立關聯失敗'
+      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : G.link.addFailed
     ),
   })
 
@@ -1428,7 +1398,7 @@ function GraphCanvas({
   }, [addLink])
 
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
-    if (window.confirm(`要刪除這條關聯嗎？（${String(edge.label ?? '')}）`)) {
+    if (window.confirm(G.link.deleteConfirm(String(edge.label ?? '')))) {
       delLink.mutate(edge.id)
     }
   }, [delLink])
@@ -1446,73 +1416,66 @@ function GraphCanvas({
       }))
   }, [focusId, graph, shownNodes])
 
-  if (isLoading) return <Spinner label="載入關聯圖…" />
-  if (!shownNodes.length) {
-    return <Empty>這裡還沒有任務。到清單或看板新增之後，關聯圖就會把它們畫出來。</Empty>
-  }
+  if (isLoading) return <Spinner label={G.loading} />
+  if (!shownNodes.length) return <Empty>{G.empty}</Empty>
 
   return (
     <div className="flex h-full flex-col">
       {/* ── 工具列 ── */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-        <Button variant="ghost" onClick={() => zoomIn({ duration: 150 })} aria-label="放大">＋</Button>
-        <Button variant="ghost" onClick={() => zoomOut({ duration: 150 })} aria-label="縮小">－</Button>
-        <Button onClick={() => fitView(FIT_OPTIONS)}>全部顯示</Button>
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2
+                      dark:border-slate-700 dark:bg-slate-900">
+        <Button variant="ghost" onClick={() => zoomIn({ duration: 150 })}
+                aria-label={G.toolbar.zoomIn}>＋</Button>
+        <Button variant="ghost" onClick={() => zoomOut({ duration: 150 })}
+                aria-label={G.toolbar.zoomOut}>－</Button>
+        <Button onClick={() => fitView(FIT_OPTIONS)}>{G.toolbar.fitAll}</Button>
         <Button onClick={() => { setDragged({}); fitPending.current = true; setRelayout(n => n + 1) }}
-                title="把拖亂的節點放回自動佈局的位置">重新排列</Button>
+                title={G.toolbar.relayoutTip}>{G.toolbar.relayout}</Button>
         {/* 框選本來按住 Shift 拉框就有，但沒有人看得出來。給它一顆按鈕，
             開著的時候左鍵直接拉框、右鍵平移 */}
         <Button
           onClick={() => setBoxSelect(v => !v)}
-          className={boxSelect ? 'border-blue-500 bg-blue-50 text-blue-700' : undefined}
-          title={boxSelect
-            ? '框選中：左鍵拉出範圍選取多張任務，選好之後拖曳就會一起移動。用右鍵或滾輪平移畫面'
-            : '框選：左鍵拉出範圍選取多張任務，一起拖曳。（也可以隨時按住 Shift 拉框）'}>
-          {boxSelect ? '✓ 框選' : '框選'}
+          className={boxSelect
+            ? 'border-blue-500 bg-blue-50 text-blue-700 '
+              + 'dark:border-blue-400 dark:bg-blue-500/15 dark:text-blue-300'
+            : undefined}
+          title={boxSelect ? G.toolbar.boxSelectTipOn : G.toolbar.boxSelectTipOff}>
+          {boxSelect ? G.toolbar.boxSelectOn : G.toolbar.boxSelect}
         </Button>
 
         <div className="ml-3 flex items-center gap-3 text-sm">
-          <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
-            <input type="checkbox" checked={showSemantic}
-                   onChange={e => setShowSemantic(e.target.checked)}
-                   className="rounded border-slate-300" />
-            語意關聯（旁邊）
-          </label>
-          <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
-            <input type="checkbox" checked={showBlocked}
-                   onChange={e => setShowBlocked(e.target.checked)}
-                   className="rounded border-slate-300" />
-            🚧 卡住
-          </label>
-          <label className="flex cursor-pointer items-center gap-1.5 text-slate-600">
-            <input type="checkbox" checked={showParallel}
-                   onChange={e => setShowParallel(e.target.checked)}
-                   className="rounded border-slate-300" />
-            ⇉ 並行
-          </label>
+          <GraphToggle checked={showSemantic} onChange={setShowSemantic}
+                       label={G.toolbar.showSemantic} />
+          <GraphToggle checked={showBlocked} onChange={setShowBlocked}
+                       label={G.toolbar.showBlocked} />
+          <GraphToggle checked={showParallel} onChange={setShowParallel}
+                       label={G.toolbar.showParallel} />
         </div>
 
-        <label className="ml-3 flex items-center gap-1.5 text-sm text-slate-600">
-          拉線建立
-          <select value={newLinkType} onChange={e => setNewLinkType(e.target.value as LinkType)}
-                  className="rounded-md border border-slate-300 px-2 py-1 text-sm">
-            <optgroup label="排程（會推動日期）">
+        <label className="ml-3 flex items-center gap-1.5 text-sm text-slate-600
+                          dark:text-slate-300">
+          {G.toolbar.newLink}
+          <Select value={newLinkType} className="py-1"
+                  onChange={e => setNewLinkType(e.target.value as LinkType)}>
+            <optgroup label={G.toolbar.groupScheduling}>
               {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
             </optgroup>
-            <optgroup label="語意（不影響排程）">
+            <optgroup label={G.toolbar.groupSemantic}>
               {(['RELATES', 'BLOCKS', 'DUPLICATES', 'REQUIRES'] as LinkType[])
                 .map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
             </optgroup>
-          </select>
+          </Select>
         </label>
 
         {/* 說明整包收在畫布左下角的「線條說明」裡，工具列不佔位 */}
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="flex items-start gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700
+                        dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
           <span className="flex-1">{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+          <button onClick={() => setError(null)}
+                  className="text-red-400 hover:text-red-600 dark:hover:text-red-200">✕</button>
         </div>
       )}
 
@@ -1555,66 +1518,81 @@ function GraphCanvas({
           maxZoom={2}
           fitView
           fitViewOptions={FIT_OPTIONS}
-          className="bg-slate-50"
+          className="bg-slate-50 dark:bg-slate-950"
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#cbd5e1" />
+          {/* 點陣的顏色是屬性不是樣式，CSS 變數在這裡不會被解析，只能自己分兩色 */}
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1}
+                      color={dark ? '#334155' : '#cbd5e1'} />
 
 
           {/* ── 聚焦面板 ── */}
           {focused && (
             <Panel position="top-right">
-              <div className="w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-lg">
+              <div className="w-72 rounded-lg border border-slate-200 bg-white p-3 shadow-lg
+                              dark:border-slate-700 dark:bg-slate-800">
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="font-mono text-[10px] text-slate-500">{focused.ref}</div>
-                    <div className="text-sm font-medium text-slate-800">{focused.title}</div>
+                    <div className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                      {focused.ref}
+                    </div>
+                    <div className="text-sm font-medium text-slate-800 dark:text-slate-100">
+                      {focused.title}
+                    </div>
                   </div>
-                  <button onClick={() => setFocusId(null)}
-                          className="text-slate-400 hover:text-slate-600" aria-label="取消聚焦">✕</button>
+                  <button onClick={() => setFocusId(null)} aria-label={G.focus.close}
+                          className="text-slate-400 hover:text-slate-600
+                                     dark:text-slate-400 dark:hover:text-slate-300">✕</button>
                 </div>
 
                 {(blockedBy.get(focused.id)?.length ?? 0) > 0 && (
-                  <div className="mt-2 rounded bg-red-50 px-2 py-1 text-xs text-red-700">
-                    🚧 現在動不了：要等 {blockedBy.get(focused.id)!.join('、')}
-                  </div>
+                  <FocusNote className="bg-red-50 text-red-700
+                                        dark:bg-red-500/15 dark:text-red-300">
+                    {G.focus.blocked(blockedBy.get(focused.id)!.join('、'))}
+                  </FocusNote>
                 )}
                 {/* 面板寬得下，這裡就把問題整句寫出來，不像節點上只放三個字 */}
                 {focused.problem && (
-                  <div className="mt-2 whitespace-pre-wrap rounded bg-fuchsia-50 px-2 py-1
-                                  text-xs text-fuchsia-700">
-                    ⚑ 目前遇到的問題：{focused.problem}
-                  </div>
+                  <FocusNote className="whitespace-pre-wrap bg-fuchsia-50 text-fuchsia-700
+                                        dark:bg-fuchsia-500/15 dark:text-fuchsia-300">
+                    {G.focus.problem(focused.problem)}
+                  </FocusNote>
                 )}
                 {(parallelWith.get(focused.id)?.sameStart.length ?? 0) > 0 && (
-                  <div className="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-700">
-                    ⇉ 同一天開始：{parallelWith.get(focused.id)!.sameStart.join('、')}
-                  </div>
+                  <FocusNote className="bg-amber-50 text-amber-700
+                                        dark:bg-amber-500/15 dark:text-amber-300">
+                    {G.focus.sameStart(parallelWith.get(focused.id)!.sameStart.join('、'))}
+                  </FocusNote>
                 )}
                 {(parallelWith.get(focused.id)?.sameFinish.length ?? 0) > 0 && (
-                  <div className="mt-2 rounded bg-purple-50 px-2 py-1 text-xs text-purple-700">
-                    ⇥ 同一天完成：{parallelWith.get(focused.id)!.sameFinish.join('、')}
-                  </div>
+                  <FocusNote className="bg-purple-50 text-purple-700
+                                        dark:bg-purple-500/15 dark:text-purple-300">
+                    {G.focus.sameFinish(parallelWith.get(focused.id)!.sameFinish.join('、'))}
+                  </FocusNote>
                 )}
                 {(parallelWith.get(focused.id)?.overlap.length ?? 0) > 0 && (
-                  <div className="mt-2 rounded bg-teal-50 px-2 py-1 text-xs text-teal-700">
-                    ⇉ 可以同時做：{parallelWith.get(focused.id)!.overlap.join('、')}
-                  </div>
+                  <FocusNote className="bg-teal-50 text-teal-700
+                                        dark:bg-teal-500/15 dark:text-teal-300">
+                    {G.focus.overlap(parallelWith.get(focused.id)!.overlap.join('、'))}
+                  </FocusNote>
                 )}
 
                 <div className="mt-2 max-h-56 space-y-1 overflow-y-auto">
                   {focusedLinks.length === 0 && (
-                    <p className="text-xs text-slate-400">這張任務還沒有左右關聯。</p>
+                    <p className="text-xs text-slate-400 dark:text-slate-400">{G.focus.noLinks}</p>
                   )}
                   {focusedLinks.map(l => (
-                    <div key={l.id + String(l.outgoing)} className="text-xs text-slate-600">
-                      {sentence(l.linkType, l.outgoing, l.other?.ref ?? '（其他專案的任務）')}
-                      {l.other && <span className="ml-1 text-slate-400">{l.other.title}</span>}
+                    <div key={l.id + String(l.outgoing)}
+                         className="text-xs text-slate-600 dark:text-slate-300">
+                      {sentence(l.linkType, l.outgoing, l.other?.ref ?? G.focus.otherProject)}
+                      {l.other && (
+                        <span className="ml-1 text-slate-400 dark:text-slate-400">{l.other.title}</span>
+                      )}
                     </div>
                   ))}
                 </div>
 
                 <Button variant="primary" className="mt-3 w-full justify-center"
-                        onClick={() => onOpen(focused.id)}>開啟任務</Button>
+                        onClick={() => onOpen(focused.id)}>{G.focus.open}</Button>
               </div>
             </Panel>
           )}
@@ -1674,12 +1652,13 @@ function LegendBar() {
   return (
     <div ref={barRef}
          className="relative flex items-stretch border-t border-slate-200 bg-white
-                    text-[11px] text-slate-500">
+                    text-[11px] text-slate-500
+                    dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
       {tip && (
         <div
           className="pointer-events-none absolute bottom-full z-20 mb-1 w-max
                      whitespace-pre rounded-md bg-slate-800 px-3 py-2 text-[11px]
-                     leading-5 text-white shadow-lg"
+                     leading-5 text-white shadow-lg dark:bg-slate-700"
           style={{ left: tip.x, maxWidth: TIP_W }}
           role="tooltip">
           <div className="font-medium text-white">{tip.label}</div>
@@ -1689,44 +1668,49 @@ function LegendBar() {
       {/* 「操作說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
           「線 說明」，看起來像在說明線的一種。
           裡面只放「怎麼操作」，線與圖示各自的意思在右邊那兩排上滑過去就有。 */}
-      <div className="flex shrink-0 items-center border-r border-slate-200 px-3">
+      <div className="flex shrink-0 items-center border-r border-slate-200 px-3
+                      dark:border-slate-700">
         <span
           className="cursor-help rounded bg-slate-100 px-2 py-1 font-medium text-slate-600
-                     hover:bg-slate-200"
-          onMouseEnter={hover('怎麼操作', OPERATION_HELP)}
-          onMouseLeave={unhover}>操作說明</span>
+                     hover:bg-slate-200
+                     dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          onMouseEnter={hover(G.legend.operationTitle, HELP.operation)}
+          onMouseLeave={unhover}>{G.legend.operation}</span>
       </div>
 
       {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
       <div className="min-w-0 flex-1">
-      <LegendRowStrip label="線">
+      <LegendRowStrip label={G.legend.rowLine}>
         {SCHEDULING.map(t => (
           <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
-                      onMouseEnter={hover(LINK_CHIP[t], SCHEDULING_HELP[t])}
+                      onMouseEnter={hover(LINK_CHIP[t], HELP.scheduling[t])}
                       onMouseLeave={unhover} />
         ))}
-        <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label="語意關聯"
-                    onMouseEnter={hover('語意關聯', SEMANTIC_HELP)}
+        <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label={G.legend.semantic}
+                    onMouseEnter={hover(G.legend.semantic, HELP.semantic)}
                     onMouseLeave={unhover} />
         {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
         <button type="button"
-                onMouseEnter={hover('大項目的框', BOX_HELP)} onMouseLeave={unhover}
-                className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
-          <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50" />
-          大項目的框
+                onMouseEnter={hover(G.legend.box, HELP.box)} onMouseLeave={unhover}
+                className="flex shrink-0 cursor-help items-center gap-1.5
+                           hover:text-slate-800 dark:hover:text-slate-100">
+          <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50
+                           dark:bg-violet-500/20" />
+          {G.legend.box}
         </button>
         <button type="button"
-                onMouseEnter={hover('匯合點', JUNCTION_HELP)} onMouseLeave={unhover}
-                className="flex shrink-0 cursor-help items-center gap-1 hover:text-slate-800">
+                onMouseEnter={hover(G.legend.junction, HELP.junction)} onMouseLeave={unhover}
+                className="flex shrink-0 cursor-help items-center gap-1
+                           hover:text-slate-800 dark:hover:text-slate-100">
           <span className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: SCHEDULING_COLOR.SS }} />
           <span className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: SCHEDULING_COLOR.FF }} />
-          匯合點
+          {G.legend.junction}
         </button>
       </LegendRowStrip>
 
-      <LegendRowStrip label="圖示">
+      <LegendRowStrip label={G.legend.rowIcon}>
         {ICON_HELP.map(h => (
           <LegendChip key={h.label} className={h.className}
                       onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}>
@@ -1735,7 +1719,7 @@ function LegendBar() {
         ))}
         {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
           <LegendChip key={st}
-                      onMouseEnter={hover(INQUIRY_META[st].label, INQUIRY_HELP[st])}
+                      onMouseEnter={hover(INQUIRY_META[st].label, HELP.inquiry[st])}
                       onMouseLeave={unhover}>
             {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
           </LegendChip>
@@ -1746,11 +1730,32 @@ function LegendBar() {
   )
 }
 
+/** 工具列上的開關。三個長得一樣，深色配色只寫一次 */
+function GraphToggle({ checked, onChange, label }: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-1.5 text-slate-600 dark:text-slate-300">
+      <input type="checkbox" checked={checked}
+             onChange={e => onChange(e.target.checked)}
+             className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800" />
+      {label}
+    </label>
+  )
+}
+
+/** 聚焦面板上的一條說明。顏色由呼叫端給，其餘的間距與字級一致 */
+function FocusNote({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cx('mt-2 rounded px-2 py-1 text-xs', className)}>{children}</div>
+}
+
 /** 一排說明。左邊固定一個小標，右邊的內容超出寬度就左右滑，不折行 */
 function LegendRowStrip({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-4 py-1">
-      <span className="shrink-0 font-medium text-slate-600">{label}</span>
+      <span className="shrink-0 font-medium text-slate-600 dark:text-slate-300">{label}</span>
       <div className="flex min-w-0 flex-1 items-center gap-x-4 overflow-x-auto
                       whitespace-nowrap [scrollbar-width:thin]">
         {children}
@@ -1776,7 +1781,8 @@ function LegendChip({ className, children, ...h }: LegendItemProps & {
 }) {
   return (
     <button type="button" {...h}
-            className={cx('shrink-0 cursor-help hover:text-slate-800', className)}>
+            className={cx('shrink-0 cursor-help hover:text-slate-800 dark:hover:text-slate-100',
+                          className)}>
       {children}
     </button>
   )
@@ -1787,7 +1793,8 @@ function LegendLine({ color, label, dash, ...h }: LegendItemProps & {
 }) {
   return (
     <button type="button" {...h}
-            className="flex shrink-0 cursor-help items-center gap-1.5 hover:text-slate-800">
+            className="flex shrink-0 cursor-help items-center gap-1.5
+                       hover:text-slate-800 dark:hover:text-slate-100">
       {/* 用 svg 而不是 border-style，才能跟畫面上的線用同一組 strokeDasharray */}
       <svg width="20" height="2" className="shrink-0" aria-hidden>
         <line x1="0" y1="1" x2="20" y2="1"
@@ -1804,14 +1811,5 @@ function LegendLine({ color, label, dash, ...h }: LegendItemProps & {
  * 與任務詳情頁的說法保持一致。
  */
 function sentence(type: LinkType, outgoing: boolean, ref: string): string {
-  switch (type) {
-    case 'FS': return outgoing ? `${ref} 要等我完成，才能開始` : `要等 ${ref} 完成，我才能開始`
-    case 'SS': return outgoing ? `${ref} 要等我開始，才能開始` : `要等 ${ref} 開始，我才能開始`
-    case 'FF': return outgoing ? `${ref} 要等我完成，才能完成` : `要等 ${ref} 完成，我才能完成`
-    case 'SF': return outgoing ? `${ref} 要等我開始，才能完成` : `要等 ${ref} 開始，我才能完成`
-    case 'RELATES': return `與 ${ref} 相關`
-    case 'BLOCKS': return outgoing ? `阻擋 ${ref}` : `被 ${ref} 阻擋`
-    case 'DUPLICATES': return outgoing ? `重複於 ${ref}` : `被 ${ref} 重複`
-    case 'REQUIRES': return outgoing ? `需要 ${ref}` : `被 ${ref} 需要`
-  }
+  return G.sentence[type][outgoing ? 'outgoing' : 'incoming'](ref)
 }

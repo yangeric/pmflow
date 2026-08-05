@@ -86,13 +86,13 @@ export const inquiry = {
     usage: (n: number) => `用過 ${n} 次`,
   },
 
-  /** 跨專案的發文追蹤看板 */
+  /** 專案裡的發文追蹤頁籤，只看得到這個專案的 */
   board: {
     title: '發文追蹤',
-    subtitle: '跨專案，看所有發出去的事情回了沒',
+    subtitle: '這個專案發出去的事情回了沒',
     groupByUnit: '依單位分組',
     emptyColumn: '沒有項目',
-    empty: '還沒有任何發文紀錄。到任務詳情頁的「發文追蹤」新增一筆。',
+    empty: '這個專案還沒有發文紀錄。到任務詳情頁的「發文追蹤」新增一筆。',
     /** 分組標題後面的件數 */
     groupCount: (n: number) => `(${n})`,
     stats: {

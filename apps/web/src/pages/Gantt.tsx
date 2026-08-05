@@ -4,6 +4,7 @@ import { Gantt as DhtmlxGantt } from 'dhtmlx-gantt'
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
 import { Api, type Task, type LinkType } from '../lib/api'
 import { rollup } from '../lib/rollup'
+import { T } from '../strings'
 
 /**
  * 甘特圖：dhtmlx-gantt v10（v10.0.0 起才是 MIT，9.x 以前是 GPL-2.0，務必鎖 ^10）。
@@ -18,6 +19,8 @@ import { rollup } from '../lib/rollup'
 // dhtmlx 的 link type 是數字字串：0=FS 1=SS 2=FF 3=SF
 const TO_DHX: Partial<Record<LinkType, string>> = { FS: '0', SS: '1', FF: '2', SF: '3' }
 const FROM_DHX: Record<string, LinkType> = { '0': 'FS', '1': 'SS', '2': 'FF', '3': 'SF' }
+
+const G = T.chart.gantt
 
 export default function GanttView({
   projectId, tasks, onOpen,
@@ -54,14 +57,14 @@ export default function GanttView({
     g.config.row_height = 34
     g.config.scale_height = 54
     g.config.scales = [
-      { unit: 'month', step: 1, format: '%Y 年 %n 月' },
-      { unit: 'day', step: 1, format: '%j' },
+      { unit: 'month', step: 1, format: G.scale.month },
+      { unit: 'day', step: 1, format: G.scale.day },
     ]
     g.config.columns = [
-      { name: 'text', label: '任務', tree: true, width: 240, resize: true },
-      { name: 'start_date', label: '開始', align: 'center', width: 88 },
-      { name: 'duration', label: '天', align: 'center', width: 44 },
-      { name: 'inquiry', label: '發文', align: 'center', width: 62,
+      { name: 'text', label: G.col.task, tree: true, width: 240, resize: true },
+      { name: 'start_date', label: G.col.start, align: 'center', width: 88 },
+      { name: 'duration', label: G.col.duration, align: 'center', width: 44 },
+      { name: 'inquiry', label: G.col.inquiry, align: 'center', width: 62,
         template: (t: unknown) =>
           INQ_CELL[(t as { inquiry?: string }).inquiry ?? 'NONE'] ?? '' },
     ]
@@ -72,19 +75,19 @@ export default function GanttView({
       ...base,
       date: {
         ...base.date,
-        month_full: ['一月','二月','三月','四月','五月','六月',
-                     '七月','八月','九月','十月','十一月','十二月'],
-        month_short: ['1月','2月','3月','4月','5月','6月',
-                      '7月','8月','9月','10月','11月','12月'],
-        day_full: ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'],
-        day_short: ['日','一','二','三','四','五','六'],
+        month_full: [...G.locale.monthFull],
+        month_short: [...G.locale.monthShort],
+        day_full: [...G.locale.dayFull],
+        day_short: [...G.locale.dayShort],
       },
       labels: {
         ...base.labels,
-        new_task: '新任務', icon_save: '儲存', icon_cancel: '取消', icon_delete: '刪除',
-        section_description: '說明', section_time: '時間區間',
-        confirm_link_deleting: '要刪除這條關聯嗎？',
-        message_ok: '確定', message_cancel: '取消',
+        new_task: G.locale.newTask,
+        icon_save: T.common.save, icon_cancel: T.common.cancel, icon_delete: T.common.delete,
+        section_description: G.locale.sectionDescription,
+        section_time: G.locale.sectionTime,
+        confirm_link_deleting: G.locale.confirmLinkDeleting,
+        message_ok: T.common.confirm, message_cancel: T.common.cancel,
       },
     })
     g.i18n.setLocale('zh-TW')
@@ -133,7 +136,7 @@ export default function GanttView({
       }).catch((e: { title?: string; detail?: string }) => {
         // 後端擋下循環依賴時，把原因原封不動顯示出來，
         // 並重抓資料把畫面上那條剛畫出來的線收回去
-        alert(`${e.title ?? '建立關聯失敗'}${e.detail ? '\n' + e.detail : ''}`)
+        alert(`${e.title ?? G.addLinkFailed}${e.detail ? '\n' + e.detail : ''}`)
         qc.invalidateQueries({ queryKey: ['graph', projectId] })
       })
       return true
@@ -189,23 +192,23 @@ export default function GanttView({
   return (
     <div className="flex h-full flex-col">
       {sched && (sched.conflicts.length > 0 || sched.cyclic) && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800
+                        dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300">
           {sched.cyclic
-            ? '⚠️ 偵測到循環依賴，排程無法推算。請先移除造成環的關聯。'
-            : <>⚠️ {sched.conflicts.length} 個排程衝突：
+            ? G.cyclic
+            : <>{G.conflicts(sched.conflicts.length)}
                 {sched.conflicts.slice(0, 3).map(c => (
-                  <span key={c.taskId} className="ml-2">{c.label}（{c.reason}）</span>
+                  <span key={c.taskId} className="ml-2">{G.conflictItem(c.label, c.reason)}</span>
                 ))}
               </>}
         </div>
       )}
       {sched && sched.criticalPath.length > 0 && (
-        <div className="border-b border-slate-200 bg-white px-4 py-1.5 text-xs text-slate-500">
+        <div className="border-b border-slate-200 bg-white px-4 py-1.5 text-xs text-slate-500
+                        dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
           <span className="mr-1 inline-block h-2 w-4 rounded-sm bg-red-600 align-middle" />
-          關鍵路徑 {sched.criticalPath.length} 個節點（後端以前向／後向遍歷求 total float = 0）
-          <span className="ml-4 text-slate-400">
-            拖曳長條可改期並連動下游，從長條端點拉線可建立依賴
-          </span>
+          {G.criticalPath(sched.criticalPath.length)}
+          <span className="ml-4 text-slate-400 dark:text-slate-400">{G.dragHint}</span>
         </div>
       )}
       <div ref={hostRef} className="min-h-0 flex-1" />
@@ -214,10 +217,11 @@ export default function GanttView({
 }
 
 const INQ_CELL: Record<string, string> = {
-  NONE: '', AWAITING: '<span title="待回覆">⏳</span>',
-  OVERDUE: '<span title="逾期未回">⚠️</span>',
-  PARTIAL: '<span title="部分已回">◐</span>',
-  REPLIED: '<span title="已回覆">✓</span>',
+  NONE: '',
+  AWAITING: `<span title="${G.inquiryCell.AWAITING}">⏳</span>`,
+  OVERDUE: `<span title="${G.inquiryCell.OVERDUE}">⚠️</span>`,
+  PARTIAL: `<span title="${G.inquiryCell.PARTIAL}">◐</span>`,
+  REPLIED: `<span title="${G.inquiryCell.REPLIED}">✓</span>`,
 }
 
 const fmt = (d: Date) => d.toISOString().slice(0, 10)

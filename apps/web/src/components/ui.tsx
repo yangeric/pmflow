@@ -1,4 +1,4 @@
-import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from 'react'
+import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react'
 import type { InquiryState } from '../lib/api'
 import { T } from '../strings'
 
@@ -44,6 +44,44 @@ export function Input({ className, ...p }: InputHTMLAttributes<HTMLInputElement>
       )}
     />
   )
+}
+
+/**
+ * 下拉。刻意不帶寬度 —— 表單裡要 w-full，一整排操作按鈕旁邊要跟著內容縮，
+ * 由用的人自己給。深色配色只寫在這裡，散在各頁一定會漏掉其中一個。
+ */
+export function Select({ className, ...p }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select
+      {...p}
+      className={cx(
+        'rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800',
+        'focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:opacity-50',
+        'dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100', className
+      )}
+    />
+  )
+}
+
+/**
+ * 壓在「資料帶進來的顏色」上面的字要黑還是白。
+ *
+ * 狀態色與專案色是使用者自己挑的，不能改；但一律用白字的話，
+ * 淺色的狀態（例如待辦的 slate-400）上就只剩 2.5:1，行事曆那種長條會糊成一片。
+ * 這裡照亮度挑一邊 —— 顏色不動，只換字色。
+ */
+export function textOnColor(bg: string | null | undefined): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((bg ?? '').trim())
+  if (!m) return 'text-white'
+  const n = parseInt(m[1], 16)
+  const lin = (v: number) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  }
+  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+  // 0.34 是白字與黑字對比相等的那條線附近，偏向黑字一點點：
+  // 中間亮度的顏色配黑字比較好認
+  return L > 0.34 ? 'text-slate-900' : 'text-white'
 }
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -112,7 +150,7 @@ export function ProblemBadge({ problem }: { problem: string | null | undefined }
 
 export function Spinner({ label = T.common.loading }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-400 dark:text-slate-500">
+    <div className="flex items-center justify-center gap-2 p-8 text-sm text-slate-400 dark:text-slate-400">
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600
                        dark:border-slate-600 dark:border-t-blue-400" />
       {label}
@@ -121,5 +159,5 @@ export function Spinner({ label = T.common.loading }: { label?: string }) {
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <div className="p-8 text-center text-sm text-slate-400 dark:text-slate-500">{children}</div>
+  return <div className="p-8 text-center text-sm text-slate-400 dark:text-slate-400">{children}</div>
 }

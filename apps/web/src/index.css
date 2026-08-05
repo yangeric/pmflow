@@ -25,8 +25,14 @@
  *   字：text-slate-900/800 → dark:text-slate-100
  *       text-slate-700/600 → dark:text-slate-300
  *       text-slate-500     → dark:text-slate-400
- *       text-slate-400     → dark:text-slate-500
- *       text-slate-300     → dark:text-slate-600
+ *       text-slate-400     → dark:text-slate-400   ← 不是 500
+ *       text-slate-300     → dark:text-slate-500   ← 只給裝飾用的線與符號
+ *
+ *       **深色底下不要用 slate-500 以下當文字色**：量過了，slate-500 在
+ *       slate-950／900／800 上分別只有 4.24 / 3.75 / 3.07，一律低於 4.5；
+ *       slate-600 更只有 2.66 / 2.36 / 1.93。淺色底下 slate-400 讀得清楚，
+ *       是因為白底的對比方向相反 —— 深色不能照抄同一個階數。
+ *       slate-400 在同樣三種底色上是 7.87 / 6.96 / 5.71，這才是次要文字的下限。
  *   互動：hover:bg-slate-50/100 → dark:hover:bg-slate-800
  *   彩色徽章：bg-X-50 text-X-700 → dark:bg-X-500/15 dark:text-X-300
  *            （X = blue / emerald / amber / red / violet / fuchsia，一律這個公式）
@@ -36,6 +42,13 @@
  */
 
 :root { color-scheme: light; }
+
+/**
+ * 關聯圖上「跟畫布同色」的東西：線上標籤的描邊、匯合點文字的外暈。
+ * 那些顏色是畫在 SVG 上的，Tailwind 的 dark: 前綴碰不到，用變數讓它跟著主題走。
+ */
+:root { --graph-halo: #f8fafc; }   /* = 畫布的 bg-slate-50 */
+.dark { --graph-halo: #020617; }   /* = 畫布的 dark:bg-slate-950 */
 
 html, body, #root { height: 100%; }
 body {
@@ -62,3 +75,50 @@ body {
 .gantt_task_line.inq-awaiting  { box-shadow: 0 0 0 2px #3178c6; }
 .gantt_task_line.milestone-done { background: #2e8b57; }
 .gantt_container { border: none; font-family: var(--font-sans); }
+
+/* ── 甘特圖的深色模式 ──
+   dhtmlx 自己那份 CSS 把顏色寫死在它的 class 上，Tailwind 的 dark: 前綴碰不到，
+   只能在這裡照上面那張配色表覆蓋一次。改配色表時這一段要跟著改。
+   長條本身的顏色不動 —— 那是關鍵路徑與發文狀態的語意色。 */
+.dark .gantt_container,
+.dark .gantt_grid,
+.dark .gantt_task,
+.dark .gantt_data_area,
+.dark .gantt_grid_data { background: #0f172a; color: #e2e8f0; }      /* 卡片：slate-900 */
+
+.dark .gantt_grid_scale,
+.dark .gantt_task_scale,
+.dark .gantt_scale_line { background: #1e293b; color: #cbd5e1; }     /* 表頭：slate-800 */
+
+.dark .gantt_grid_scale .gantt_grid_head_cell,
+.dark .gantt_task_scale .gantt_scale_cell { color: #cbd5e1; }
+
+/* 格線一律 slate-700，比底色亮一階才看得到欄與列 */
+.dark .gantt_grid_scale,
+.dark .gantt_task_scale,
+.dark .gantt_scale_line,
+.dark .gantt_row,
+.dark .gantt_task_row,
+.dark .gantt_task_cell,
+.dark .gantt_grid_head_cell,
+.dark .gantt_cell,
+.dark .gantt_layout_cell { border-color: #334155; }
+
+.dark .gantt_row:hover,
+.dark .gantt_task_row:hover { background: #1e293b; }
+.dark .gantt_row.gantt_selected,
+.dark .gantt_task_row.gantt_selected { background: #1e3a5f; }        /* 選取：帶藍的深色 */
+
+/* 假日整欄壓暗，不是壓亮 —— 淺色下它比白底深，深色下要比黑底再深 */
+.dark .gantt_task_cell.week_end { background: #020617; }
+.dark .gantt_task_row.week_end  { background: transparent; }
+
+.dark .gantt_tree_content,
+.dark .gantt_grid_data .gantt_cell { color: #e2e8f0; }
+.dark .gantt_tree_icon.gantt_folder_open,
+.dark .gantt_tree_icon.gantt_folder_closed,
+.dark .gantt_tree_icon.gantt_blank { filter: invert(1) brightness(1.4); }
+.dark .gantt_grid_head_cell { color: #cbd5e1; }
+.dark .gantt_task_link .gantt_line_wrapper div { background: #64748b; }
+.dark .gantt_link_arrow_right { border-left-color: #64748b; }
+.dark .gantt_link_arrow_left { border-right-color: #64748b; }

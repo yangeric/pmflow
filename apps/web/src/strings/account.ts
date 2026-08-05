@@ -15,7 +15,8 @@ const workspaceRoleHint: Record<WorkspaceRole, string> = {
   OWNER: '開站的人。只能決定誰是管理者，看不到也管不了別人的帳號',
   ADMIN: '能開帳號、停用帳號、刪除帳號、調整成員與訪客的角色',
   MEMBER: '一般使用者：能開專案、能申請加入別人的專案',
-  GUEST: '只能被邀請進專案，開不了新專案',
+  GUEST: '被請進來的外部帳號：一樣能開專案、能申請加入別人的專案，'
+       + '差別只在他通常是被某個專案的管理者找進來的',
 }
 
 const userStatus: Record<AdminUser['status'], string> = {
@@ -178,21 +179,32 @@ export const account = {
     requestsTitle: '加入申請',
     requestsPending: (n: number) => `${n} 件待處理`,
     requestsEmpty: '目前沒有人申請加入',
+    /** 申請時附的那句話，加引號才看得出是他寫的、不是系統講的 */
+    quotedMessage: (s: string) => `「${s}」`,
     approve: '核准',
     reject: '婉拒',
 
     title: '成員',
     count: (n: number) => `${n} 人`,
-    readonlyHint: '只有專案的建立者可以增減成員',
+    readonlyHint: '只有專案的管理者可以增減成員',
     empty: '這個專案還沒有成員。',
     creator: '建立者',
+    me: '你',
     confirmRemove: (name: string) => `要把 ${name} 移出這個專案嗎？`,
 
     addTitle: '直接加入成員',
-    pickUser: '選一個帳號…',
+    searchPlaceholder: '打名字或 email 找人…',
+    searching: '搜尋中…',
     userOption: (name: string, email: string) => `${name}（${email}）`,
+    /** 搜到的人不在這個工作區裡，加進來等於順便請他進這個工作區 */
+    outsideWorkspace: '不在這個工作區',
+    picked: (name: string) => `已選擇 ${name}`,
+    clearPick: '換一個人',
     add: '加入',
-    addHint: '只列得出同一個工作區裡的帳號。對方不會收到信，直接就是成員了。',
-    addNoneLeft: '同工作區的帳號都已經在這個專案裡了。',
+    addHint: '沒有打字時列出同一個工作區裡的帳號；'
+           + '打名字或 email 可以找到其他工作區的人，加進來他就看得到這個專案。'
+           + '對方不會收到信，直接就是成員了。',
+    addNoneLeft: '同工作區的帳號都已經在這個專案裡了。可以打名字或 email 找其他人。',
+    searchEmpty: '找不到符合的帳號。請確認名字或 email 有沒有打錯。',
   },
 } as const
