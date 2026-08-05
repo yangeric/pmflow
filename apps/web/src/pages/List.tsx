@@ -138,18 +138,21 @@ export default function ListView({
 
   return (
     <div className="overflow-auto p-4">
-      <table className="w-full border-collapse overflow-hidden rounded-lg bg-white text-sm ring-1 ring-slate-200
+      {/* 視窗窄的時候寧可讓整張表左右捲，也不要把任務名稱擠成一個字一行 */}
+      {/* 固定欄寬：任務名稱長的時候讓它自己截斷，不要把整張表撐寬到右邊欄位被推出畫面。
+          視窗真的太窄時整張表左右捲 */}
+      <table className="w-full min-w-[58rem] table-fixed border-collapse overflow-hidden rounded-lg bg-white text-sm ring-1 ring-slate-200
                         dark:bg-slate-900 dark:ring-slate-700">
         <thead>
-          <tr className="bg-slate-50 text-left text-xs font-medium text-slate-500
+          <tr className="whitespace-nowrap bg-slate-50 text-left text-xs font-medium text-slate-500
                          dark:bg-slate-800 dark:text-slate-400">
             <th className="px-3 py-2">{T.task.list.colTask}</th>
-            <th className="w-32 px-3 py-2">{T.task.list.colAssignee}</th>
+            <th className="w-40 px-3 py-2">{T.task.list.colAssignee}</th>
             <th className="w-28 px-3 py-2">{T.task.list.colStatus}</th>
-            <th className="w-32 px-3 py-2">{T.task.list.colInquiry}</th>
-            <th className="w-24 px-3 py-2">{T.task.list.colStart}</th>
-            <th className="w-24 px-3 py-2">{T.task.list.colDue}</th>
-            <th className="w-20 px-3 py-2">{T.task.list.colProgress}</th>
+            <th className="w-28 px-3 py-2">{T.task.list.colInquiry}</th>
+            <th className="w-20 px-3 py-2">{T.task.list.colStart}</th>
+            <th className="w-20 px-3 py-2">{T.task.list.colDue}</th>
+            <th className="w-24 px-3 py-2">{T.task.list.colProgress}</th>
           </tr>
         </thead>
         <tbody>
@@ -175,8 +178,10 @@ export default function ListView({
                         {typeOf(t.type)}
                       </span>
                     )}
-                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{t.ref}</span>
-                    <span className={cx(t.type === 'EPIC'
+                    <span className="shrink-0 whitespace-nowrap font-mono text-[11px] text-slate-400
+                                     dark:text-slate-400">{t.ref}</span>
+                    {/* 中文可以在任何一個字之間斷行，不擋住就會被旁邊的徽章與按鈕擠成一直條 */}
+                    <span className={cx('min-w-0 truncate', t.type === 'EPIC'
                       ? 'font-medium text-slate-900 dark:text-slate-100'
                       : 'text-slate-800 dark:text-slate-200')}>
                       {t.title}

@@ -466,6 +466,9 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
          title={fork ? G.junction.forkTip : G.junction.joinTip}>
       <Handle id={H_IN} type="target" position={Position.Left} isConnectable={false}
               className="!h-1.5 !w-1.5 !border-0 !bg-transparent" />
+      {/* 圓點本身只有 10px，縮小看的時候剩兩三個像素，滑鼠根本壓不到 ——
+          往外墊一圈看不見的抓取範圍，拖的還是同一顆點 */}
+      <div className="absolute -inset-2 cursor-grab" aria-hidden />
       {/* 白色外圈讓圓點在穿過它的線上仍然看得出來 */}
       <div className="h-full w-full rounded-full ring-2 ring-white dark:ring-slate-950"
            style={{ backgroundColor: color }} />
@@ -814,6 +817,12 @@ function GraphCanvas({
    * fitView 也就永遠等不到。
    */
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
+  /**
+   * 現在被點選的節點。同樣得自己記：節點是每次 render 重算的，
+   * React Flow 內部記的「選了誰」會被我們送進去的新陣列蓋掉，
+   * 框上的四個把手（NodeResizer 只在 selected 時出現）就永遠不會現身。
+   */
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({})
   const [focusId, setFocusId] = useState<string | null>(null)
   /** 任務相關（相關／阻擋／重複於／需要）那幾條線要不要畫 */
   const [showRelated, setShowRelated] = useState(true)
@@ -1004,8 +1013,10 @@ function GraphCanvas({
     const moves: Record<string, { x: number; y: number }> = {}
     const dims: Record<string, { width: number; height: number }> = {}
     const sizes: Record<string, { width: number; height: number }> = {}
+    const picks: Record<string, boolean> = {}
     for (const c of changes) {
       if (c.type === 'position' && c.position) moves[c.id] = c.position
+      else if (c.type === 'select') picks[c.id] = c.selected
       else if (c.type === 'dimensions' && c.dimensions) {
         // resizing 有值＝使用者正在拉 NodeResizer 的把手（拉的過程 true、放手 false）；
         // 完全沒有這個欄位才是 React Flow 自己量出來的尺寸。
@@ -1023,6 +1034,7 @@ function GraphCanvas({
       userAdjusted.current = true
       setResized(r => ({ ...r, ...sizes }))
     }
+    if (Object.keys(picks).length) setSelectedIds(s => ({ ...s, ...picks }))
     // 尺寸沒真的變就不要換物件 —— 平移縮放時 ResizeObserver 會重送同樣的值，
     // 每次都 setState 會讓整張圖白白重畫
     if (Object.keys(dims).length) {
@@ -1331,6 +1343,7 @@ function GraphCanvas({
       return {
         ...n,
         position: dragged[n.id] ?? n.position,
+        selected: !!selectedIds[n.id],
         ...(size ? { style: { ...n.style, width: size.width, height: size.height } } : {}),
         // 框的尺寸是我們自己算的（見 layout），量到的值不要蓋掉它 ——
         // 蓋成 undefined 的話 React Flow 會認為它還沒量好，整張圖停在 visibility:hidden
@@ -1346,7 +1359,7 @@ function GraphCanvas({
         },
       }
     }),
-    [baseNodes, dragged, resized, measured, neighbours, kin, focusId, statusColor,
+    [baseNodes, dragged, resized, measured, selectedIds, neighbours, kin, focusId, statusColor,
      blockedBy, parallelWith]
   )
 
@@ -1390,6 +1403,8 @@ function GraphCanvas({
         position: dragged[g.id] ?? { x, y: mid - JUNCTION_SIZE / 2 },
         measured: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
         style: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
+        // 大項目的框是 1000。圓點要疊在框之上，不然框一蓋過來就抓不到它
+        zIndex: 1400,
         // 拖得動，但不是任務：選不起來、也不能從它拉線
         selectable: false,
         connectable: false,

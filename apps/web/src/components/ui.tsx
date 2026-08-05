@@ -116,7 +116,7 @@ export function InquiryBadge({ state, detail }: { state: InquiryState; detail?: 
   const m = INQUIRY_META[state]
   return (
     <span className={cx(
-      'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+      'inline-flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset',
       m.cls
     )}>
       <span aria-hidden>{m.icon}</span>{detail ?? m.label}
