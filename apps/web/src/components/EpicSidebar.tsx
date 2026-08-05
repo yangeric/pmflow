@@ -64,7 +64,7 @@ export function EpicSidebar({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
 
-  const { epics, stat, looseCount, childrenOf, bugsUnder } = useMemo(() => {
+  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn } = useMemo(() => {
     const ids = new Set(tasks.map(t => t.id))
     const epics = tasks.filter(t => !t.parentId)
     const rolled = rollup(tasks)
@@ -125,8 +125,11 @@ export function EpicSidebar({
     }))
 
     const looseCount = tasks.filter(t => t.parentId && !ids.has(t.parentId)).length
-    return { epics, stat, looseCount, childrenOf: kids, bugsUnder }
+    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn }
   }, [tasks])
+
+  /** 一列任務的問題數：底下的，加上自己（如果它本身就是一張問題） */
+  const bugCount = (t: Task) => bugsUnder(t.id) + (t.type === 'BUG' ? 1 : 0)
 
   // 右邊正在看的任務，它所屬的大項目自動展開，不然使用者會找不到自己在哪
   const autoOpen = useMemo(() => {
@@ -283,20 +286,26 @@ export function EpicSidebar({
                     ? 'font-medium text-slate-800 dark:text-slate-100'
                     : 'text-slate-700 dark:text-slate-300'
                 )}>{epic.title}</span>
-                {/* 問題數排在逾期前面：問題是「這裡有多少事情壞了」，
-                    逾期是「有多少事情在等外面」，兩件事分開標，不要合成一個數字 */}
-                {s.bugs > 0 && (
+                {/*
+                  * 問題數排在逾期前面：問題是「這裡有多少事情壞了」，
+                  * 逾期是「有多少事情在等外面」，兩件事分開標，不要合成一個數字。
+                  *
+                  * **展開之後這兩顆就不畫了** —— 底下每一列各自標著自己的數字，
+                  * 上面再留一個總數，同一個畫面就有兩層數字在互相解釋，
+                  * 看的人得自己算「這 2 是不是就是下面那 1 加 1」。
+                  */}
+                {!open && s.bugs > 0 && (
                   <span title={T.nav.sidebar.epicBugs(s.bugs)}
                         className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
                                    dark:bg-rose-500/15 dark:text-rose-300">
                     {T.nav.sidebar.bugBadge(s.bugs)}
                   </span>
                 )}
-                {s.overdue > 0 && (
+                {!open && s.overdue > 0 && (
                   <span title={T.nav.sidebar.epicOverdue(s.overdue)}
                         className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
                                    dark:bg-red-500/15 dark:text-red-300">
-                    {s.overdue}
+                    {T.nav.sidebar.overdueBadge(s.overdue)}
                   </span>
                 )}
               </div>
@@ -336,16 +345,36 @@ export function EpicSidebar({
                   <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full',
                     kid.progress >= 100 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
                   <span className="min-w-0 flex-1 truncate">{kid.title}</span>
-                  {bugsUnder(kid.id) > 0 && (
-                    <span title={T.nav.sidebar.taskBugs(bugsUnder(kid.id))}
+                  {/*
+                    * 任務列算的是「這一支底下有幾張問題」，**而且含自己** ——
+                    * 大項目一展開，它的總數就換成這幾個數字，加起來要對得上。
+                    * 不含自己的話，像「採購與到貨」這種本身就是問題的直屬子任務
+                    * 會一個數字都沒有，展開前後就湊不回同一個總數。
+                    */}
+                  {bugCount(kid) > 0 && (
+                    <span title={kid.type === 'BUG' && bugCount(kid) === 1
+                      ? T.nav.sidebar.taskIsBug
+                      : T.nav.sidebar.taskBugs(bugCount(kid))}
                           className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
                                      dark:bg-rose-500/15 dark:text-rose-300">
-                      {T.nav.sidebar.bugBadge(bugsUnder(kid.id))}
+                      {T.nav.sidebar.bugBadge(bugCount(kid))}
                     </span>
                   )}
-                  {kid.inquiryState === 'OVERDUE' && (
+                  {/*
+                    * 逾期也算**整支子樹**，不是只看這一列自己。
+                    * 側欄只畫得出直屬子項，孫層以下沒有自己的列 ——
+                    * 只看自己的話，大項目一展開，掛在孫層的那筆逾期就整個消失，
+                    * 展開反而比收著看得少。
+                    *
+                    * 樣式跟「問 N」一致：一個文字徽章、一個表情符號的話，
+                    * 同一列看起來像兩套系統。
+                    */}
+                  {overdueIn(kid.id) > 0 && (
                     <span title={T.nav.sidebar.taskOverdue}
-                          className="shrink-0 text-[11px] text-red-600 dark:text-red-400">⚠️</span>
+                          className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
+                                     dark:bg-red-500/15 dark:text-red-300">
+                      {T.nav.sidebar.overdueBadge(overdueIn(kid.id))}
+                    </span>
                   )}
                 </button>
               )

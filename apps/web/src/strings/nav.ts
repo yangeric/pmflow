@@ -51,7 +51,7 @@ export const nav = {
     epicSummary: (title: string, done: number, total: number) =>
       `${title}　${done}/${total} 個小項目已完成`,
     epicOverdue: (n: number) => `底下有 ${n} 張任務的對外詢問逾期`,
-    taskOverdue: '對外詢問逾期',
+    taskOverdue: '這一支底下的對外詢問逾期（含自己）',
 
     /**
      * 底下掛著幾張問題。
@@ -62,8 +62,15 @@ export const nav = {
      * 展開之後每張任務再各自顯示自己底下的，兩個數字才對得起來。
      */
     bugBadge: (n: number) => `問 ${n}`,
+    /**
+     * 逾期的徽章跟問題的徽章排在一起，只寫數字的話兩個數字分不出誰是誰，
+     * 所以同樣帶一個字。任務那一列沒有數字（一張任務就是逾或不逾），只寫「逾」。
+     */
+    overdueBadge: (n: number) => `逾 ${n}`,
     epicBugs: (n: number) => `底下有 ${n} 張問題`,
-    taskBugs: (n: number) => `這張任務底下有 ${n} 張問題`,
+    taskBugs: (n: number) => `這一支底下有 ${n} 張問題（含自己）`,
+    /** 它自己就是一張問題、底下也沒有別的 —— 「底下有 1 張」會讓人去找那一張 */
+    taskIsBug: '這張本身就是問題',
     taskTitle: (ref: string, title: string) => `${ref}　${title}`,
     loose: (n: number) => `另有 ${n} 個任務的上層已被刪除，在「全部任務」裡找得到`,
     epicNamePlaceholder: '大項目名稱',
