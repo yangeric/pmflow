@@ -32,7 +32,7 @@ const createBody = z.object({
   endDate: z.string().date().optional(),
   /**
    * 公開＝不用搜尋就出現在「加入其他專案」的清單裡。
-   * 只影響找不找得到，不影響進不進得去 —— 一樣要建立者核准才會變成成員。
+   * 只影響找不找得到，不影響進不進得去 —— 一樣要專案的管理者核准才會變成成員。
    */
   isPublic: z.boolean().optional(),
 })
@@ -44,17 +44,18 @@ export default async function projectRoutes(app: FastifyInstance) {
     const rows = await sql`
       SELECT p.id, p.workspace_id AS "workspaceId", p.key, p.name, p.description,
              p.color, p.status, p.start_date AS "startDate", p.end_date AS "endDate",
-             p.rank, pm.role,
+             p.rank, pm.role, p.is_public AS "isPublic",
              (p.created_by = ${user.id}) AS "isCreator",
              (SELECT count(*) FROM task t
                WHERE t.project_id = p.id AND t.deleted_at IS NULL)::int AS "taskCount",
              (SELECT count(*) FROM task t
                WHERE t.project_id = p.id AND t.deleted_at IS NULL
                  AND t.inquiry_state = 'OVERDUE')::int AS "overdueInquiryCount",
-             -- 待審的加入申請。不是建立者就一律 0，免得別人也看到有人在敲門
+             -- 待審的加入申請。不是這個專案的管理者就一律 0，
+             -- 免得別人也看到有人在敲門（能處理的人才需要被提醒）
              (SELECT count(*) FROM project_join_request r
                WHERE r.project_id = p.id AND r.status = 'PENDING'
-                 AND p.created_by = ${user.id})::int AS "pendingJoinRequestCount"
+                 AND pm.role = 'MANAGER')::int AS "pendingJoinRequestCount"
       FROM project p
       JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${user.id}
       WHERE p.archived_at IS NULL
@@ -66,13 +67,12 @@ export default async function projectRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     const body = createBody.parse(req.body)
 
+    // 是這個工作區的人就能開專案，訪客也可以 —— 開專案不是特權，
+    // 誰進得了那個專案仍然由開的人決定（他會是這個專案的管理者）。
     const member = await sql<{ role: string }[]>`
       SELECT role FROM workspace_member
       WHERE workspace_id = ${body.workspaceId} AND user_id = ${user.id}`
     if (!member.length) throw forbidden('你不是這個工作區的成員')
-    if (!['OWNER', 'ADMIN', 'MEMBER'].includes(member[0].role)) {
-      throw forbidden('訪客不能建立專案')
-    }
 
     const project = await sql.begin(async tx => {
       const [p] = await tx<{ id: string }[]>`
@@ -95,7 +95,8 @@ export default async function projectRoutes(app: FastifyInstance) {
 
     const [row] = await sql`
       SELECT id, workspace_id AS "workspaceId", key, name, description, color, status,
-             start_date AS "startDate", end_date AS "endDate", rank
+             start_date AS "startDate", end_date AS "endDate", rank,
+             is_public AS "isPublic", true AS "isCreator"
       FROM project WHERE id = ${project.id}`
     return reply.code(201).send(row)
   })

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import {
-  authenticate, requireProjectCreator, requireProjectRole, requireWorkspaceMember,
+  authenticate, requireProjectManager, requireProjectRole, requireWorkspaceMember,
 } from '../lib/auth.js'
 import { notify } from '../lib/notify.js'
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
@@ -10,9 +10,13 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 /**
  * 專案成員與加入申請。
  *
- * 規則只有一條，其他都從它推出來：**專案是誰開的，誰才能決定誰進得來。**
- * 創立者可以直接把工作區裡的帳號放進來，也可以核准別人送來的申請；
- * 其他人只能申請，等創立者同意。
+ * 規則只有一條，其他都從它推出來：**這個專案的管理者才能決定誰進得來。**
+ * 管理者可以搜尋任何一個帳號直接放進來，也可以核准別人送來的申請；
+ * 其他人只能申請，等管理者同意。
+ *
+ * 開專案的人建立時就是管理者，所以「只有建立者能管成員」的舊行為完整包含在
+ * 這條規則裡；差別只在於他可以再指定幾個人一起管。建立者本身仍有兩項保護：
+ * 角色不能被改、不能被移出專案 —— 不然專案有機會變成沒有人管得動。
  *
  * 沒有做通知信 —— 系統目前沒有寄信的東西（那是 M4 最後一項）。
  * 待審的申請靠畫面上的數字提醒，不會有人收到信卻沒地方處理。
@@ -89,30 +93,73 @@ export default async function memberRoutes(app: FastifyInstance) {
       return { projects: rows }
     })
 
-  // ── 工作區裡有哪些帳號 ────────────────────────────────
+  // ── 可以放進專案的帳號 ────────────────────────────────
   /**
-   * 創立者要「直接把某個帳號放進專案」時，總得先選人。
-   * 只回同工作區的帳號，而且只回名字與信箱 —— 這是同一個組織內部彼此看得到的程度。
+   * 管理者要「直接把某個帳號放進專案」時，總得先選人。
+   *
+   * 沒給 `q`：跟以前一樣，把同工作區的帳號整個列出來 —— 那是同一個組織內部
+   * 彼此本來就看得到的名單，當成挑人的預設清單。
+   *
+   * 給了 `q`：**跨工作區**比對名字或 email（大小寫不拘、部分比對）。
+   * 要找來一起做事的人不見得已經在這個工作區裡，找不到人就沒辦法請他進來。
+   * 只回名字與信箱，跟上面那條路一樣 —— 而且要打得出名字或 email 才找得到，
+   * 不會有人靠這個把全站的帳號撈成一份名單。
+   *
+   * 搜尋這條會擋掉停用與未啟用的帳號 —— 那些人登不進來，
+   * 加進專案只會變成名單上一個永遠不會出現的名字。
+   * 沒給 q 的那條刻意不加這個條件，才不會動到原本的回傳內容。
    */
-  app.get<{ Querystring: { workspaceId?: string } }>('/workspace-users', async req => {
-    const user = await authenticate(req)
-    const workspaceId = req.query.workspaceId
-    if (!workspaceId) throw badRequest('缺少 workspaceId')
-    await requireWorkspaceMember(user.id, workspaceId)
+  app.get<{ Querystring: { workspaceId?: string; q?: string; projectId?: string } }>(
+    '/workspace-users', async req => {
+      const user = await authenticate(req)
+      const workspaceId = req.query.workspaceId
+      if (!workspaceId) throw badRequest('缺少 workspaceId')
+      await requireWorkspaceMember(user.id, workspaceId)
 
-    const rows = await sql`
-      SELECT u.id, u.display_name AS "displayName", u.email, wm.role
-      FROM workspace_member wm
-      JOIN app_user u ON u.id = wm.user_id
-      WHERE wm.workspace_id = ${workspaceId}
-      ORDER BY u.display_name`
-    return { users: rows }
-  })
+      const q = (req.query.q ?? '').trim()
+      /**
+       * 跨工作區的搜尋要指名「你是在幫哪個專案找人」，而且要是那個專案的管理者。
+       *
+       * 只驗「是這個工作區的成員」不夠：那等於任何人都能拿名字或 email 去試，
+       * 一次一個字地問「這個帳號在不在這個站上」。真正需要跨工作區找人的
+       * 只有正在加人的專案管理者，所以權限就綁在那件事上。
+       * 沒給 q 的那條維持原樣（只列同工作區的人），別的畫面還在用。
+       */
+      if (q) {
+        const projectId = req.query.projectId
+        if (!projectId) throw badRequest('搜尋帳號要指定是哪個專案要加人')
+        await requireProjectManager(user.id, projectId)
+      }
+      if (!q) {
+        const rows = await sql`
+          SELECT u.id, u.display_name AS "displayName", u.email, wm.role
+          FROM workspace_member wm
+          JOIN app_user u ON u.id = wm.user_id
+          WHERE wm.workspace_id = ${workspaceId}
+          ORDER BY u.display_name`
+        return { users: rows }
+      }
+
+      // ILIKE 的萬用字元要跳脫，不然打一個 % 就等於把所有帳號列出來
+      const like = `%${q.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
+      const rows = await sql`
+        SELECT u.id, u.display_name AS "displayName", u.email,
+               -- 不在這個工作區的人也找得到，這時沒有工作區角色可以回
+               coalesce(wm.role, '') AS role
+        FROM app_user u
+        LEFT JOIN workspace_member wm
+               ON wm.user_id = u.id AND wm.workspace_id = ${workspaceId}
+        WHERE u.status = 'ACTIVE'
+          AND (u.display_name ILIKE ${like} OR u.email ILIKE ${like})
+        ORDER BY wm.role IS NULL, u.display_name
+        LIMIT 30`
+      return { users: rows }
+    })
 
   // ── 成員清單 ──────────────────────────────────────────
   app.get<{ Params: { id: string } }>('/projects/:id/members', async req => {
     const user = await authenticate(req)
-    await requireProjectRole(user.id, req.params.id, 'VIEWER')
+    const { role } = await requireProjectRole(user.id, req.params.id, 'VIEWER')
     const [p] = await sql<{ created_by: string | null }[]>`
       SELECT created_by FROM project WHERE id = ${req.params.id}`
     if (!p) throw notFound('找不到專案')
@@ -128,18 +175,25 @@ export default async function memberRoutes(app: FastifyInstance) {
     return {
       members: members.map(m => ({ ...m, isCreator: m.id === p.created_by })),
       createdBy: p.created_by,
-      canManage: p.created_by === user.id,
+      canManage: role === 'MANAGER',
     }
   })
 
-  /** 創立者直接把工作區裡的帳號放進來，不必等對方申請 */
+  /** 管理者直接把某個帳號放進來，不必等對方申請 */
   app.post<{ Params: { id: string } }>('/projects/:id/members', async (req, reply) => {
     const user = await authenticate(req)
-    const { workspaceId } = await requireProjectCreator(user.id, req.params.id)
+    const { workspaceId } = await requireProjectManager(user.id, req.params.id)
     const body = addMemberBody.parse(req.body)
 
-    await requireWorkspaceMember(body.userId, workspaceId)
-      .catch(() => { throw badRequest('這個帳號不在同一個工作區，不能加入專案') })
+    const [target] = await sql<{ status: string; ws: boolean }[]>`
+      SELECT u.status,
+             EXISTS (SELECT 1 FROM workspace_member wm
+                      WHERE wm.workspace_id = ${workspaceId} AND wm.user_id = u.id) AS ws
+      FROM app_user u WHERE u.id = ${body.userId}`
+    if (!target) throw badRequest('找不到這個帳號')
+    if (target.status !== 'ACTIVE') {
+      throw badRequest('這個帳號現在登不進來（未啟用或已停用），不能加入專案')
+    }
 
     const exists = await sql`
       SELECT 1 FROM project_member
@@ -147,6 +201,16 @@ export default async function memberRoutes(app: FastifyInstance) {
     if (exists.length) throw conflict('這個帳號已經是專案成員了')
 
     await sql.begin(async tx => {
+      // 找來的人不見得已經在這個工作區裡。被請進專案就等於要進得了這個站的這一區，
+      // 所以順手補一筆訪客身分 —— 沒有這一筆，他登入後根本看不到這個工作區，
+      // 也就找不到剛剛被加進去的專案。訪客只是「被邀請進來的外部帳號」，
+      // 不會因此看到任何他不是成員的專案。
+      if (!target.ws) {
+        await tx`
+          INSERT INTO workspace_member (workspace_id, user_id, role)
+          VALUES (${workspaceId}, ${body.userId}, 'GUEST')
+          ON CONFLICT (workspace_id, user_id) DO NOTHING`
+      }
       await tx`
         INSERT INTO project_member (project_id, user_id, role, added_by)
         VALUES (${req.params.id}, ${body.userId}, ${body.role}, ${user.id})`
@@ -154,7 +218,7 @@ export default async function memberRoutes(app: FastifyInstance) {
       await tx`
         UPDATE project_join_request
         SET status = 'APPROVED', decided_by = ${user.id}, decided_at = now(),
-            decided_note = '已由建立者直接加入'
+            decided_note = '已由專案管理者直接加入'
         WHERE project_id = ${req.params.id} AND user_id = ${body.userId} AND status = 'PENDING'`
 
       // 被直接加進來的人不會知道自己多了一個專案，這一則就是他唯一的線索
@@ -170,13 +234,16 @@ export default async function memberRoutes(app: FastifyInstance) {
   app.patch<{ Params: { id: string; userId: string } }>(
     '/projects/:id/members/:userId', async req => {
       const user = await authenticate(req)
-      await requireProjectCreator(user.id, req.params.id)
+      const { createdBy } = await requireProjectManager(user.id, req.params.id)
       const { role } = z.object({ role: z.enum(ROLES) }).parse(req.body)
 
-      const [p] = await sql<{ created_by: string | null }[]>`
-        SELECT created_by FROM project WHERE id = ${req.params.id}`
-      if (p?.created_by === req.params.userId) {
-        throw badRequest('不能改建立者自己的角色')
+      // 建立者的角色誰都不能改（包含他自己）—— 他是專案最後一個一定管得動的人
+      if (createdBy === req.params.userId) {
+        throw badRequest('不能改專案建立者的角色')
+      }
+      // 自己把自己降級等於當場失去管理權，而且救不回來（只有管理者能改角色）
+      if (user.id === req.params.userId) {
+        throw badRequest('不能改自己的角色，請另一位管理者幫你改')
       }
       const rows = await sql`
         UPDATE project_member SET role = ${role}
@@ -189,13 +256,15 @@ export default async function memberRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string; userId: string } }>(
     '/projects/:id/members/:userId', async (req, reply) => {
       const user = await authenticate(req)
-      await requireProjectCreator(user.id, req.params.id)
+      const { createdBy } = await requireProjectManager(user.id, req.params.id)
 
-      const [p] = await sql<{ created_by: string | null }[]>`
-        SELECT created_by FROM project WHERE id = ${req.params.id}`
-      // 移掉創立者等於專案沒人能管成員了，擋掉
-      if (p?.created_by === req.params.userId) {
+      // 移掉建立者等於專案有機會沒人能管成員了，擋掉
+      if (createdBy === req.params.userId) {
         throw badRequest('不能把專案的建立者移出專案')
+      }
+      // 自己把自己移出去也是一樣的死路：進不來就再也加不回來
+      if (user.id === req.params.userId) {
+        throw badRequest('不能把自己移出專案，請另一位管理者處理')
       }
       const rows = await sql`
         DELETE FROM project_member
@@ -210,10 +279,8 @@ export default async function memberRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     const body = applyBody.parse(req.body)
 
-    const [p] = await sql<{
-      workspace_id: string; archived_at: string | null; created_by: string | null
-    }[]>`
-      SELECT workspace_id, archived_at, created_by FROM project WHERE id = ${req.params.id}`
+    const [p] = await sql<{ workspace_id: string; archived_at: string | null }[]>`
+      SELECT workspace_id, archived_at FROM project WHERE id = ${req.params.id}`
     if (!p) throw notFound('找不到專案')
     if (p.archived_at) throw badRequest('這個專案已封存，不能申請加入')
     await requireWorkspaceMember(user.id, p.workspace_id)
@@ -227,27 +294,34 @@ export default async function memberRoutes(app: FastifyInstance) {
     const pending = await sql`
       SELECT 1 FROM project_join_request
       WHERE project_id = ${req.params.id} AND user_id = ${user.id} AND status = 'PENDING'`
-    if (pending.length) throw conflict('你已經送出申請了，正在等建立者處理')
+    if (pending.length) throw conflict('你已經送出申請了，正在等專案的管理者處理')
 
     const [row] = await sql`
       INSERT INTO project_join_request (project_id, user_id, message)
       VALUES (${req.params.id}, ${user.id}, ${body.message ?? null})
       RETURNING id, status, created_at AS "createdAt"`
 
-    // 創立者得知道有人在敲門。「成員」頁籤上的紅點只有進到那個專案才看得到，
-    // 而會來申請的多半是創立者近期沒在看的專案。
-    await notify({
-      db: sql, workspaceId: p.workspace_id, userId: p.created_by,
-      kind: 'JOIN_REQUESTED', actorId: user.id, actorName: user.displayName,
-      projectId: req.params.id, body: { message: body.message ?? null },
-    })
+    // 管理者得知道有人在敲門。「成員」頁籤上的紅點只有進到那個專案才看得到，
+    // 而會來申請的多半是他們近期沒在看的專案。
+    // 每一位管理者都通知，因為每一位都處理得了 —— 只通知建立者的話，
+    // 他放假時那筆申請就卡在沒有人被提醒的狀態。
+    const managers = await sql<{ user_id: string }[]>`
+      SELECT user_id FROM project_member
+      WHERE project_id = ${req.params.id} AND role = 'MANAGER'`
+    for (const m of managers) {
+      await notify({
+        db: sql, workspaceId: p.workspace_id, userId: m.user_id,
+        kind: 'JOIN_REQUESTED', actorId: user.id, actorName: user.displayName,
+        projectId: req.params.id, body: { message: body.message ?? null },
+      })
+    }
     return reply.code(201).send(row)
   })
 
-  /** 待審清單。只有創立者看得到誰想進來。 */
+  /** 待審清單。只有這個專案的管理者看得到誰想進來。 */
   app.get<{ Params: { id: string } }>('/projects/:id/join-requests', async req => {
     const user = await authenticate(req)
-    await requireProjectCreator(user.id, req.params.id)
+    await requireProjectManager(user.id, req.params.id)
     const rows = await sql`
       SELECT r.id, r.message, r.status, r.created_at AS "createdAt",
              u.id AS "userId", u.display_name AS "displayName", u.email
@@ -276,7 +350,7 @@ export default async function memberRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string; reqId: string } }>(
     '/projects/:id/join-requests/:reqId/approve', async req => {
       const user = await authenticate(req)
-      const { workspaceId } = await requireProjectCreator(user.id, req.params.id)
+      const { workspaceId } = await requireProjectManager(user.id, req.params.id)
       const body = decideBody.parse(req.body ?? {})
 
       return sql.begin(async tx => {
@@ -311,7 +385,7 @@ export default async function memberRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string; reqId: string } }>(
     '/projects/:id/join-requests/:reqId/reject', async req => {
       const user = await authenticate(req)
-      await requireProjectCreator(user.id, req.params.id)
+      await requireProjectManager(user.id, req.params.id)
       const body = decideBody.partial().parse(req.body ?? {})
 
       const rows = await sql`

@@ -185,21 +185,31 @@ export async function requireProjectRole(
 }
 
 /**
- * 只有專案創立者能做的事：放人進來、核准或婉拒申請、把人移出去。
+ * 管理成員能做的事：放人進來、核准或婉拒申請、改角色、把人移出去。
  *
- * 刻意不接受 MANAGER —— 使用者要的是「這個專案是誰開的，誰才能決定誰進得來」。
- * MANAGER 是能改專案內容的角色，可以有很多個，跟「開專案的人」不是同一件事。
+ * 原本只認「開專案的那個人」，現在放寬成**這個專案的管理者**。
+ * 開專案的人建立時就被寫成 MANAGER，所以舊的行為完全包含在新規則裡，
+ * 沒有人因此少掉權限；差別只在於他可以再指定幾個人一起管。
+ *
+ * 不用 requireProjectRole(..., 'MANAGER') 是為了訊息 —— 那條路會把
+ * 角色代碼原封不動吐進畫面，而成員頁的錯誤是直接顯示給人看的。
+ * 順便回報他是不是建立者，成員頁有幾條保護要靠這個判斷。
  */
-export async function requireProjectCreator(
+export async function requireProjectManager(
   userId: string, projectId: string
-): Promise<{ workspaceId: string }> {
-  const rows = await sql<{ workspace_id: string; created_by: string | null }[]>`
-    SELECT workspace_id, created_by FROM project WHERE id = ${projectId}`
+): Promise<{ workspaceId: string; createdBy: string | null }> {
+  const rows = await sql<{
+    workspace_id: string; created_by: string | null; role: ProjectRole | null
+  }[]>`
+    SELECT p.workspace_id, p.created_by, pm.role
+    FROM project p
+    LEFT JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${userId}
+    WHERE p.id = ${projectId}`
   if (!rows.length) throw forbidden('找不到專案，或你沒有權限')
-  if (rows[0].created_by !== userId) {
-    throw forbidden('只有專案的建立者可以管理成員')
+  if (rows[0].role !== 'MANAGER') {
+    throw forbidden('只有專案的管理者可以管理成員')
   }
-  return { workspaceId: rows[0].workspace_id }
+  return { workspaceId: rows[0].workspace_id, createdBy: rows[0].created_by }
 }
 
 /** 同一個工作區的成員才看得到、才申請得了這個工作區裡的專案 */
@@ -227,9 +237,9 @@ export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'GUEST'
  * 那為什麼擁有者還留著指派管理者的權力？因為不留就死結了：
  * 最後一個管理者離職之後，沒有人能再指派下一個，整個站就鎖死。
  *
- * 跟專案的權限是兩件事 —— 專案裡誰能進來由專案建立者決定（requireProjectCreator），
+ * 跟專案的權限是兩件事 —— 專案裡誰能進來由專案的管理者決定（requireProjectManager），
  * 但「這個人能不能登入這個站」是工作區管理者的事。管理者不會因此自動看得到
- * 每個專案的內容，那仍然要專案建立者放行。
+ * 每個專案的內容，那仍然要專案的管理者放行。
  */
 export async function requireWorkspaceAdmin(
   userId: string, workspaceId: string
