@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type LinkType, type Task, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
@@ -50,7 +50,8 @@ export function TaskDrawer({
    */
   const priorities = project?.priorities ?? []
   const priorityOf = (key: string) => priorities.find(p => p.key === key)?.name ?? key
-  const typeOf = (key: string) => project?.types?.find(t => t.key === key)?.name ?? ''
+  const types = project?.types ?? []
+  const typeOf = (key: string) => types.find(t => t.key === key)?.name ?? ''
   /*
    * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
    * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
@@ -190,8 +191,29 @@ export function TaskDrawer({
                 </div>
               )}
 
-              {/* ── 基本欄位 ── */}
+              {/*
+                * ── 基本欄位 ──
+                *
+                * 排法有三件事是刻意的：
+                * 1. **開始日與結束日一定要落在同一列**。七個欄位塞進四欄的話它們會
+                *    被切到兩列去，而那兩個是一起看的 —— 所以放在同一格裡並排。
+                * 2. **進度排在日期前面**。回報進度的時候先看的是「做到哪了」，
+                *    不是「哪天開始的」。
+                * 3. 進度給拖拉條 + 數字兩種輸入。拖拉條快，鍵盤打字準，
+                *    只給其中一種一定有人不順手。
+                */}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Field label={T.task.drawer.fieldTaskType}>
+                  {canEdit ? (
+                    <Select value={data.type}
+                            onChange={e => patch.mutate({ type: e.target.value })}
+                            className="w-full">
+                      {types.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+                    </Select>
+                  ) : (
+                    <ReadOnlyValue>{typeOf(data.type) || data.type}</ReadOnlyValue>
+                  )}
+                </Field>
                 <Field label={T.task.drawer.fieldStatus}>
                   {canEdit ? (
                     <Select value={data.statusKey}
@@ -237,30 +259,39 @@ export function TaskDrawer({
                     <ReadOnlyValue>{priorityOf(data.priority)}</ReadOnlyValue>
                   )}
                 </Field>
-                <Field label={T.task.drawer.fieldStart}>
-                  {canEdit ? (
-                    <Input type="date" defaultValue={data.startDate?.slice(0, 10) ?? ''}
-                           onBlur={e => patch.mutate({ startDate: e.target.value || null })} />
-                  ) : (
-                    <ReadOnlyValue>{fmtDate(data.startDate)}</ReadOnlyValue>
-                  )}
-                </Field>
-                <Field label={T.task.drawer.fieldDue}>
-                  {canEdit ? (
-                    <Input type="date" defaultValue={data.dueDate?.slice(0, 10) ?? ''}
-                           onBlur={e => patch.mutate({ dueDate: e.target.value || null })} />
-                  ) : (
-                    <ReadOnlyValue>{fmtDate(data.dueDate)}</ReadOnlyValue>
-                  )}
-                </Field>
-                <Field label={T.task.drawer.fieldProgress}>
-                  {canEdit ? (
-                    <Input type="number" min={0} max={100} defaultValue={data.progress}
-                           onBlur={e => patch.mutate({ progress: Number(e.target.value) })} />
-                  ) : (
-                    <ReadOnlyValue>{data.progress}</ReadOnlyValue>
-                  )}
-                </Field>
+                {/* 進度佔兩欄：拖拉條擠在四分之一欄寬裡拖不準 */}
+                <div className="col-span-2">
+                  <Field label={T.task.drawer.fieldProgress}>
+                    {canEdit ? (
+                      <ProgressField value={data.progress}
+                                     onCommit={v => patch.mutate({ progress: v })} />
+                    ) : (
+                      <ReadOnlyValue>{T.task.drawer.progressValue(data.progress)}</ReadOnlyValue>
+                    )}
+                  </Field>
+                </div>
+                {/* 開始與結束擺在同一格，中間一個破折號 —— 它們是一段期間，不是兩個欄位 */}
+                <div className="col-span-2">
+                  <Field label={`${T.task.drawer.fieldStart} – ${T.task.drawer.fieldDue}`}>
+                    {canEdit ? (
+                      <div className="flex items-center gap-2">
+                        <Input type="date" className="min-w-0 flex-1"
+                               defaultValue={data.startDate?.slice(0, 10) ?? ''}
+                               aria-label={T.task.drawer.fieldStart}
+                               onBlur={e => patch.mutate({ startDate: e.target.value || null })} />
+                        <span aria-hidden className="text-slate-400 dark:text-slate-400">–</span>
+                        <Input type="date" className="min-w-0 flex-1"
+                               defaultValue={data.dueDate?.slice(0, 10) ?? ''}
+                               aria-label={T.task.drawer.fieldDue}
+                               onBlur={e => patch.mutate({ dueDate: e.target.value || null })} />
+                      </div>
+                    ) : (
+                      <ReadOnlyValue>
+                        {fmtDate(data.startDate)} – {fmtDate(data.dueDate)}
+                      </ReadOnlyValue>
+                    )}
+                  </Field>
+                </div>
                 <Field label={T.task.drawer.fieldScheduleMode}>
                   {canEdit ? (
                     <Select value={data.scheduleMode}
@@ -528,6 +559,63 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
 
 const fmtDate = (d: string | null) =>
   (d ? d.slice(0, 10).replaceAll('-', '/') : T.common.none)
+
+/**
+ * 進度：拖拉條 + 數字，兩種都能改。
+ *
+ * **拖的過程不送出**（`onChange` 只更新本地的數字，`onPointerUp`／`onKeyUp`
+ * 才真的存）—— 一路拖過去每一格都打一次 PATCH 的話，一次拖曳會發出上百個請求，
+ * 而且回來的順序不保證，畫面會跳。
+ *
+ * 外面的值變了（例如別的地方改了進度、或存檔失敗被打回）就跟著回正，
+ * 但**正在拖的時候不要被蓋掉**，不然手還按著數字就自己跳回去。
+ */
+function ProgressField({ value, onCommit }: {
+  value: number
+  onCommit: (v: number) => void
+}) {
+  const [draft, setDraft] = useState(value)
+  const dragging = useRef(false)
+  useEffect(() => { if (!dragging.current) setDraft(value) }, [value])
+
+  const commit = (v: number) => {
+    dragging.current = false
+    const clamped = Math.min(100, Math.max(0, Math.round(v)))
+    setDraft(clamped)
+    if (clamped !== value) onCommit(clamped)
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        type="range" min={0} max={100} step={5} value={draft}
+        aria-label={T.task.drawer.progressAria}
+        onPointerDown={() => { dragging.current = true }}
+        onChange={e => setDraft(Number(e.target.value))}
+        onPointerUp={e => commit(Number((e.target as HTMLInputElement).value))}
+        onKeyUp={e => commit(Number((e.target as HTMLInputElement).value))}
+        onBlur={() => commit(draft)}
+        className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full
+                   bg-slate-200 accent-blue-600 dark:bg-slate-700 dark:accent-blue-500"
+      />
+      {/*
+        * 數字也能直接打 —— 要 35% 的時候拖拉條對不準。
+        * 寬度掛在外面這層 div，不是掛在 Input 上：`Input` 自己帶 `w-full`，
+        * 跟 `w-16` 是同一個 specificity，誰贏要看 CSS 的順序 ——
+        * 實際上是 `w-full` 贏，數字框會把拖拉條整條擠掉。
+        */}
+      <div className="w-16 shrink-0">
+        <Input
+          type="number" min={0} max={100} value={draft}
+          aria-label={T.task.drawer.fieldProgress}
+          onChange={e => setDraft(Number(e.target.value))}
+          onBlur={e => commit(Number(e.target.value))}
+          className="text-right tabular-nums"
+        />
+      </div>
+    </div>
+  )
+}
 
 /** 這筆活動紀錄有沒有附交接說明（只有轉派會有）。沒有就回空字串 */
 function handoverNoteOf(body: Record<string, unknown> | null): string {

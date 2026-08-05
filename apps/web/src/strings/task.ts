@@ -30,12 +30,22 @@ export const task = {
 
   /** 任務詳情（右側主區／抽屜） */
   drawer: {
+    /**
+     * 任務本身的種類（任務／問題／…）。**跟 `link.fieldType`（關聯類型）是兩回事**，
+     * 兩個都叫「類型」會分不出來，所以這裡把「任務」講出來。
+     * 選項是這個專案自己在系統參數頁定的，不是寫死的四種。
+     */
+    fieldTaskType: '任務種類',
     fieldStatus: '狀態',
     fieldAssignee: '負責人',
     fieldPriority: '優先級',
     fieldStart: '開始日',
     fieldDue: '結束日',
-    fieldProgress: '進度 %',
+    /** 進度是拖拉條旁邊直接顯示數字，標籤就不用再帶一個 % */
+    fieldProgress: '進度',
+    /** 拖拉條的無障礙名稱，以及旁邊那個數字 */
+    progressAria: '進度百分比',
+    progressValue: (n: number) => `${n}%`,
     fieldScheduleMode: '排程模式',
     scheduleAuto: '自動（依關聯推算日期）',
     scheduleManual: '人工鎖定（日期固定不被推動）',
