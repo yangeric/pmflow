@@ -219,14 +219,22 @@ export const DEFAULT_PARAMS: Record<'priority' | 'type', InsertArgs[]> = {
     { key: 'HIGH',   name: '高',   color: '#e07b39', rank: 3000, category: 'ACTIVE' },
     { key: 'URGENT', name: '緊急', color: '#dc2626', rank: 4000, category: 'ACTIVE' },
   ],
+  /*
+   * 順序刻意是「大項目 → 任務 → 問題 → 里程碑」，跟種類的上下關係同一個方向：
+   * 大項目裝著任務、問題掛在任務底下，由大到小讀下來。里程碑排最後 ——
+   * 它不是這條包含鏈上的東西，是插在時間軸上的一個點。
+   *
+   * 這只是**初始**順序，他隨時可以在系統參數頁自己拖（0013 那支 migration
+   * 只幫沒有動過順序的專案換）。畫面上不要另外寫一套排序，一律照這份清單。
+   */
   type: [
-    { key: 'TASK',      name: '任務',   color: '#3178c6', rank: 1000, category: 'ACTIVE' },
-    { key: 'MILESTONE', name: '里程碑', color: '#8b5cf6', rank: 2000, category: 'ACTIVE' },
+    { key: 'EPIC',      name: '大項目', color: '#d97706', rank: 1000, category: 'ACTIVE' },
+    { key: 'TASK',      name: '任務',   color: '#3178c6', rank: 2000, category: 'ACTIVE' },
     // 這裡叫「問題」不叫「缺陷」：他要的是「東西壞了、有人要修」這件事，
     // 「缺陷」是品管的行話，看的人得先翻譯一次。key 維持 BUG 不動 ——
     // 任務是靠 key 指回來的（0012_rename_bug_type.sql 只改既有專案的名稱）。
     { key: 'BUG',       name: '問題',   color: '#dc2626', rank: 3000, category: 'ACTIVE' },
-    { key: 'EPIC',      name: '大項目', color: '#d97706', rank: 4000, category: 'ACTIVE' },
+    { key: 'MILESTONE', name: '里程碑', color: '#8b5cf6', rank: 4000, category: 'ACTIVE' },
   ],
 }
 
