@@ -52,6 +52,18 @@ export const nav = {
       `${title}　${done}/${total} 個小項目已完成`,
     epicOverdue: (n: number) => `底下有 ${n} 張任務的對外詢問逾期`,
     taskOverdue: '對外詢問逾期',
+
+    /**
+     * 底下掛著幾張問題。
+     *
+     * 徽章上只寫數字看不出來是什麼（旁邊還有一個逾期的數字），
+     * 所以帶一個「問」字；完整的說法留給游標停著時的提示。
+     * 算的是**整棵子樹**、而且**不含自己** —— 收著的大項目看到的是總數，
+     * 展開之後每張任務再各自顯示自己底下的，兩個數字才對得起來。
+     */
+    bugBadge: (n: number) => `問 ${n}`,
+    epicBugs: (n: number) => `底下有 ${n} 張問題`,
+    taskBugs: (n: number) => `這張任務底下有 ${n} 張問題`,
     taskTitle: (ref: string, title: string) => `${ref}　${title}`,
     loose: (n: number) => `另有 ${n} 個任務的上層已被刪除，在「全部任務」裡找得到`,
     epicNamePlaceholder: '大項目名稱',

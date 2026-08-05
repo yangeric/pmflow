@@ -64,7 +64,7 @@ export function EpicSidebar({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
 
-  const { epics, stat, looseCount, childrenOf } = useMemo(() => {
+  const { epics, stat, looseCount, childrenOf, bugsUnder } = useMemo(() => {
     const ids = new Set(tasks.map(t => t.id))
     const epics = tasks.filter(t => !t.parentId)
     const rolled = rollup(tasks)
@@ -88,6 +88,29 @@ export function EpicSidebar({
       return n
     }
 
+    /**
+     * 這個節點**底下**有幾張問題（不含自己）。
+     *
+     * 收著的大項目顯示整棵子樹的總數，展開之後每張任務再各自顯示自己底下的 ——
+     * 所以要走完整棵子樹，不能只看直屬子任務，不然收合前後看到的數字會對不上。
+     *
+     * 不含自己是刻意的：一張問題自己就掛著「問題」的種類徽章了，
+     * 旁邊再標一個「1」只會讓人以為它底下還有東西。
+     */
+    const bugsUnder = (rootId: string): number => {
+      let n = 0
+      const walk = (id: string, seen = new Set<string>()) => {
+        if (seen.has(id)) return
+        seen.add(id)
+        for (const k of kids.get(id) ?? []) {
+          if (k.type === 'BUG') n++
+          walk(k.id, seen)
+        }
+      }
+      walk(rootId)
+      return n
+    }
+
     const stat = new Map(epics.map(e => {
       const r = rolled.get(e.id)
       return [e.id, {
@@ -97,11 +120,12 @@ export function EpicSidebar({
         total: r?.derived ? r.totalCount : 1,
         hasChildren: !!r?.derived,
         overdue: overdueIn(e.id),
+        bugs: bugsUnder(e.id),
       }]
     }))
 
     const looseCount = tasks.filter(t => t.parentId && !ids.has(t.parentId)).length
-    return { epics, stat, looseCount, childrenOf: kids }
+    return { epics, stat, looseCount, childrenOf: kids, bugsUnder }
   }, [tasks])
 
   // 右邊正在看的任務，它所屬的大項目自動展開，不然使用者會找不到自己在哪
@@ -259,6 +283,15 @@ export function EpicSidebar({
                     ? 'font-medium text-slate-800 dark:text-slate-100'
                     : 'text-slate-700 dark:text-slate-300'
                 )}>{epic.title}</span>
+                {/* 問題數排在逾期前面：問題是「這裡有多少事情壞了」，
+                    逾期是「有多少事情在等外面」，兩件事分開標，不要合成一個數字 */}
+                {s.bugs > 0 && (
+                  <span title={T.nav.sidebar.epicBugs(s.bugs)}
+                        className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
+                                   dark:bg-rose-500/15 dark:text-rose-300">
+                    {T.nav.sidebar.bugBadge(s.bugs)}
+                  </span>
+                )}
                 {s.overdue > 0 && (
                   <span title={T.nav.sidebar.epicOverdue(s.overdue)}
                         className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
@@ -303,6 +336,13 @@ export function EpicSidebar({
                   <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full',
                     kid.progress >= 100 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
                   <span className="min-w-0 flex-1 truncate">{kid.title}</span>
+                  {bugsUnder(kid.id) > 0 && (
+                    <span title={T.nav.sidebar.taskBugs(bugsUnder(kid.id))}
+                          className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
+                                     dark:bg-rose-500/15 dark:text-rose-300">
+                      {T.nav.sidebar.bugBadge(bugsUnder(kid.id))}
+                    </span>
+                  )}
                   {kid.inquiryState === 'OVERDUE' && (
                     <span title={T.nav.sidebar.taskOverdue}
                           className="shrink-0 text-[11px] text-red-600 dark:text-red-400">⚠️</span>
