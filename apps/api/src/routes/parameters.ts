@@ -5,6 +5,7 @@ import { sql, type Db } from '../lib/db.js'
 import { authenticate, requireProjectRole, requireProjectManager } from '../lib/auth.js'
 import { rankBetween, evenRanks } from '../lib/rank.js'
 import { badRequest, notFound } from '../lib/errors.js'
+import { countIllegalAfterRetype } from '../lib/hierarchy.js'
 
 /**
  * 每個專案自己的系統參數：任務狀態、優先度、任務類型。
@@ -543,6 +544,25 @@ export default async function parameterRoutes(app: FastifyInstance) {
           `那些任務只能改成同一個專案裡的其他${spec.label}。`)
       }
       targetKey = target.key
+
+      /*
+       * 刪掉一種任務種類時，那些任務會被整批改成另一種 —— 那條路一次改幾十張，
+       * 一張一張建立時擋的種類上下關係（lib/hierarchy.ts）在這裡完全繞得過去：
+       * 把一整批任務改成「大項目」的話，它們原本掛著的位置立刻全部不合法。
+       *
+       * 所以搬之前先問一句「搬完會不會有人違規」。有的話整筆擋下來，
+       * 並且點名幾張 —— 只說「不行」的話，他得自己一張一張猜是哪幾張卡住。
+       * 這裡不自動幫他搬位置：那等於在他沒看到的地方動他的階層。
+       */
+      if (kind === 'type') {
+        const bad = await countIllegalAfterRetype(sql, req.params.id, self.key, targetKey)
+        if (bad > 0) {
+          throw badRequest(
+            `有 ${bad} 張任務改成「${target.name}」之後會放錯位置`,
+            '大項目只能放在最上層或另一個大項目底下；問題一定要掛在一張任務底下。'
+            + '請先把那些任務搬到合適的上層，或改成別的種類，再回來刪。')
+        }
+      }
     }
 
     await sql.begin(async tx => {

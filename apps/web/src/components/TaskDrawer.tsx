@@ -6,6 +6,7 @@ import { Button, Input, Select, Field, Spinner, InquiryBadge, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
+import { typesAllowedFor } from '../lib/hierarchy'
 
 /**
  * 任務詳情。
@@ -14,7 +15,7 @@ import { T } from '../strings'
  * variant='overlay'：舊的覆蓋式抽屜，保留給之後可能需要的浮動情境。
  */
 export function TaskDrawer({
-  taskId, workspaceId, statuses, allTasks, onClose, variant = 'pane', flash = false,
+  taskId, workspaceId, statuses, allTasks, onClose, variant = 'pane', flash = false, onSeen,
 }: {
   taskId: string
   workspaceId: string
@@ -25,9 +26,14 @@ export function TaskDrawer({
   /**
    * 從通知點進來的就閃一下紅框，指出「就是這一張」——
    * 那一下畫面上換掉太多東西，眼睛不知道該看哪裡。
-   * 動畫在 `index.css` 的 `.pmflow-flash`，閃三下就停。
+   * 動畫在 `index.css` 的 `.pmflow-flash`，閃三下之後**紅框留著不會自己消失**。
    */
   flash?: boolean
+  /**
+   * 他在這張任務上動了一下（點、按鍵）就通知上層把紅框收走 ——
+   * 到那一刻才確定他真的看到了。不設時器自動收：人不見得正看著螢幕。
+   */
+  onSeen?: () => void
 }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => Api.task(taskId) })
@@ -130,9 +136,45 @@ export function TaskDrawer({
     : members
   const nameOf = (id: string) => members.find(m => m.id === id)?.displayName ?? ''
 
+  /*
+   * 種類的下拉要濾掉放不進去的選項。上層與子任務都從 allTasks 找 ——
+   * `data.children` 只有 id／標題／狀態，沒有種類。
+   */
+  const typeChoices = typesAllowedFor(types, {
+    current: data?.type ?? '',
+    parentType: allTasks.find(t => t.id === data?.parentId)?.type ?? null,
+    childTypes: allTasks.filter(t => t.parentId === data?.id).map(t => t.type),
+  })
+
   const [targetId, setTargetId] = useState('')
   const [linkType, setLinkType] = useState<LinkType>('FS')
   const [lag, setLag] = useState(0)
+
+  /*
+   * 大項目與任務之間沒有先後（規矩見 AGENTS.md）：一邊是大項目、另一邊不是的時候，
+   * 排程那四種整組不給選。兩邊都是大項目、或兩邊都不是，都照舊。
+   * 還沒選對象時先當作可以 —— 一進來就少半組選項，看起來像壞掉。
+   */
+  const targetType = allTasks.find(t => t.id === targetId)?.type
+  const schedulingAllowed = !targetType
+    || (data?.type === 'EPIC') === (targetType === 'EPIC')
+
+  /*
+   * 選了大項目之後，原本停在「完成後開始」的話會變成一個已經不在清單裡的值 ——
+   * 畫面顯示第一個語意類，送出去的卻還是排程類。把它拉回合法的第一個。
+   */
+  useEffect(() => {
+    if (!schedulingAllowed && SCHEDULING.includes(linkType)) setLinkType(SEMANTIC[0])
+  }, [schedulingAllowed, linkType])
+
+  /*
+   * 紅框在他動一下之後收走。用 capture 掛在最外層：底下的控制項各自
+   * 有自己的 handler，不 capture 的話點在按鈕上就傳不上來。
+   * 沒在閃的時候不掛，省得每一次點擊都跑一趟沒有作用的 setState。
+   */
+  const seen = flash && onSeen
+    ? { onPointerDownCapture: onSeen, onKeyDownCapture: onSeen }
+    : {}
 
   const Shell = ({ children }: { children: React.ReactNode }) =>
     variant === 'overlay' ? (
@@ -141,13 +183,15 @@ export function TaskDrawer({
         {/* 覆蓋式抽屜是疊在卡片上的浮層，深色底要比卡片再亮一階才分得出層次 */}
         <div className={cx('flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl',
                            'dark:bg-slate-800', flash && 'pmflow-flash')}
+             {...seen}
              onClick={e => e.stopPropagation()}>
           {children}
         </div>
       </div>
     ) : (
       <div className={cx('flex h-full min-h-0 flex-col bg-white dark:bg-slate-900',
-                         flash && 'pmflow-flash')}>
+                         flash && 'pmflow-flash')}
+           {...seen}>
         {children}
       </div>
     )
@@ -221,10 +265,18 @@ export function TaskDrawer({
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Field label={T.task.drawer.fieldTaskType}>
                   {canEdit ? (
+                    /*
+                     * 能改成哪幾種，要同時看**上層是誰**與**底下掛了什麼**：
+                     * 大項目不能放在任務底下；底下還掛著問題的話，自己就不能
+                     * 從任務變成別的（問題的上層一定要是任務）。
+                     * 判斷在 lib/hierarchy.ts，後端有同一份守門員。
+                     */
                     <Select value={data.type}
                             onChange={e => patch.mutate({ type: e.target.value })}
                             className="w-full">
-                      {types.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+                      {typeChoices.map(t => (
+                        <option key={t.key} value={t.key}>{t.name}</option>
+                      ))}
                     </Select>
                   ) : (
                     <ReadOnlyValue>{typeOf(data.type) || data.type}</ReadOnlyValue>
@@ -476,14 +528,23 @@ export function TaskDrawer({
                     <Field label={T.task.link.fieldType}>
                       <Select value={linkType} onChange={e => setLinkType(e.target.value as LinkType)}
                               className="w-full">
-                        <optgroup label={T.task.link.groupScheduling}>
-                          {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
-                        </optgroup>
+                        {/* 大項目與任務之間沒有先後，排程那一組整個不畫（見下方說明） */}
+                        {schedulingAllowed && (
+                          <optgroup label={T.task.link.groupScheduling}>
+                            {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
+                          </optgroup>
+                        )}
                         <optgroup label={T.task.link.groupSemantic}>
                           {SEMANTIC.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
                         </optgroup>
                       </Select>
                     </Field>
+                    {/* 選項少了一整組一定要講原因，不然看起來像壞掉 */}
+                    {!schedulingAllowed && (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {T.task.link.noSchedulingAcrossEpic}
+                      </p>
+                    )}
                   </div>
                   <div className="w-28">
                     <Field label={T.task.link.fieldLag}>

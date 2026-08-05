@@ -5,6 +5,7 @@ import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, cx } from '..
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../lib/auth'
 import { rollup, isTaskOverdue } from '../lib/rollup'
+import { typesAllowedUnder } from '../lib/hierarchy'
 import { T } from '../strings'
 
 /** 清單／樹狀視圖：依 parentId 展開階層（上下關聯） */
@@ -101,12 +102,23 @@ export default function ListView({
    * 選過的種類**留著不重設**：要連開三張問題的人不必每一張都再選一次。
    */
   const [newType, setNewType] = useState('')
-  const typeOptions = project?.types ?? []
-  const pickedType = newType || typeOptions[0]?.key || 'TASK'
+  const allTypes = project?.types ?? []
+  /**
+   * 能選哪幾種要看**加在誰底下**（見 lib/hierarchy.ts）：問題只能掛在任務底下、
+   * 大項目不能掛在任務底下。不合法的乾脆不要畫出來 ——
+   * 畫出來按了被後端拒絕，比一開始就沒有那個選項難懂得多。
+   */
+  const typesUnder = (parentType: string | null) => typesAllowedUnder(allTypes, parentType)
+  /**
+   * 選過的種類留著（連開三張問題不用選三次），但換到不能放那一種的地方時要退回
+   * 第一個合法的 —— 不然畫面顯示的跟真的送出去的會是兩回事。
+   */
+  const typeFor = (options: ProjectParam[]) =>
+    options.some(t => t.key === newType) ? newType : (options[0]?.key ?? 'TASK')
 
   const create = useMutation({
-    mutationFn: (v: { parentId: string | null; title: string }) =>
-      Api.createTask(projectId, { title: v.title, parentId: v.parentId, type: pickedType }),
+    mutationFn: (v: { parentId: string | null; title: string; type: string }) =>
+      Api.createTask(projectId, { title: v.title, parentId: v.parentId, type: v.type }),
     onSuccess: () => {
       setTitle('')
       setTopTitle('')
@@ -118,6 +130,8 @@ export default function ListView({
   // 大項目的進度／起迄日由子任務彙總，不直接顯示資料庫存的值
   const rolled = useMemo(() => rollup(tasks), [tasks])
   const parent = parentForNew ? tasks.find(t => t.id === parentForNew) : undefined
+  /** 最下面那一列加的是「跟目前這一層同級」的：側欄選了大項目就是掛在它底下 */
+  const topTypes = typesUnder(parent?.type ?? null)
 
   // 依階層排序：父任務後面緊接自己的子樹
   const ordered = useMemo(() => {
@@ -144,7 +158,8 @@ export default function ListView({
 
   const newTop = () => {
     if (!topTitle.trim()) return
-    create.mutate({ parentId: parentForNew ?? null, title: topTitle.trim() })
+    create.mutate({ parentId: parentForNew ?? null, title: topTitle.trim(),
+                    type: typeFor(topTypes) })
   }
 
   return (
@@ -345,14 +360,16 @@ export default function ListView({
                     <div className="flex items-center gap-2"
                          style={{ paddingLeft: (t.depth + 1) * 20 }}>
                       <span className="select-none text-slate-300 dark:text-slate-500">└</span>
-                      <NewTaskType value={pickedType} options={typeOptions} onChange={setNewType} />
+                      <NewTaskType value={typeFor(typesUnder(t.type))}
+                                   options={typesUnder(t.type)} onChange={setNewType} />
                       <Input
                         autoFocus
                         value={title}
                         onChange={e => setTitle(e.target.value)}
                         onKeyDown={e => {
                           if (e.key === 'Enter' && title.trim()) {
-                            create.mutate({ parentId: t.id, title: title.trim() })
+                            create.mutate({ parentId: t.id, title: title.trim(),
+                                            type: typeFor(typesUnder(t.type)) })
                           }
                           if (e.key === 'Escape') { setAddingTo(null); setTitle('') }
                         }}
@@ -363,7 +380,8 @@ export default function ListView({
                           在一排輸入框旁邊看起來像說明文字，沒有人知道那可以按 */}
                       <Button variant="primary" className="shrink-0" disabled={!title.trim()}
                               onClick={() => title.trim()
-                                && create.mutate({ parentId: t.id, title: title.trim() })}>
+                                && create.mutate({ parentId: t.id, title: title.trim(),
+                                                   type: typeFor(typesUnder(t.type)) })}>
                         {T.task.list.addSubmit}
                       </Button>
                       <Button className="shrink-0" onClick={() => { setAddingTo(null); setTitle('') }}>
@@ -394,7 +412,8 @@ export default function ListView({
               {addingTop ? (
                 <>
                 <div className="flex items-center gap-2">
-                  <NewTaskType value={pickedType} options={typeOptions} onChange={setNewType} />
+                  <NewTaskType value={typeFor(topTypes)} options={topTypes}
+                               onChange={setNewType} />
                   <Input
                     autoFocus
                     value={topTitle}

@@ -74,15 +74,13 @@ export default function App() {
    * 從通知點進來的那張任務，要閃紅框指出來是哪一張。
    *
    * 存的是 id 不是布林值：連點兩則不同的通知時，第二則要能重新觸發
-   * （`key` 換掉 → 元素重掛 → 動畫從頭跑）。動畫跑完就自己清掉，
-   * 不然回頭再打開同一張任務會莫名其妙又閃一次。
+   * （`key` 換掉 → 元素重掛 → 動畫從頭跑）。
+   *
+   * **不設定時器自動收掉。** 人不見得正看著螢幕，閃完就退場等於沒發生過 ——
+   * 要等他真的在那張任務上動一下（點、按鍵、或關掉）才清。
+   * 動畫三下就停，之後留著一圈靜止的紅框（見 index.css 的 `.pmflow-flash`）。
    */
   const [flashTask, setFlashTask] = useState<string | null>(null)
-  useEffect(() => {
-    if (!flashTask) return
-    const id = setTimeout(() => setFlashTask(null), 2500)
-    return () => clearTimeout(id)
-  }, [flashTask])
   const [account, setAccount] = useState<AccountView>(null)
 
   /**
@@ -208,6 +206,7 @@ export default function App() {
       view={view} setView={setView}
       openTask={openTask} setOpenTask={setOpenTask}
       flashTask={flashTask}
+      onFlashSeen={() => setFlashTask(null)}
       onSwitchProject={() => { setProjectId(null); setView('list'); setOpenTask(null) }}
       bell={bell}
       menu={userMenu}
@@ -234,7 +233,7 @@ function AccountTab({ active, onClick, children }: {
  * 查詢集中在這一層，側欄和主視圖吃同一份資料，不會各抓一次。
  */
 function ProjectWorkspace({
-  projectId, workspaceId, view, setView, openTask, setOpenTask, flashTask,
+  projectId, workspaceId, view, setView, openTask, setOpenTask, flashTask, onFlashSeen,
   onSwitchProject, bell, menu,
 }: {
   projectId: string
@@ -245,6 +244,8 @@ function ProjectWorkspace({
   setOpenTask: (id: string | null) => void
   /** 剛從通知點進來的那張任務，要閃紅框指出來。null＝不閃 */
   flashTask: string | null
+  /** 他在那張任務上動了一下，或關掉了 —— 紅框可以收走了 */
+  onFlashSeen: () => void
   onSwitchProject: () => void
   /** 通知鈴鐺。由 App 建立，因為點下去要跳去哪是 App 的導覽狀態 */
   bell: ReactNode
@@ -403,7 +404,8 @@ function ProjectWorkspace({
               statuses={project?.statuses ?? []}
               allTasks={tasks}
               flash={flashTask === openTask}
-              onClose={() => setOpenTask(null)}
+              onSeen={onFlashSeen}
+              onClose={() => { onFlashSeen(); setOpenTask(null) }}
             />
           ) : (
             <>

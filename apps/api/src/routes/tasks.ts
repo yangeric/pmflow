@@ -4,6 +4,7 @@ import { sql } from '../lib/db.js'
 import { authenticate, requireProjectRole, requireTaskAccess } from '../lib/auth.js'
 import { rankBetween } from '../lib/rank.js'
 import { rebuildClosure, assertNotDescendant } from '../lib/graph.js'
+import { assertTypeHierarchy } from '../lib/hierarchy.js'
 import { schedule, type SchedTask, type SchedLink } from '../lib/schedule.js'
 import { notify } from '../lib/notify.js'
 import { badRequest, forbidden, notFound } from '../lib/errors.js'
@@ -154,6 +155,13 @@ export default async function taskRoutes(app: FastifyInstance) {
         if (!parent) throw badRequest('指定的父任務不存在')
       }
 
+      // 種類決定它能掛在誰底下（見 lib/hierarchy.ts）。建立時種類與上層都是
+      // 這次決定的，所以一定要檢查 —— 沒填種類時寫進去的是 TASK，跟下面的 INSERT 一致
+      await assertTypeHierarchy(tx, {
+        nextType: body.type ?? 'TASK',
+        nextParent: { id: body.parentId ?? null },
+      })
+
       const [{ rank }] = await tx<{ rank: number }[]>`
         SELECT coalesce(max(rank), 0) + 1000 AS rank FROM task WHERE project_id = ${req.params.id}`
 
@@ -254,6 +262,18 @@ export default async function taskRoutes(app: FastifyInstance) {
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
+
+      /*
+       * 種類與上層的搭配（見 lib/hierarchy.ts）。**只在真的動到這兩個欄位時檢查** ——
+       * 既有資料可能本來就不合規（規則是後來才定的），改標題、換負責人不該被它擋住。
+       * 改種類還要連帶看子任務：把一張任務改成大項目，底下掛著的問題就會變成
+       * 「掛在大項目底下」，那一關也在同一支裡。
+       */
+      await assertTypeHierarchy(tx, {
+        taskId: req.params.id,
+        nextType: b.type,
+        nextParent: b.parentId !== undefined ? { id: b.parentId } : undefined,
+      })
 
       // 舊的負責人要在 UPDATE 之前讀，不然就分不出「換人」和「本來就是他」——
       // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看。
@@ -433,6 +453,13 @@ export default async function taskRoutes(app: FastifyInstance) {
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
+
+      // 拖曳只換上層，種類不動，但一樣要過同一關（見 lib/hierarchy.ts）——
+      // 用拖的把問題拉到大項目底下，跟在詳情頁改上層是同一件事
+      await assertTypeHierarchy(tx, {
+        taskId: req.params.id,
+        nextParent: b.parentId !== undefined ? { id: b.parentId } : undefined,
+      })
 
       // UPDATE 之前先讀，理由跟 PATCH 那邊一樣：改完就查不回「本來在哪一欄」
       const [before] = await tx<{ status_key: string }[]>`

@@ -239,6 +239,42 @@ NID=$(curl -s -H "Authorization: Bearer $JT" $API/notifications \
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST $API/notifications/$NID/read)
 chk "標記別人的通知已讀 → 404" "$C" "404"
 
+echo "── 24. 任務種類的上下關係 ──"
+# 大項目只能在最上層或另一個大項目底下；問題的上層一定要是一張任務。
+# 四個入口（建立、改任務、拖曳、改種類連帶影響子任務）共用 lib/hierarchy.ts。
+CODE(){ curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -H 'content-type: application/json' "$@"; }
+H_TASK=$(curl -s -H "$AUTH" -H 'content-type: application/json' -X POST $API/projects/$PID/tasks \
+  -d '{"title":"種類規則－母任務","type":"TASK"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+
+chk "建立：大項目掛在任務底下 → 400" \
+  "$(CODE -X POST $API/projects/$PID/tasks -d "{\"title\":\"種類規則－大項目\",\"type\":\"EPIC\",\"parentId\":\"$H_TASK\"}")" "400"
+chk "建立：問題沒有上層 → 400" \
+  "$(CODE -X POST $API/projects/$PID/tasks -d '{"title":"種類規則－孤兒問題","type":"BUG"}')" "400"
+chk "建立：問題掛在任務底下 → 201" \
+  "$(CODE -X POST $API/projects/$PID/tasks -d "{\"title\":\"種類規則－問題\",\"type\":\"BUG\",\"parentId\":\"$H_TASK\"}")" "201"
+
+TASKS=$(curl -s -H "$AUTH" "$API/projects/$PID/tasks")
+H_BUG=$(tid "種類規則－問題" id)
+
+# 底下掛著問題的任務改成大項目 → 那些問題就變成掛在大項目底下，要擋
+chk "改種類：底下有問題的任務改成大項目 → 400" \
+  "$(CODE -X PATCH $API/tasks/$H_TASK -d '{"type":"EPIC"}')" "400"
+# 不動種類、不動上層的異動一律放行（既有資料可能本來就不合規）
+chk "只改標題不受影響 → 200" \
+  "$(CODE -X PATCH $API/tasks/$H_TASK -d '{"title":"種類規則－母任務"}')" "200"
+# 拖曳只改上層也要擋
+chk "拖曳：把問題拖到大項目底下 → 400" \
+  "$(CODE -X POST $API/tasks/$H_BUG/move -d "{\"parentId\":\"$T_EPIC\"}")" "400"
+# 里程碑不受限制
+chk "建立：里程碑掛在任務底下 → 201" \
+  "$(CODE -X POST $API/projects/$PID/tasks -d "{\"title\":\"種類規則－里程碑\",\"type\":\"MILESTONE\",\"parentId\":\"$H_TASK\"}")" "201"
+
+# 收乾淨，不要在示範資料庫裡留下測試用的任務
+TASKS=$(curl -s -H "$AUTH" "$API/projects/$PID/tasks")
+for t in "種類規則－里程碑" "種類規則－問題" "種類規則－母任務"; do
+  curl -s -o /dev/null -X DELETE -H "$AUTH" $API/tasks/$(tid "$t" id)
+done
+
 echo
 echo "════════ 通過 $pass 項，失敗 $fail 項 ════════"
 exit $([ "$fail" -eq 0 ] && echo 0 || echo 1)
