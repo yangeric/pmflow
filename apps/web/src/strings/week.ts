@@ -28,8 +28,32 @@ export const week = {
 
   /** 狀態分組的標題：狀態名稱後面接張數 */
   groupCount: (n: number) => `${n} 張`,
-  /** 任務指到一個這個專案已經沒有的狀態時，收在最後一組 */
+  /** 任務指到一個這個專案已經沒有的狀態／類型時，收在最後一組 */
   unknownStatus: '未對應的狀態',
+  unknownType: '未對應的類型',
+
+  /**
+   * 分組方式。依狀態回答「這禮拜卡在哪一關」，
+   * 依類型回答「這禮拜是在做事，還是在處理問題」—— 一週裡問題佔了半數的話，
+   * 那件事光看狀態分組是看不出來的。
+   */
+  groupByLabel: '分組方式',
+  groupByStatus: '依狀態',
+  groupByType: '依類型',
+
+  /**
+   * 分組收合。狀態一多，畫面就變成一長條要一直捲；
+   * 把不關心的那幾段收起來，剩下的才看得到彼此。
+   */
+  collapseGroup: (name: string) => `收合${name}`,
+  expandGroup: (name: string) => `展開${name}`,
+  collapseAll: '全部收合',
+  expandAll: '全部展開',
+  /**
+   * 收起來的那一組，逾期張數要留在標題上 ——
+   * 收合是「我現在不看細節」，不是「這些事可以不管」。
+   */
+  groupOverdue: (n: number) => `${n} 張已逾期`,
 
   /** 負責人還沒指定 */
   unassigned: '未指派',

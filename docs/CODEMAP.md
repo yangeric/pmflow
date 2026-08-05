@@ -30,6 +30,7 @@
 | 父子任務的進度捲動 | 前端 `lib/rollup.ts` |
 | 關聯線的種類、方向、合法性 | 後端 `lib/graph.ts` |
 | 發文追蹤的狀態（逾期／已回） | 後端 `lib/inquiry.ts` |
+| 燃盡圖怎麼回推歷史狀態 | 後端 `lib/burndown.ts`（正向重播 `activity`） |
 | 卡片排序 | 後端 `lib/rank.ts` |
 | 錯誤訊息長相 | 後端 `lib/errors.ts`（RFC 7807 problem+json） |
 | 示範資料 | `apps/api/src/seed.ts` |
@@ -49,6 +50,8 @@ lib/
   graph.ts         106   關聯種類常數、closure table 重建、防環、防把子孫設成父
   schedule.ts      180   排程引擎：拓撲排序、最早開始、關鍵路徑、衝突
   inquiry.ts        75   發文追蹤狀態重算、逾期掃描、工作日加法
+  burndown.ts      330   燃盡圖：拿 activity 正向重播每張任務的狀態歷史
+                         ← 查不到轉換紀錄時退回 updated_at 估，回報估了幾張
   rank.ts           23   卡片之間插隊用的數字排序
 routes/
   auth.ts          177   註冊／登入／refresh／登出／me
@@ -57,6 +60,7 @@ routes/
   tasks.ts         327   任務 CRUD、move、reschedule
   links.ts         101   任務關聯
   inquiries.ts     264   發文追蹤與跨專案看板、單位統計
+  dashboard.ts     190   /burndown 與 /workload 兩支計算端點
 migrations/              0001_init.sql、0002_project_membership.sql
 seed.ts           150   示範帳號與兩個示範專案
 ```
@@ -96,6 +100,11 @@ pages/
   Gantt.tsx       228
   Graph.tsx       964   關聯圖：自己算版面（union-find 併欄）、卡住／並行標記
   InquiryBoard.tsx194   跨專案發文追蹤
+  Week.tsx        340   這一週有哪些任務在跑：依狀態或依類型分組，組可以收合
+  Dashboard.tsx   155   儀表板：控制項 + 下面兩張圖
+components/（圖表，都是手刻 SVG，沒有圖表套件）
+  BurndownChart.tsx   567   燃盡圖：三條線、十字準星、表格版
+  WorkloadHeatmap.tsx 470   負載熱圖：色階、超載小三角、請假斜線、表格版
 ```
 
 ### 幾個踩過的坑，改之前先知道

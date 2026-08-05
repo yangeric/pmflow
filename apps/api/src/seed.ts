@@ -21,6 +21,15 @@ const day = (offset: number) => {
 }
 
 /**
+ * 回填用的時間戳。示範資料要有「過去幾週」的樣子，不能全部都是 now()。
+ *
+ * 不帶時區後綴是刻意的：資料庫的時區是 Asia/Taipei，這樣寫進去的
+ * 「那天 09:00」就是台北的 09:00，`created_at::date` 分桶時才會落在對的日子。
+ * 補上 Z 的話全部會往前位移八小時，跨日的那幾筆就跑到前一天去了。
+ */
+const at = (offset: number, time: string) => `${day(offset)}T${time}:00`
+
+/**
  * 第一次啟動時建立示範資料，讓人打開就有東西看，不用面對空白畫面。
  * 已經有使用者就完全不動。設 PMFLOW_SEED_DEMO=false 可關閉。
  */
@@ -52,7 +61,7 @@ export async function seedDemo(): Promise<boolean> {
         INSERT INTO project (workspace_id, key, name, color, start_date, end_date, rank,
                              created_by)
         VALUES (${ws.id}, ${meta.key}, ${meta.name}, ${meta.color},
-                ${day(-7)}, ${day(45)}, ${(pi + 1) * 1000}, ${user.id})
+                ${day(-28)}, ${day(45)}, ${(pi + 1) * 1000}, ${user.id})
         RETURNING id`
       await tx`INSERT INTO project_member (project_id, user_id, role)
                VALUES (${p.id}, ${user.id}, 'MANAGER')`
@@ -69,36 +78,105 @@ export async function seedDemo(): Promise<boolean> {
 
       // ── 建一組有階層、有四種依賴的任務，讓甘特一打開就有東西看 ──
       // 刻意做成三個「大項目」（parent 為 null），側欄才看得出結構。
-      const defs = [
-        // 大項目一
-        { n: 1, title: '前置準備',       type: 'EPIC',      st: 'doing', s: -7, d: 3,  parent: null, prog: 55 },
-        { n: 2, title: '需求確認與盤點', type: 'TASK',      st: 'doing', s: -7, d: 3,  parent: 1,    prog: 60 },
-        { n: 3, title: '設備清冊建立',   type: 'TASK',      st: 'done',  s: -7, d: -2, parent: 1,    prog: 100 },
-        { n: 4, title: '網路架構確認',   type: 'TASK',      st: 'doing', s: -1, d: 3,  parent: 1,    prog: 40 },
+      //
+      // 每張任務還要帶三樣「時間感」的東西，不然儀表板一打開是空的：
+      //   c     這張任務是哪天開出來的。燃盡圖的總量從這天開始算，
+      //         全部都用 now() 的話，過去每一天的總量都是 0，線是平的。
+      //   hist  狀態變更的歷程（見下面的 activity 回填）。**重播的結果必須
+      //         等於 st**，對不上的話燃盡圖會把它算成「完成時間是估的」。
+      //   mine  指給示範帳號。留一部分不指派，熱圖才有「沒有指定負責人」那列。
+      const defs: Array<{
+        n: number; title: string; type: string; st: string
+        s: number; d: number; parent: number | null; prog: number
+        c: number; mine?: boolean; est?: number | null
+        hist?: Array<[number, string, string]>
+      }> = [
+        // 大項目一：已經做掉一大半的前置作業，燃盡線的下坡就是這一段
+        { n: 1, title: '前置準備',       type: 'EPIC',      st: 'doing', s: -28, d: 3,  parent: null, prog: 55, c: -28 },
+        { n: 2, title: '需求確認與盤點', type: 'TASK',      st: 'doing', s: -7, d: 3,  parent: 1,    prog: 60, c: -28, mine: true,
+          hist: [[-6, 'todo', 'doing']] },
+        { n: 3, title: '設備清冊建立',   type: 'TASK',      st: 'done',  s: -7, d: -2, parent: 1,    prog: 100, c: -28, mine: true,
+          hist: [[-7, 'todo', 'doing'], [-3, 'doing', 'review'], [-2, 'review', 'done']] },
+        { n: 4, title: '網路架構確認',   type: 'TASK',      st: 'doing', s: -1, d: 3,  parent: 1,    prog: 40, c: -28,
+          hist: [[-1, 'todo', 'doing']] },
+        { n: 11, title: '現地勘查與拍照', type: 'TASK',     st: 'done',  s: -28, d: -24, parent: 1,  prog: 100, c: -28, mine: true,
+          hist: [[-27, 'todo', 'doing'], [-24, 'doing', 'done']] },
+        { n: 12, title: '既有網路盤點',   type: 'TASK',     st: 'done',  s: -27, d: -22, parent: 1,  prog: 100, c: -28, mine: true,
+          hist: [[-26, 'todo', 'doing'], [-22, 'doing', 'done']] },
+        { n: 13, title: '機房環境量測',   type: 'TASK',     st: 'done',  s: -25, d: -20, parent: 1,  prog: 100, c: -28,
+          hist: [[-24, 'todo', 'doing'], [-19, 'doing', 'done']] },
+        { n: 14, title: '廠商初步洽談',   type: 'TASK',     st: 'done',  s: -22, d: -16, parent: 1,  prog: 100, c: -28, mine: true,
+          hist: [[-21, 'todo', 'doing'], [-18, 'doing', 'review'], [-16, 'review', 'done']] },
+        { n: 15, title: '搬遷範圍界定',   type: 'TASK',     st: 'done',  s: -18, d: -12, parent: 1,  prog: 100, c: -28,
+          hist: [[-17, 'todo', 'doing'], [-12, 'doing', 'done']] },
+        { n: 16, title: '停機時段協調',   type: 'TASK',     st: 'verified', s: -14, d: -8, parent: 1, prog: 100, c: -28, mine: true,
+          hist: [[-13, 'todo', 'doing'], [-9, 'doing', 'verifying'], [-6, 'verifying', 'verified']] },
+        // 中途才追加的事。燃盡圖上的總量會在這天往上跳一格，那是要被看見的
+        { n: 17, title: '備援方案評估',   type: 'TASK',     st: 'doing', s: -10, d: 2,  parent: 1,   prog: 30, c: -10, mine: true,
+          est: null,
+          hist: [[-9, 'todo', 'doing']] },
         // 大項目二
-        { n: 5, title: '採購與施工',     type: 'EPIC',      st: 'todo',  s: 5,  d: 30, parent: null, prog: 0 },
-        { n: 6, title: '採購與到貨',     type: 'TASK',      st: 'todo',  s: 5,  d: 20, parent: 5,    prog: 0 },
-        { n: 7, title: '機櫃配置施工',   type: 'TASK',      st: 'todo',  s: 21, d: 30, parent: 5,    prog: 0 },
+        { n: 5, title: '採購與施工',     type: 'EPIC',      st: 'todo',  s: 5,  d: 30, parent: null, prog: 0, c: -28 },
+        { n: 6, title: '採購與到貨',     type: 'TASK',      st: 'todo',  s: 5,  d: 20, parent: 5,    prog: 0, c: -28, mine: true },
+        { n: 7, title: '機櫃配置施工',   type: 'TASK',      st: 'todo',  s: 21, d: 30, parent: 5,    prog: 0, c: -28 },
         // 大項目三
-        { n: 8, title: '遷移與切換',     type: 'EPIC',      st: 'todo',  s: 21, d: 38, parent: null, prog: 0 },
-        { n: 9, title: '系統遷移測試',   type: 'TASK',      st: 'todo',  s: 21, d: 34, parent: 8,    prog: 0 },
-        { n: 10, title: '正式切換',      type: 'MILESTONE', st: 'todo',  s: 38, d: 38, parent: 8,    prog: 0 },
+        { n: 8, title: '遷移與切換',     type: 'EPIC',      st: 'todo',  s: 21, d: 38, parent: null, prog: 0, c: -28 },
+        { n: 9, title: '系統遷移測試',   type: 'TASK',      st: 'todo',  s: 21, d: 34, parent: 8,    prog: 0, c: -28 },
+        { n: 10, title: '正式切換',      type: 'MILESTONE', st: 'todo',  s: 38, d: 38, parent: 8,    prog: 0, c: -28 },
       ]
 
       const ids = new Map<number, string>()
       for (const t of defs) {
+        // 開出來的當下是什麼狀態 —— 有歷程就是第一次變更的「變更前」，
+        // 沒有歷程就是它現在的狀態（那種任務從頭到尾沒被動過）
+        const initial = t.hist?.[0][1] ?? t.st
         const [row] = await tx<{ id: string }[]>`
           INSERT INTO task (workspace_id, project_id, number, parent_id, title, type,
                             status_key, start_date, due_date, progress, estimate_hours,
-                            rank, created_by)
+                            assignee_id, rank, created_by, created_at)
           VALUES (${ws.id}, ${p.id}, ${t.n}, ${t.parent ? ids.get(t.parent)! : null},
                   ${t.title}, ${t.type}, ${t.st}, ${day(t.s)}, ${day(t.d)}, ${t.prog},
-                  ${(t.d - t.s + 1) * 8}, ${t.n * 1000}, ${user.id})
+                  ${t.est !== undefined ? t.est : (t.d - t.s + 1) * 8},
+                  ${t.mine ? user.id : null}, ${t.n * 1000}, ${user.id},
+                  ${at(t.c, '09:00')})
           RETURNING id`
         ids.set(t.n, row.id)
         await rebuildClosure(tx, row.id)
+
+        /*
+         * 回填活動紀錄。燃盡圖是把這些紀錄重播回去畫的（lib/burndown.ts），
+         * 只有任務沒有紀錄的話，線會是一條平的 —— 示範資料等於沒有示範到。
+         *
+         * 每一筆都是真正合法的紀錄：CREATED 帶初始狀態，之後每次轉換都是
+         * FIELD_CHANGE 帶 statusKey 與 statusKeyBefore，跟使用者自己在畫面上
+         * 操作寫出來的一模一樣。時間刻意錯開（建立 09:00、變更 14:00），
+         * 同一天建立又馬上改的任務才排得出先後。
+         */
+        await tx`
+          INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body, created_at)
+          VALUES (${ws.id}, ${row.id}, 'CREATED', ${user.id}, '示範帳號',
+                  ${sql.json({ title: t.title, statusKey: initial })}, ${at(t.c, '09:00')})`
+        for (const [off, before, after] of t.hist ?? []) {
+          await tx`
+            INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body, created_at)
+            VALUES (${ws.id}, ${row.id}, 'FIELD_CHANGE', ${user.id}, '示範帳號',
+                    ${sql.json({ statusKey: after, statusKeyBefore: before })},
+                    ${at(off, '14:00')})`
+        }
+        // 最後一次異動的時間跟著歷程走。留著 now() 的話，明明三週前就結案的
+        // 任務會在清單上排到最前面
+        const last = t.hist?.[t.hist.length - 1]
+        if (last) {
+          await tx`UPDATE task SET updated_at = ${at(last[0], '14:00')} WHERE id = ${row.id}`
+        }
       }
       await tx`UPDATE project SET next_number = ${defs.length + 1} WHERE id = ${p.id}`
+
+      // 請假一筆，熱圖上才看得到「人不在、事情還壓著」那種格子
+      await tx`
+        INSERT INTO leave_record (workspace_id, user_id, leave_type, start_date, end_date,
+                                  note, created_by)
+        VALUES (${ws.id}, ${user.id}, 'ANNUAL', ${day(4)}, ${day(5)}, '家庭旅遊', ${user.id})`
 
       // 四種依賴各示範一條
       const links: Array<[number, number, string, number]> = [

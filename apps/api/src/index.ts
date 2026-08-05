@@ -16,6 +16,7 @@ import linkRoutes from './routes/links.js'
 import inquiryRoutes from './routes/inquiries.js'
 import notificationRoutes from './routes/notifications.js'
 import leaveRoutes from './routes/leaves.js'
+import dashboardRoutes from './routes/dashboard.js'
 import { seedDemo } from './seed.js'
 
 const app = Fastify({
@@ -48,6 +49,7 @@ await app.register(async api => {
   await api.register(inquiryRoutes)
   await api.register(notificationRoutes)
   await api.register(leaveRoutes)
+  await api.register(dashboardRoutes)
 }, { prefix: '/api/v1' })
 
 // ── 啟動：先跑 migration，再視情況塞示範資料 ──

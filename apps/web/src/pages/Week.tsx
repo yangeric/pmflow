@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import type { Task, TaskStatus } from '../lib/api'
+import type { ProjectParam, Task, TaskStatus } from '../lib/api'
 import { Button, Empty, InquiryBadge, ProblemBadge, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { parseYmd, shiftYmd, shortDate, todayYmd, toYmd, WEEKDAY_LABELS } from '../lib/date'
+import { useRemembered } from '../lib/remember'
 import { week } from '../strings/week'
 
 /**
@@ -42,18 +43,59 @@ interface Group {
   name: string
   color: string
   rows: Row[]
+  /** 這一組裡逾期的張數。收起來的時候要留在標題上 */
+  overdue: number
 }
 
+/**
+ * 分組方式。
+ *
+ * 依狀態回答「這禮拜卡在哪一關」，依類型回答「這禮拜是在做事還是在滅火」——
+ * 一週裡問題（BUG）佔了半數的話，那件事光看狀態分組是看不出來的。
+ */
+type GroupBy = 'status' | 'type'
+
 export default function WeekView({
-  tasks, statuses, onOpen,
+  projectId, tasks, statuses, types, onOpen,
 }: {
+  /** 只拿來當收合偏好的鍵 —— 狀態是每個專案自己一份，鍵不分專案會互相蓋掉 */
+  projectId: string
   tasks: Task[]
   statuses: TaskStatus[]
+  /** 這個專案自己的任務類型（0011_project_parameters.sql）。名稱與顏色都是他自己設的 */
+  types: ProjectParam[]
   onOpen: (taskId: string) => void
 }) {
   const today = todayYmd()
   /** 目前看的是哪一週，存的是那一週的星期日 */
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today))
+
+  /*
+   * 收起來的是哪幾組。存的是「收合」而不是「展開」的清單：
+   * 專案之後新增狀態時，沒被收過的組一律是展開的 ——
+   * 反過來存的話，新狀態一出現就是收著的，而沒有人會想到要去展開一個
+   * 自己剛剛才建出來的東西。
+   */
+  const [collapsed, setCollapsed] = useRemembered<string[]>(`week.collapsed.${projectId}`, [])
+
+  /*
+   * 分組方式也記得住，理由跟收合一樣：追問題的人每天都想看類型分組，
+   * 每次進來重設成狀態分組，等於逼他每天重按一次。
+   *
+   * 收合的鍵在兩種分組底下是不同的一組值（狀態鍵 vs 類型鍵），
+   * 所以偏好要分開存 —— 共用一份的話，換個分組方式會收起一堆莫名其妙的組。
+   */
+  const [groupBy, setGroupBy] = useRemembered<GroupBy>(`week.groupBy.${projectId}`, 'status')
+  const collapseKey = `${groupBy}:`
+  const isCollapsed = (key: string) => collapsed.includes(collapseKey + key)
+  const toggleGroup = (key: string) =>
+    setCollapsed(isCollapsed(key)
+      ? collapsed.filter(k => k !== collapseKey + key)
+      : [...collapsed, collapseKey + key])
+
+  /** 類型的中文與顏色由專案自己定；查不到就退回鍵本身，至少看得出來是哪一種 */
+  const typeOf = (key: string) => types.find(t => t.key === key)?.name ?? key
+  const typeColorOf = (key: string) => types.find(t => t.key === key)?.color ?? '#94a3b8'
 
   const weekEnd = shiftYmd(weekStart, 6)
   const thisWeekStart = startOfWeek(today)
@@ -92,13 +134,22 @@ export default function WeekView({
     return { rows: out, undatedCount: undated }
   }, [tasks, weekStart, weekEnd, doneKeys, today])
 
-  // ── 依狀態分組。組的順序照 statuses 陣列，不自己排 ────────
+  // ── 分組。組的順序照系統參數的順序，不自己排 ──────────────
   const groups = useMemo(() => {
+    /*
+     * 兩種分組共用同一段程式：差別只有「一張任務歸到哪個鍵」與
+     * 「組要照哪一份清單排」。分成兩份的話，排序、逾期計數、
+     * 找不到對應值的那一組，三件事都要各維護一次。
+     */
+    const keyOf = (r: Row) => groupBy === 'type' ? r.task.type : r.task.statusKey
+    const order: Array<{ key: string; name: string; color: string }> =
+      groupBy === 'type' ? types : statuses
+
     const byKey = new Map<string, Row[]>()
     for (const r of rows) {
-      const list = byKey.get(r.task.statusKey)
+      const list = byKey.get(keyOf(r))
       if (list) list.push(r)
-      else byKey.set(r.task.statusKey, [r])
+      else byKey.set(keyOf(r), [r])
     }
 
     /*
@@ -113,25 +164,34 @@ export default function WeekView({
         x.task.ref.localeCompare(y.task.ref)
       )
 
+    const countOverdue = (list: Row[]) => list.filter(r => r.overdue).length
+
     const out: Group[] = []
-    for (const s of statuses) {
+    for (const s of order) {
       const list = byKey.get(s.key)
-      if (!list) continue          // 這一週沒有這個狀態的任務就不畫空組
-      out.push({ key: s.key, name: s.name, color: s.color, rows: sortRows(list) })
+      if (!list) continue          // 這一週沒有這一組的任務就不畫空組
+      out.push({
+        key: s.key, name: s.name, color: s.color,
+        rows: sortRows(list), overdue: countOverdue(list),
+      })
       byKey.delete(s.key)
     }
-    // 指到已經被刪掉的狀態的任務不能就這樣消失，收成最後一組
+    // 指到已經被刪掉的狀態或類型的任務不能就這樣消失，收成最後一組
     const orphan = [...byKey.values()].flat()
     if (orphan.length > 0) {
       out.push({
         key: '__unknown__',
-        name: W.unknownStatus,
+        name: groupBy === 'type' ? W.unknownType : W.unknownStatus,
         color: '#94a3b8',
         rows: sortRows(orphan),
+        overdue: countOverdue(orphan),
       })
     }
     return out
-  }, [rows, statuses])
+  }, [rows, statuses, types, groupBy])
+
+  /** 全部收合／全部展開。已經全收起來時，那顆按鈕改成展開，不然按了沒有反應 */
+  const allCollapsed = groups.length > 0 && groups.every(g => isCollapsed(g.key))
 
   const go = (n: number) => setWeekStart(s => shiftYmd(s, n * 7))
 
@@ -164,7 +224,34 @@ export default function WeekView({
           </span>
         )}
 
-        <span className="ml-auto text-xs text-slate-500 dark:text-slate-400">
+        {/* 分組方式。放在工具列右半邊，跟左邊「看哪一週」分開 ——
+            一個是換時間，一個是換排法，混在一起按錯的機會很高 */}
+        <div className="ml-auto flex items-center gap-1">
+          <span className="text-xs text-slate-500 dark:text-slate-400">{W.groupByLabel}</span>
+          {(['status', 'type'] as const).map(g => (
+            <button key={g} type="button" onClick={() => setGroupBy(g)}
+                    aria-pressed={groupBy === g}
+                    className={cx(
+                      'rounded px-2 py-1 text-xs transition-colors',
+                      groupBy === g
+                        ? 'bg-blue-50 font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20 ' +
+                          'dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30'
+                        : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                    )}>
+              {g === 'status' ? W.groupByStatus : W.groupByType}
+            </button>
+          ))}
+        </div>
+
+        {/* 一組都沒有的時候不畫這顆 —— 按了不會有任何事情發生的按鈕不要出現 */}
+        {groups.length > 0 && (
+          <Button variant="ghost"
+                  onClick={() => setCollapsed(allCollapsed ? [] : groups.map(g => g.key))}>
+            {allCollapsed ? W.expandAll : W.collapseAll}
+          </Button>
+        )}
+
+        <span className="text-xs text-slate-500 dark:text-slate-400">
           {W.summary(rows.length)}
         </span>
       </div>
@@ -212,27 +299,53 @@ export default function WeekView({
               <span>{W.colInquiry}</span>
             </div>
 
-            {groups.map(g => (
-              <section key={g.key}>
-                {/* 組標題：狀態色的圓點 + 狀態名稱 + 張數。
-                    狀態色是使用者自己挑的，只拿來當圓點，不當底色 —— 深淺不受控 */}
-                <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-3 py-1.5
-                                dark:border-slate-800 dark:bg-slate-800/40">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ background: g.color }} />
-                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                    {g.name}
-                  </span>
-                  <span className="text-xs text-slate-400 dark:text-slate-400">
-                    {W.groupCount(g.rows.length)}
-                  </span>
-                </div>
+            {groups.map(g => {
+              const off = isCollapsed(g.key)
+              return (
+                <section key={g.key}>
+                  {/* 組標題：色點 + 名稱 + 張數。整條都可以按，不是只有那個箭頭 ——
+                      要按中一個 12px 的三角形是件很煩的事。
+                      色是使用者自己挑的，只拿來當圓點，不當底色（深淺不受控） */}
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(g.key)}
+                    aria-expanded={!off}
+                    aria-label={off ? W.expandGroup(g.name) : W.collapseGroup(g.name)}
+                    className="flex w-full items-center gap-2 border-t border-slate-100 bg-slate-50/60
+                               px-3 py-1.5 text-left transition-colors hover:bg-slate-100
+                               dark:border-slate-800 dark:bg-slate-800/40 dark:hover:bg-slate-800"
+                  >
+                    <span aria-hidden
+                          className={cx('shrink-0 text-[10px] text-slate-400 transition-transform',
+                                        'dark:text-slate-400', off && '-rotate-90')}>
+                      ▼
+                    </span>
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ background: g.color }} />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      {g.name}
+                    </span>
+                    <span className="text-xs text-slate-400 dark:text-slate-400">
+                      {W.groupCount(g.rows.length)}
+                    </span>
+                    {/* 收起來的時候逾期要留在標題上 —— 收合是「現在不看細節」，
+                        不是「這些事可以不管」 */}
+                    {off && g.overdue > 0 && (
+                      <span className="rounded bg-red-50 px-1.5 py-0.5 text-[11px] font-medium
+                                       text-red-700 ring-1 ring-inset ring-red-600/20
+                                       dark:bg-red-500/15 dark:text-red-300 dark:ring-red-400/30">
+                        {W.groupOverdue(g.overdue)}
+                      </span>
+                    )}
+                  </button>
 
-                {g.rows.map(r => (
-                  <TaskRow key={r.task.id} row={r} onOpen={onOpen} />
-                ))}
-              </section>
-            ))}
+                  {!off && g.rows.map(r => (
+                    <TaskRow key={r.task.id} row={r} onOpen={onOpen}
+                             typeName={typeOf(r.task.type)} typeColor={typeColorOf(r.task.type)} />
+                  ))}
+                </section>
+              )
+            })}
           </div>
         )}
 
@@ -251,7 +364,13 @@ export default function WeekView({
 const GRID = 'grid grid-cols-[minmax(0,1fr)_9rem_14rem_8rem_7rem] items-center gap-3'
 
 // ── 一張任務 ────────────────────────────────────────────
-function TaskRow({ row, onOpen }: { row: Row; onOpen: (taskId: string) => void }) {
+function TaskRow({ row, onOpen, typeName, typeColor }: {
+  row: Row
+  onOpen: (taskId: string) => void
+  /** 這是任務還是問題。看板與清單都標了，週檢視不標的話同一張任務在三個畫面長得不一樣 */
+  typeName: string
+  typeColor: string
+}) {
   const t = row.task
   return (
     <div
@@ -263,8 +382,16 @@ function TaskRow({ row, onOpen }: { row: Row; onOpen: (taskId: string) => void }
         'hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800'
       )}
     >
-      {/* 任務編號與標題 */}
+      {/* 類型、任務編號與標題。
+          類型色是使用者自己挑的，只當左邊那條細槓，不當底色也不當文字色 ——
+          深淺不受控，拿去當底色在深色模式下會有一半讀不到 */}
       <div className="flex min-w-0 items-center gap-2">
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded
+                         bg-slate-100 py-0.5 pr-1.5 pl-1 text-[11px] text-slate-600
+                         dark:bg-slate-800 dark:text-slate-300">
+          <span className="h-3 w-0.5 rounded-full" style={{ background: typeColor }} />
+          {typeName}
+        </span>
         <span className="shrink-0 font-mono text-[11px] text-slate-400 dark:text-slate-400">
           {t.ref}
         </span>

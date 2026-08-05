@@ -24,8 +24,12 @@ import ProjectSettings from './components/ProjectSettings'
 import AccountPanel from './components/AccountPanel'
 import AdminPanel from './components/AdminPanel'
 import WeekView from './pages/Week'
+// 儀表板一進去就要打兩支要算的 API，圖表本身也只有這一頁用得到，
+// 跟甘特、關聯圖一樣延後載入
+const DashboardView = lazy(() => import('./pages/Dashboard'))
 
-type View = 'list' | 'board' | 'week' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'members' | 'settings'
+type View = 'list' | 'board' | 'week' | 'calendar' | 'gantt' | 'graph' | 'dashboard'
+  | 'inquiry' | 'members' | 'settings'
 
 /**
  * 帳號設定與系統管理不是專案底下的視圖 —— 沒選專案也要進得去，
@@ -42,12 +46,22 @@ const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'calendar', label: T.nav.views.calendar },
   { key: 'gantt', label: T.nav.views.gantt },
   { key: 'graph', label: T.nav.views.graph },
+  // 儀表板排在幾張「看任務」的圖後面：它看的是整個專案的走勢，
+  // 不是同一批任務的另一種排法，翻它的時機也不一樣（回報進度的時候才看）
+  { key: 'dashboard', label: T.nav.views.dashboard },
   // 發文追蹤放在這一排：它跟其他頁籤一樣是「這個專案的任務」的一種看法 ——
   // 只是看的是「發出去的事情回了沒」。不再是跨專案的入口。
   { key: 'inquiry', label: T.nav.views.inquiry },
   // 成員刻意不放在這一排。這排是「同一批任務的不同看法」，
   // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口在右上角的頭像選單。
 ]
+
+/**
+ * 這幾個畫面不吃側欄「大項目」那個篩選 —— 發文追蹤與成員本來就跟大項目無關，
+ * 儀表板則是整個專案一起算的。停在這些畫面上點大項目，按下去會沒有任何反應，
+ * 所以一律先回清單。
+ */
+const NOT_FILTERED_BY_EPIC: View[] = ['inquiry', 'members', 'settings', 'dashboard']
 
 export default function App() {
   const { user, workspaces, ready, logout } = useAuth()
@@ -260,14 +274,12 @@ function ProjectWorkspace({
         onSelectEpic={id => {
           setEpicId(id)
           setOpenTask(null)                    // 回到總覽
-          // 發文追蹤與成員不吃大項目這個篩選，選了大項目就回到清單，
-          // 不然按下去畫面沒有任何反應
-          if (view === 'inquiry' || view === 'members' || view === 'settings') setView('list')
+          if (NOT_FILTERED_BY_EPIC.includes(view)) setView('list')
         }}
         selectedTaskId={openTask}
         onOpenTask={id => {
           setOpenTask(id)
-          if (view === 'inquiry' || view === 'members' || view === 'settings') setView('list')
+          if (NOT_FILTERED_BY_EPIC.includes(view)) setView('list')
         }}
         onSwitchProject={onSwitchProject}
       />
@@ -381,7 +393,8 @@ function ProjectWorkspace({
                        statuses={project?.statuses ?? []} onOpen={setOpenTask} />
               )}
               {view === 'week' && (
-                <WeekView tasks={visible} statuses={project?.statuses ?? []}
+                <WeekView projectId={projectId} tasks={visible}
+                          statuses={project?.statuses ?? []} types={project?.types ?? []}
                           onOpen={setOpenTask} />
               )}
               {view === 'calendar' && (
@@ -398,6 +411,15 @@ function ProjectWorkspace({
                 <Suspense fallback={<Spinner label={T.nav.loadingGraph} />}>
                   <GraphView projectId={projectId} tasks={visible}
                              statuses={project?.statuses ?? []} onOpen={setOpenTask} />
+                </Suspense>
+              )}
+              {/*
+                * 刻意不傳 visible：燃盡圖與熱圖是整個專案的走勢，後端一次算完。
+                * 跟著側欄選的大項目變的話，看到的數字會跟他嘴上說的「專案進度」對不起來。
+                */}
+              {view === 'dashboard' && (
+                <Suspense fallback={<Spinner label={T.nav.loadingDashboard} />}>
+                  <DashboardView projectId={projectId} onOpenTask={setOpenTask} />
                 </Suspense>
               )}
               {view === 'inquiry' && (

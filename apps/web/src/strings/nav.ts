@@ -29,11 +29,14 @@ export const nav = {
     week: '週檢視',
     gantt: '甘特圖',
     graph: '關聯圖',
+    /** 燃盡圖與負載熱圖。看的是整個專案的走勢，不是單張任務 */
+    dashboard: '儀表板',
     /** 發文追蹤是專案裡的一個頁籤，只看得到這個專案的 */
     inquiry: '發文追蹤',
   },
   loadingGantt: '載入甘特圖…',
   loadingGraph: '載入關聯圖…',
+  loadingDashboard: '載入儀表板…',
 
   sidebar: {
     switchProject: '切換專案',

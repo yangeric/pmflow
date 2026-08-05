@@ -60,6 +60,14 @@ export async function api<T = unknown>(
   return data as T
 }
 
+/** 把只有部分有值的查詢參數接成 `?a=1&b=2`；全空就回空字串，網址不會多一個問號 */
+function qs(params: Record<string, string | number | undefined>): string {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v !== undefined) p.set(k, String(v))
+  const s = p.toString()
+  return s ? `?${s}` : ''
+}
+
 // ── 型別 ────────────────────────────────────────────────
 export interface User { id: string; email: string; displayName: string }
 export interface Workspace { id: string; name: string; slug: string; role: string }
@@ -281,6 +289,92 @@ export interface TaskDetail extends Task {
   activities: Activity[]
 }
 
+/**
+ * ── 儀表板 ──
+ *
+ * 兩張圖共用一個計算單位：`count` 是任務張數，`hours` 是預估工時。
+ * 同一個畫面上兩張圖用不同單位，看的人一定會把它們讀成同一件事。
+ */
+export type DashboardMetric = 'count' | 'hours'
+
+/**
+ * 燃盡圖的一天。
+ *
+ * **這條線是回推出來的，不是每天存一筆存下來的** —— 系統沒有背景排程器，
+ * 沒有人半夜幫忙照相。作法是拿 `activity` 的狀態變更一天一天重播回去
+ * （見 api/src/lib/burndown.ts）。因此舊資料會有查不到的洞，
+ * 那些用「最後更新時間」估，數量在 `estimatedCount` 裡誠實回報。
+ */
+export interface BurndownPoint {
+  /** YYYY-MM-DD。日期一律字串，不要轉成 Date 再轉回來（UTC+8 會位移一天） */
+  date: string
+  /** 當天結束時還沒做完的量。今天之後的日子是 null —— 未來沒有實際值 */
+  remaining: number | null
+  /** 當天結束時的總量。中途才開的任務會讓它往上跳，那正是要看見的事 */
+  total: number | null
+  /** 當天累計完成的量 */
+  done: number | null
+  /** 照計畫應該剩下多少。參考線，不是資料，畫成虛線 */
+  ideal: number
+  /** 今天之後 */
+  isFuture: boolean
+  isWeekend: boolean
+  isToday: boolean
+}
+
+export interface BurndownResult {
+  from: string
+  to: string
+  metric: DashboardMetric
+  points: BurndownPoint[]
+  /** 算進來的任務張數 */
+  taskCount: number
+  /**
+   * 有幾張任務的完成時間是估的（活動紀錄裡查不到那次狀態變更）。
+   * 大於 0 一定要在畫面上講出來 —— 看的人有權知道哪幾張是猜的。
+   */
+  estimatedCount: number
+  /** 到今天為止的實際值與理想值，給圖上方那幾個數字用。今天不在區間內就是 null */
+  todayRemaining: number | null
+  todayIdeal: number | null
+}
+
+/** 熱圖的一格 = 一個人的一天 */
+export interface WorkloadCell {
+  date: string
+  /** 落在這一天的量。metric=count 是任務張數，hours 是攤平之後的工時 */
+  load: number
+  taskCount: number
+  /** 這天請假。請假還壓著事情的格子是熱圖最值得看的東西 */
+  onLeave: boolean
+}
+
+export interface WorkloadRow {
+  /** null 代表「沒有指定負責人」那一列。那些事不能消失在圖外 */
+  userId: string | null
+  displayName: string
+  hasAvatar: boolean
+  cells: WorkloadCell[]
+  total: number
+  /** 這個人最高的一天 */
+  peak: number
+}
+
+export interface WorkloadResult {
+  from: string
+  to: string
+  metric: DashboardMetric
+  days: Array<{ date: string; isWeekend: boolean; isToday: boolean }>
+  rows: WorkloadRow[]
+  /**
+   * 當作滿載的量（工時是每天幾小時、張數是每天幾張）。
+   * 這是畫紅字的門檻，不是規定誰要做幾小時。
+   */
+  capacity: number
+  /** 整張圖最高的一格，色階拿它當上限 */
+  max: number
+}
+
 export interface ScheduleResult {
   tasks: Record<string, { start: string | null; finish: string | null; totalFloat: number | null }>
   criticalPath: string[]
@@ -478,6 +572,12 @@ export const Api = {
     api<Task>(`/tasks/${id}/reassign`, { method: 'POST', json }),
 
   schedule: (projectId: string) => api<ScheduleResult>(`/projects/${projectId}/schedule`),
+
+  // ── 儀表板。from／to 不給就由後端算專案的區間 ──
+  burndown: (projectId: string, q: { from?: string; to?: string; metric?: DashboardMetric } = {}) =>
+    api<BurndownResult>(`/projects/${projectId}/burndown${qs(q)}`),
+  workload: (projectId: string, q: { from?: string; to?: string; metric?: DashboardMetric } = {}) =>
+    api<WorkloadResult>(`/projects/${projectId}/workload${qs(q)}`),
   graph: (projectId: string) => api<{
     nodes: Array<{ id: string; ref: string; title: string; type: string
                    statusKey: string; progress: number; parentId: string | null

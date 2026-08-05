@@ -171,9 +171,13 @@ export default async function taskRoutes(app: FastifyInstance) {
         RETURNING id`
 
       await rebuildClosure(tx, t.id)
+      // 一起記下開出來時是什麼狀態。燃盡圖是把狀態變更重播回去畫的
+      // （見 lib/burndown.ts），沒有這個起點就只能猜「它原本在第一欄」——
+      // 而直接開在「進行中」甚至「已完成」的任務一點都不少見。
+      // 值要跟真正寫進 status_key 的一樣，不能只寫 body.statusKey（可能沒填）
       await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
                VALUES (${workspaceId}, ${t.id}, 'CREATED', ${user.id}, ${user.displayName},
-                       ${sql.json({ title: body.title })})`
+                       ${sql.json({ title: body.title, statusKey: body.statusKey ?? 'todo' })})`
 
       // 建立時就填了負責人，對那個人來說跟事後被指派是同一件事
       await notify({
@@ -255,8 +259,12 @@ export default async function taskRoutes(app: FastifyInstance) {
       // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看。
       // 舊的問題內容同理，而且更嚴重：清空之後任務身上就沒有它了，
       // 這裡不撈起來，活動紀錄只會留下「被清空」而查不到當初卡在哪。
-      const [before] = await tx<{ assignee_id: string | null; problem: string | null }[]>`
-        SELECT assignee_id, problem FROM task WHERE id = ${req.params.id}`
+      // 舊狀態同理，而且是燃盡圖唯一的資料來源：時間軸上只有「換成什麼」
+      // 的話，重播的時候接不回前一段（見 lib/burndown.ts）
+      const [before] = await tx<{
+        assignee_id: string | null; problem: string | null; status_key: string
+      }[]>`
+        SELECT assignee_id, problem, status_key FROM task WHERE id = ${req.params.id}`
 
       const problem = cleanProblem(b.problem)
 
@@ -290,6 +298,16 @@ export default async function taskRoutes(app: FastifyInstance) {
        * 「記下了問題」，把真正發生變化的那幾筆淹掉。
        */
       const logged: Record<string, unknown> = { ...b }
+      // 狀態比照問題的作法：真的變了才留下來，而且要連「變之前是什麼」一起寫，
+      // 燃盡圖才接得回前一段。沒真的變就拿掉 —— 每次存檔都把同一個狀態
+      // 送回來的話，時間軸上會多出一排看起來像換過欄的紀錄
+      if (b.statusKey !== undefined) {
+        if (b.statusKey !== before?.status_key) {
+          logged.statusKeyBefore = before?.status_key ?? null
+        } else {
+          delete logged.statusKey
+        }
+      }
       if (b.problem !== undefined) {
         if (problem !== (before?.problem ?? null)) {
           logged.problem = problem
@@ -397,7 +415,8 @@ export default async function taskRoutes(app: FastifyInstance) {
   // ── 拖曳：改父層 / 排序 / 狀態欄 ───────────────────────
   app.post<{ Params: { id: string } }>('/tasks/:id/move', async req => {
     const user = await authenticate(req)
-    const { projectId, role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { workspaceId, projectId, role } = await requireTaskAccess(
+      user.id, req.params.id, 'EDITOR')
     await assertCanEditTask(req.params.id, user.id, role)
     const b = moveBody.parse(req.body)
     // 拖到別的欄也是在改狀態，一樣要確認那個狀態存在
@@ -414,6 +433,11 @@ export default async function taskRoutes(app: FastifyInstance) {
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
+
+      // UPDATE 之前先讀，理由跟 PATCH 那邊一樣：改完就查不回「本來在哪一欄」
+      const [before] = await tx<{ status_key: string }[]>`
+        SELECT status_key FROM task WHERE id = ${req.params.id}`
+
       await tx`
         UPDATE task SET
           rank       = ${rank},
@@ -422,6 +446,25 @@ export default async function taskRoutes(app: FastifyInstance) {
           updated_at = now()
         WHERE id = ${req.params.id}`
       if (b.parentId !== undefined) await rebuildClosure(tx, req.params.id)
+
+      /*
+       * 拖曳看板換欄也要留一筆狀態變更 —— 這條路以前完全不寫紀錄，
+       * 於是「大家其實都是用拖的」的專案，燃盡圖回推出來會是一條平線
+       * （見 lib/burndown.ts）。沿用 FIELD_CHANGE，跟在詳情頁改狀態同一種紀錄，
+       * 時間軸上不該因為「用哪個畫面改的」而長得不一樣。
+       *
+       * 只改排序、只換父層不寫：那兩件事每拖一次就留一筆，
+       * 真正換過欄的那幾筆會被淹掉，而它們才是燃盡圖要的。
+       */
+      if (b.statusKey && b.statusKey !== before?.status_key) {
+        await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
+                 VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
+                         ${user.id}, ${user.displayName},
+                         ${sql.json({
+                           statusKey: b.statusKey,
+                           statusKeyBefore: before?.status_key ?? null,
+                         })})`
+      }
     })
 
     return loadTask(req.params.id)

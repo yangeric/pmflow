@@ -8,6 +8,7 @@ import { chart } from './chart'
 import { calendar } from './calendar'
 import { week } from './week'
 import { settings } from './settings'
+import { dashboard } from './dashboard'
 
 /**
  * 畫面上的文字全部集中在這裡，**不要寫死在元件裡**。
@@ -38,4 +39,5 @@ export const T = {
   calendar,
   week,
   settings,
+  dashboard,
 }
