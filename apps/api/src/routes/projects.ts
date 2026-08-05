@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import { authenticate, requireProjectRole } from '../lib/auth.js'
 import { forbidden, notFound } from '../lib/errors.js'
+import { listProjectParams, DEFAULT_PARAMS } from './parameters.js'
 
 /**
  * 新專案開出來就有的狀態欄。
@@ -21,6 +22,20 @@ const DEFAULT_STATUSES = [
   { key: 'verified',  name: '驗證完成', category: 'DONE',   color: '#0d9488', rank: 3500 },
   { key: 'done',      name: '已完成',   category: 'DONE',   color: '#2e8b57', rank: 4000 },
 ]
+
+/**
+ * 新專案開出來就有的優先度與任務類型 —— 內容在 routes/parameters.ts 的
+ * DEFAULT_PARAMS，這裡只負責在建立專案時把它們一起寫進去。
+ *
+ * 這兩份原本寫死在 task 的 CHECK 裡，0011_project_parameters.sql 把它們
+ * 拆成每個專案自己一份（task_priority / task_type），既有專案在那支
+ * migration 裡回填過同樣的內容。key 沿用原本 CHECK 裡的大寫值 ——
+ * 任務欄位的預設（'TASK' / 'NORMAL'）指的就是它，換掉會對不上。
+ *
+ * 狀態的預設清單（DEFAULT_STATUSES）還留在上面：那份從第一天就在這個檔裡，
+ * 搬過去只會讓 blame 變難讀。三份要一起改的時候，這段註解就是路標。
+ */
+const { priority: DEFAULT_PRIORITIES, type: DEFAULT_TYPES } = DEFAULT_PARAMS
 
 const createBody = z.object({
   workspaceId: z.string().uuid(),
@@ -90,6 +105,14 @@ export default async function projectRoutes(app: FastifyInstance) {
         await tx`INSERT INTO task_status (project_id, key, name, category, color, rank)
                  VALUES (${p.id}, ${s.key}, ${s.name}, ${s.category}, ${s.color}, ${s.rank})`
       }
+      for (const v of DEFAULT_PRIORITIES) {
+        await tx`INSERT INTO task_priority (project_id, key, name, color, rank)
+                 VALUES (${p.id}, ${v.key}, ${v.name}, ${v.color}, ${v.rank})`
+      }
+      for (const v of DEFAULT_TYPES) {
+        await tx`INSERT INTO task_type (project_id, key, name, color, rank)
+                 VALUES (${p.id}, ${v.key}, ${v.name}, ${v.color}, ${v.rank})`
+      }
       return p
     })
 
@@ -114,11 +137,15 @@ export default async function projectRoutes(app: FastifyInstance) {
     const statuses = await sql`
       SELECT id, key, name, category, color, rank, wip_limit AS "wipLimit"
       FROM task_status WHERE project_id = ${req.params.id} ORDER BY rank`
+    // 優先度與任務類型跟狀態一樣是每個專案自己一份，畫面上的下拉一律照這兩份。
+    // 跟專案本身同一次回去 —— 開一個專案就會用到，多一次來回沒有意義。
+    const priorities = await listProjectParams(sql, req.params.id, 'priority')
+    const types = await listProjectParams(sql, req.params.id, 'type')
     const members = await sql`
       SELECT u.id, u.display_name AS "displayName", u.email, pm.role
       FROM project_member pm JOIN app_user u ON u.id = pm.user_id
       WHERE pm.project_id = ${req.params.id} ORDER BY u.display_name`
-    return { ...p, statuses, members }
+    return { ...p, statuses, priorities, types, members }
   })
 
   app.patch<{ Params: { id: string } }>('/projects/:id', async req => {

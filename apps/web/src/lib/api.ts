@@ -201,6 +201,29 @@ export interface TaskStatus {
   category: 'TODO' | 'ACTIVE' | 'DONE'; color: string; rank: number
 }
 
+/**
+ * 每個專案自己的下拉清單。狀態欄本來就是這樣（`task_status`），
+ * 優先度與任務類型原本寫死在資料表的 CHECK 裡，現在也各自成表。
+ *
+ * **是每個專案改自己的，不是全站一份** —— 蓋房子的專案要「圖說審查中」，
+ * 辦活動的專案要「等廠商報價」，硬要共用一套只會逼所有人遷就別人的流程。
+ */
+export type ParamKind = 'status' | 'priority' | 'type'
+
+export interface ProjectParam {
+  id: string
+  kind: ParamKind
+  /** 程式用的鍵。建立之後不能改 —— 任務是靠它指回來的 */
+  key: string
+  name: string
+  color: string
+  rank: number
+  /** 只有狀態有：決定它算不算「還沒做完」 */
+  category?: 'TODO' | 'ACTIVE' | 'DONE'
+  /** 目前有幾張任務用著它。要刪的時候得先知道會影響多少 */
+  inUse: number
+}
+
 export type InquiryState = 'NONE' | 'AWAITING' | 'OVERDUE' | 'PARTIAL' | 'REPLIED'
 
 export interface Task {
@@ -276,7 +299,29 @@ export const Api = {
 
   projects: () => api<{ projects: Project[] }>('/projects'),
   project: (id: string) =>
-    api<Project & { statuses: TaskStatus[]; members: Array<{ id: string; displayName: string; role: string }> }>(`/projects/${id}`),
+    api<Project & {
+      statuses: TaskStatus[]
+      /** 這個專案自己的優先度與任務類型。畫面上的下拉一律照這兩份，不要寫死 */
+      priorities: ProjectParam[]
+      types: ProjectParam[]
+      members: Array<{ id: string; displayName: string; role: string }>
+    }>(`/projects/${id}`),
+
+  // ── 每個專案自己的系統參數（狀態／優先度／任務類型）──
+  projectParams: (projectId: string) =>
+    api<{ params: ProjectParam[]; canManage: boolean }>(`/projects/${projectId}/parameters`),
+  createProjectParam: (projectId: string, json: {
+    kind: ParamKind; name: string; color?: string; category?: 'TODO' | 'ACTIVE' | 'DONE'
+  }) => api<ProjectParam>(`/projects/${projectId}/parameters`, { method: 'POST', json }),
+  /** 改名、改色、改分類，或用 beforeId／afterId 換順序（跟卡片排序同一套 rank） */
+  patchProjectParam: (projectId: string, id: string, json: {
+    name?: string; color?: string; category?: 'TODO' | 'ACTIVE' | 'DONE'
+    beforeId?: string | null; afterId?: string | null
+  }) => api<ProjectParam>(`/projects/${projectId}/parameters/${id}`, { method: 'PATCH', json }),
+  /** 還有人在用就一定要給 moveTo，把那些任務改到別的值上，不然後端不讓刪 */
+  deleteProjectParam: (projectId: string, id: string, moveTo?: string) =>
+    api(`/projects/${projectId}/parameters/${id}${moveTo ? `?moveTo=${moveTo}` : ''}`,
+        { method: 'DELETE' }),
   createProject: (json: { workspaceId: string; key: string; name: string }) =>
     api<Project>('/projects', { method: 'POST', json }),
   patchProject: (id: string, json: {
@@ -370,9 +415,21 @@ export const Api = {
   uploadAvatar: (image: string) =>
     api<{ avatarFile: string }>('/me/avatar', { method: 'PUT', json: { image } }),
   removeAvatar: () => api('/me/avatar', { method: 'DELETE' }),
-  /** 頭像的網址。檔名帶時間戳，換過就是新網址，不會拿到快取的舊圖 */
-  avatarUrl: (userId: string, version?: string | null) =>
-    `/api/v1/users/${userId}/avatar${version ? `?v=${encodeURIComponent(version)}` : ''}`,
+  /**
+   * 頭像的圖檔本身。
+   *
+   * **不能直接把網址塞進 `<img src>`** —— 那個端點要 Authorization 標頭，
+   * 而瀏覽器載入圖片時不會帶，結果一律 401、每個頭像都退回文字色塊。
+   * 所以走 fetch 拿 blob，再交給 `<img>`。
+   * 另一條路是放寬那個端點的驗證，但頭像是誰的臉，不該變成公開資源。
+   */
+  avatarBlob: async (userId: string): Promise<Blob> => {
+    const headers = new Headers()
+    if (accessToken) headers.set('authorization', `Bearer ${accessToken}`)
+    const res = await fetch(`${BASE}/users/${userId}/avatar`, { headers, credentials: 'include' })
+    if (!res.ok) throw new ApiError(res.status, '讀不到頭像')
+    return res.blob()
+  },
 
   // ── 工作區管理者：站台上的帳號 ──
   adminUsers: (workspaceId: string) =>
@@ -411,6 +468,14 @@ export const Api = {
   rescheduleTask: (id: string, json: { startDate: string | null; dueDate: string | null; cascade?: boolean }) =>
     api<{ task: Task; schedule: ScheduleResult }>(`/tasks/${id}/reschedule`, { method: 'POST', json }),
   deleteTask: (id: string) => api(`/tasks/${id}`, { method: 'DELETE' }),
+  /**
+   * 轉派。跟 `patchTask({ assigneeId })` 分開是為了那句交接說明 ——
+   * 換人做的時候，「換成誰」是欄位，「為什麼換、做到哪裡了」是話，
+   * 兩者一起寫進活動紀錄，接手的人才看得到來龍去脈。
+   * `assigneeId` 給 null 就是收回，不指派給任何人。
+   */
+  reassignTask: (id: string, json: { assigneeId: string | null; note?: string }) =>
+    api<Task>(`/tasks/${id}/reassign`, { method: 'POST', json }),
 
   schedule: (projectId: string) => api<ScheduleResult>(`/projects/${projectId}/schedule`),
   graph: (projectId: string) => api<{

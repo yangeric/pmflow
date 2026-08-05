@@ -31,6 +31,7 @@ export const task = {
   /** 任務詳情（右側主區／抽屜） */
   drawer: {
     fieldStatus: '狀態',
+    fieldAssignee: '負責人',
     fieldPriority: '優先級',
     fieldStart: '開始日',
     fieldDue: '結束日',
@@ -43,10 +44,10 @@ export const task = {
     systemActor: '系統',
   },
 
-  /** 左右關聯（依賴與語意） */
+  /** 任務之間的關聯：有先後的（依賴）與沒先後的（相關） */
   link: {
     title: '任務關聯',
-    titleHint: '（左右：依賴與語意）',
+    titleHint: '（依賴與相關）',
     empty: '還沒有任何關聯。',
     lagDays: (days: number) => `間隔 ${days > 0 ? '+' : ''}${days} 天`,
     fieldTarget: '關聯到',
@@ -54,11 +55,37 @@ export const task = {
     fieldLag: '間隔（天）',
     pickTask: '選擇任務…',
     groupScheduling: '排程（會推動日期）',
-    groupSemantic: '語意（不影響排程）',
+    groupSemantic: '相關（不影響排程）',
     lagHint: '正數＝中間要空幾天；負數＝可以提前重疊',
     add: '建立關聯',
     /** 後端沒給訊息時才用這句，有訊息一律照後端的 */
     addFailed: '建立關聯失敗',
+  },
+
+  /**
+   * 轉派（換負責人）。
+   *
+   * 換人走的是專屬的 POST /tasks/:id/reassign，不是一般的欄位更新 ——
+   * 「換成誰」是欄位，「做到哪裡了、為什麼換」是話，兩者要一起進活動紀錄，
+   * 接手的人才看得到來龍去脈。所以詳情裡改人會先跳一個交接說明的輸入框。
+   */
+  reassign: {
+    /** 下拉裡「沒有負責人」那一項 */
+    optionUnassigned: '不指派給任何人',
+    /**
+     * 現任負責人已經被移出專案時，還是要留在下拉裡 ——
+     * 名單裡沒有他的話，畫面會顯示成別人，看起來像被偷偷換掉了
+     */
+    optionFormerMember: (name: string) => `${name}（已不是這個專案的成員）`,
+    confirmChange: (from: string, to: string) => `要把負責人從 ${from} 換成 ${to}`,
+    confirmAssign: (to: string) => `要把負責人指派給 ${to}`,
+    confirmClear: (from: string) => `要收回 ${from} 的負責人身分，之後沒有人負責這張任務`,
+    confirmClearNobody: '這張任務目前就沒有負責人',
+    notePlaceholder: '交接說明：做到哪裡了、接手的人要先看什麼',
+    noteHint: '交接說明可以留白。寫了的話，會跟著這次轉派一起留在活動紀錄裡。',
+    submit: '確認轉派',
+    /** 清單上直接換人，但不問交接說明 —— 那是逐張慢慢處理時才會寫的東西 */
+    listHint: '在這裡可以直接換人。要附上交接說明，請開啟任務詳情再轉派。',
   },
 
   /** 上下階層 */
@@ -76,6 +103,16 @@ export const task = {
     inquiryReply: (unit: string) => `登錄回覆${unit ? `（${unit}）` : ''}`,
     problemSet: (text: string) => `記下目前遇到的問題：${text}`,
     problemCleared: (before: string) => `把問題標為已解決${before ? `（原本：${before}）` : ''}`,
+    /**
+     * 轉派的四種句子。沒有原負責人、或收回不指派時，句子要各自成立 ——
+     * 用同一句去填空的話，會拼出「把負責人從 （空白） 換成」這種讀不懂的字
+     */
+    reassigned: (from: string, to: string) => `把負責人從 ${from} 換成 ${to}`,
+    assigned: (to: string) => `把負責人指派給 ${to}`,
+    unassignedFrom: (from: string) => `收回了 ${from} 的負責人身分，目前沒有人負責`,
+    unassignedNobody: '把負責人清空，目前沒有人負責',
+    /** 那句交接說明，另起一行帶引號 */
+    handoverNote: (text: string) => `「${text}」`,
     fieldUpdated: '更新了欄位',
   },
 
@@ -119,6 +156,8 @@ export const task = {
       + '你仍然可以填寫「目前遇到的問題」，也可以登錄發文追蹤的回覆。',
     /** 清單上的狀態變成純文字時，游標停著看得到原因 */
     cannotChangeStatus: '狀態只有開這張任務的人與專案管理者可以調整',
+    /** 負責人同上：改不動就只留名字，游標停著才說明原因 */
+    cannotChangeAssignee: '負責人只有開這張任務的人與專案管理者可以調整',
     /** 看板上不能拖的卡片 */
     cannotDragCard: '這張任務不是你開的，不能拖動；'
       + '狀態要由開這張任務的人或專案管理者調整',

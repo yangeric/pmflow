@@ -25,7 +25,8 @@ const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string; icon: string }> 
 ]
 
 export function UserMenu({
-  userName, isWorkspaceAdmin, onAccount, onAdmin, onLogout, onMembers, pendingJoins = 0,
+  userName, isWorkspaceAdmin, onAccount, onAdmin, onLogout, onMembers, onSettings,
+  pendingJoins = 0,
 }: {
   userName: string
   isWorkspaceAdmin: boolean
@@ -37,6 +38,12 @@ export function UserMenu({
    * 成員講的是「這個專案的成員」，在專案選擇頁沒有專案可言，那時就不畫這一項。
    */
   onMembers?: () => void
+  /**
+   * 這個專案的系統參數（狀態／優先度／類型）。跟成員同一區，也同一個規矩：
+   * 人在專案裡才傳進來，而且**只有專案的管理者才會拿到** ——
+   * 其他人看得到清單也改不了，畫一個按了會被拒絕的入口沒有意義。
+   */
+  onSettings?: () => void
   /** 待審的加入申請數。不是建立者的話後端一律回 0 */
   pendingJoins?: number
 }) {
@@ -102,22 +109,27 @@ export function UserMenu({
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
           {/*
-            成員跟底下那些是不同性質的東西：這一項是「目前這個專案」的設定，
-            下面講的是「我這個人」，所以中間隔一條線。
+            成員與系統參數跟底下那些是不同性質的東西：這一區是「目前這個專案」的
+            設定，下面講的是「我這個人」，所以中間隔一條線。
           */}
-          {onMembers && (
+          {(onMembers || onSettings) && (
             <>
-              <MenuItem onClick={go(onMembers)}>
-                <span className="flex items-center gap-2">
-                  {T.nav.members}
-                  {pendingJoins > 0 && (
-                    <span title={T.nav.pendingJoinsHint(pendingJoins)}
-                          className="rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                      {pendingJoins}
-                    </span>
-                  )}
-                </span>
-              </MenuItem>
+              {onMembers && (
+                <MenuItem onClick={go(onMembers)}>
+                  <span className="flex items-center gap-2">
+                    {T.nav.members}
+                    {pendingJoins > 0 && (
+                      <span title={T.nav.pendingJoinsHint(pendingJoins)}
+                            className="rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+                        {pendingJoins}
+                      </span>
+                    )}
+                  </span>
+                </MenuItem>
+              )}
+              {onSettings && (
+                <MenuItem onClick={go(onSettings)}>{T.settings.menuEntry}</MenuItem>
+              )}
               <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
             </>
           )}

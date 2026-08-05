@@ -7,6 +7,7 @@ import { rebuildClosure, assertNotDescendant } from '../lib/graph.js'
 import { schedule, type SchedTask, type SchedLink } from '../lib/schedule.js'
 import { notify } from '../lib/notify.js'
 import { badRequest, forbidden, notFound } from '../lib/errors.js'
+import { assertParamKey } from './parameters.js'
 
 /**
  * 誰能改任務本身：**開這張任務的人、專案的建立者、專案管理者**，其他人不行。
@@ -58,9 +59,15 @@ const createBody = z.object({
   description: z.string().max(20000).optional(),
   /** 目前遇到的問題。解決了就送 null（或空字串）清掉 */
   problem: z.string().max(5000).nullable().optional(),
-  type: z.enum(['TASK', 'MILESTONE', 'BUG', 'EPIC']).optional(),
+  /*
+   * 類型與優先度**不再是固定清單** —— 每個專案自己定義（見
+   * migrations/0011_project_parameters.sql）。所以這裡只收字串，
+   * 「這個值在這個專案裡存不存在」由 assertParamKey 依 project_id 驗，
+   * 跟 statusKey 從第一天起就是同一種做法。
+   */
+  type: z.string().max(40).optional(),
   statusKey: z.string().max(40).optional(),
-  priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).optional(),
+  priority: z.string().max(40).optional(),
   parentId: z.string().uuid().nullable().optional(),
   assigneeId: z.string().uuid().nullable().optional(),
   startDate: z.string().date().nullable().optional(),
@@ -71,6 +78,20 @@ const createBody = z.object({
 
 const patchBody = createBody.partial().extend({
   progress: z.number().int().min(0).max(100).optional(),
+})
+
+/**
+ * 轉派：換負責人 ＋ 一句交接說明。
+ *
+ * 為什麼不併進 `PATCH /tasks/:id` 的 `assigneeId` —— 換成誰是欄位，
+ * 「做到哪裡了、為什麼換」是話。兩者要落在同一筆活動紀錄上，接手的人才看得到
+ * 來龍去脈；分兩支寫的話，時間軸上會變成「更新了欄位」加一則不知道在講哪次
+ * 異動的留言，事後根本兜不回去。
+ */
+const reassignBody = z.object({
+  /** null＝收回，不指派給任何人。這是合法的操作，不是漏填 */
+  assigneeId: z.string().uuid().nullable(),
+  note: z.string().max(2000).optional(),
 })
 
 /** 拖曳：改父層 / 改排序 / 改狀態欄，body 只帶「變更意圖」而非整個物件 */
@@ -116,6 +137,11 @@ export default async function taskRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     const { workspaceId } = await requireProjectRole(user.id, req.params.id, 'EDITOR')
     const body = createBody.parse(req.body)
+    // 類型、優先度、狀態都是這個專案自己的清單，寫進去之前先確認值存在。
+    // 資料表已經沒有 CHECK 擋了（見 0011_project_parameters.sql），這裡是唯一的關卡
+    if (body.type) await assertParamKey(sql, req.params.id, 'type', body.type)
+    if (body.priority) await assertParamKey(sql, req.params.id, 'priority', body.priority)
+    if (body.statusKey) await assertParamKey(sql, req.params.id, 'status', body.statusKey)
 
     const created = await sql.begin(async tx => {
       const [{ next_number }] = await tx<{ next_number: number }[]>`
@@ -218,6 +244,10 @@ export default async function taskRoutes(app: FastifyInstance) {
       user.id, req.params.id, onlyProblem ? 'VIEWER' : 'EDITOR')
     if (!onlyProblem) await assertCanEditTask(req.params.id, user.id, role)
 
+    if (b.type) await assertParamKey(sql, projectId, 'type', b.type)
+    if (b.priority) await assertParamKey(sql, projectId, 'priority', b.priority)
+    if (b.statusKey) await assertParamKey(sql, projectId, 'status', b.statusKey)
+
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
 
@@ -285,12 +315,93 @@ export default async function taskRoutes(app: FastifyInstance) {
     return loadTask(req.params.id)
   })
 
+  // ── 轉派：換負責人，可附一句交接說明 ────────────────────
+  app.post<{ Params: { id: string } }>('/tasks/:id/reassign', async req => {
+    const user = await authenticate(req)
+    // 權限跟改任務一模一樣：換人就是改任務的一個欄位，不該比改標題寬鬆
+    const { workspaceId, projectId, role } = await requireTaskAccess(
+      user.id, req.params.id, 'EDITOR')
+    await assertCanEditTask(req.params.id, user.id, role)
+    const b = reassignBody.parse(req.body)
+    const note = b.note?.trim() ? b.note.trim() : null
+
+    /*
+     * 指派的對象一定要是這個專案的成員。不是成員的人連專案都看不到，
+     * 任務掛在他名下等於丟進黑洞 —— 他收不到、也查不到，
+     * 而原本在追這件事的人還以為有人接手了。
+     */
+    let toName: string | null = null
+    if (b.assigneeId) {
+      const [m] = await sql<{ displayName: string }[]>`
+        SELECT u.display_name AS "displayName"
+        FROM project_member pm
+        JOIN app_user u ON u.id = pm.user_id
+        WHERE pm.project_id = ${projectId} AND pm.user_id = ${b.assigneeId}`
+      if (!m) throw badRequest('只能指派給這個專案的成員，請先把他加入專案再指派任務。')
+      toName = m.displayName
+    }
+
+    await sql.begin(async tx => {
+      // 換人之前先讀原負責人：UPDATE 之後就查不回「本來是誰」了，
+      // 而活動紀錄要寫的正是「從誰換成誰」
+      const [before] = await tx<{ assigneeId: string | null; assigneeName: string | null }[]>`
+        SELECT t.assignee_id AS "assigneeId", u.display_name AS "assigneeName"
+        FROM task t LEFT JOIN app_user u ON u.id = t.assignee_id
+        WHERE t.id = ${req.params.id}`
+      const changed = (before?.assigneeId ?? null) !== b.assigneeId
+
+      await tx`
+        UPDATE task SET assignee_id = ${b.assigneeId}, updated_at = now()
+        WHERE id = ${req.params.id}`
+
+      /*
+       * 沿用 FIELD_CHANGE，不新增一種 kind —— 負責人本來就是任務的欄位，
+       * 時間軸也只有一條；而且 activity.kind 帶 CHECK 約束，多一種就得動
+       * migration，不值得為了一句話改資料表。
+       *
+       * body 裡的 reassign 是給前端認的旗標（一般的欄位更新不會有它），
+       * 換人前後的名字與那句話都收在同一筆，前端才組得出一句完整的中文。
+       * 名字另外存一份是刻意的：帳號日後改名或被刪掉，這句話還是要讀得懂。
+       *
+       * 人沒換、又沒寫交接說明就不寫紀錄 —— 每按一次都留一筆的話，
+       * 真正換過手的那幾筆會被淹掉。
+       */
+      if (changed || note) {
+        await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
+                 VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
+                         ${user.id}, ${user.displayName},
+                         ${sql.json({
+                           reassign: true,
+                           assigneeId: b.assigneeId,
+                           assigneeName: toName,
+                           previousAssigneeId: before?.assigneeId ?? null,
+                           previousAssigneeName: before?.assigneeName ?? null,
+                           note,
+                         } as unknown as Record<string, never>)})`
+      }
+
+      // 真的換了人才通知（自己指派給自己由 notify 自己擋掉）
+      if (changed) {
+        await notify({
+          db: tx, workspaceId, userId: b.assigneeId,
+          kind: 'TASK_ASSIGNED', actorId: user.id, actorName: user.displayName,
+          projectId, taskId: req.params.id,
+          body: note ? { note } : undefined,
+        })
+      }
+    })
+
+    return loadTask(req.params.id)
+  })
+
   // ── 拖曳：改父層 / 排序 / 狀態欄 ───────────────────────
   app.post<{ Params: { id: string } }>('/tasks/:id/move', async req => {
     const user = await authenticate(req)
-    const { role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
+    const { projectId, role } = await requireTaskAccess(user.id, req.params.id, 'EDITOR')
     await assertCanEditTask(req.params.id, user.id, role)
     const b = moveBody.parse(req.body)
+    // 拖到別的欄也是在改狀態，一樣要確認那個狀態存在
+    if (b.statusKey) await assertParamKey(sql, projectId, 'status', b.statusKey)
 
     const neighbours = await sql<{ id: string; rank: string }[]>`
       SELECT id, rank::text FROM task

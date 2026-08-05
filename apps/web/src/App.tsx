@@ -20,10 +20,12 @@ import CalendarView from './pages/Calendar'
 import InquiryBoard from './pages/InquiryBoard'
 import ProjectPicker from './pages/ProjectPicker'
 import MembersPanel from './components/MembersPanel'
+import ProjectSettings from './components/ProjectSettings'
 import AccountPanel from './components/AccountPanel'
 import AdminPanel from './components/AdminPanel'
+import WeekView from './pages/Week'
 
-type View = 'list' | 'board' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'members'
+type View = 'list' | 'board' | 'week' | 'calendar' | 'gantt' | 'graph' | 'inquiry' | 'members' | 'settings'
 
 /**
  * 帳號設定與系統管理不是專案底下的視圖 —— 沒選專案也要進得去，
@@ -34,6 +36,9 @@ type AccountView = 'profile' | 'admin' | null
 const VIEWS: Array<{ key: View; label: string }> = [
   { key: 'list', label: T.nav.views.list },
   { key: 'board', label: T.nav.views.board },
+  // 週檢視排在行事曆前面：月曆看得到日期，週檢視回答的是「這禮拜卡在哪一關」，
+  // 後者是每週例行要問的，翻開的次數比月曆多
+  { key: 'week', label: T.nav.views.week },
   { key: 'calendar', label: T.nav.views.calendar },
   { key: 'gantt', label: T.nav.views.gantt },
   { key: 'graph', label: T.nav.views.graph },
@@ -98,9 +103,13 @@ export default function App() {
   // 這裡收起來只是不要讓人按了才被拒絕
   const isWorkspaceAdmin = ['OWNER', 'ADMIN'].includes(workspaces[0]?.role ?? '')
   const pendingJoins = projects.find(p => p.id === projectId)?.pendingJoinRequestCount ?? 0
+  // 系統參數是「改這個專案的規則」，不是「看這個專案的內容」，所以只給管理者。
+  // 後端一樣擋著（canManage），這裡收起來只是不要讓人按了才被拒絕
+  const canManageProject = projects.find(p => p.id === projectId)?.role === 'MANAGER'
 
-  // 成員、帳號設定、系統管理、外觀、登出都收在右上角的頭像底下（見 components/UserMenu.tsx）。
-  // 成員只有人在專案裡的時候才給 —— 沒選專案時「這個專案的成員」是句空話
+  // 成員、系統參數、帳號設定、系統管理、外觀、登出都收在右上角的頭像底下
+  // （見 components/UserMenu.tsx）。前兩項只有人在專案裡的時候才給 ——
+  // 沒選專案時「這個專案的成員」與「這個專案的參數」都是空話
   const userMenu = (
     <UserMenu
       userName={user.displayName}
@@ -110,6 +119,9 @@ export default function App() {
       onLogout={logout}
       onMembers={projectId
         ? () => { setAccount(null); setView('members'); setOpenTask(null) }
+        : undefined}
+      onSettings={projectId && canManageProject
+        ? () => { setAccount(null); setView('settings'); setOpenTask(null) }
         : undefined}
       pendingJoins={pendingJoins}
     />
@@ -250,12 +262,12 @@ function ProjectWorkspace({
           setOpenTask(null)                    // 回到總覽
           // 發文追蹤與成員不吃大項目這個篩選，選了大項目就回到清單，
           // 不然按下去畫面沒有任何反應
-          if (view === 'inquiry' || view === 'members') setView('list')
+          if (view === 'inquiry' || view === 'members' || view === 'settings') setView('list')
         }}
         selectedTaskId={openTask}
         onOpenTask={id => {
           setOpenTask(id)
-          if (view === 'inquiry' || view === 'members') setView('list')
+          if (view === 'inquiry' || view === 'members' || view === 'settings') setView('list')
         }}
         onSwitchProject={onSwitchProject}
       />
@@ -368,6 +380,10 @@ function ProjectWorkspace({
                 <Board projectId={projectId} tasks={visible}
                        statuses={project?.statuses ?? []} onOpen={setOpenTask} />
               )}
+              {view === 'week' && (
+                <WeekView tasks={visible} statuses={project?.statuses ?? []}
+                          onOpen={setOpenTask} />
+              )}
               {view === 'calendar' && (
                 <CalendarView projectId={projectId} workspaceId={workspaceId}
                               tasks={visible} statuses={project?.statuses ?? []}
@@ -391,6 +407,7 @@ function ProjectWorkspace({
               {view === 'members' && (
                 <MembersPanel projectId={projectId} workspaceId={workspaceId} />
               )}
+              {view === 'settings' && <ProjectSettings projectId={projectId} />}
             </>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Api } from '../lib/api'
 import { cx } from './ui'
 import { T } from '../strings'
@@ -50,19 +50,45 @@ export function Avatar({ userId, name, hasAvatar, size = 'sm', version, classNam
   version?: string | null
   className?: string
 }) {
-  // 圖讀不到就退回色塊 —— 檔案可能因為換機器、volume 沒掛而不見了，
-  // 那不該讓畫面上出現一個破圖
-  const [broken, setBroken] = useState(false)
+  /**
+   * 圖走 fetch 拿 blob，不直接把網址塞進 `<img src>`。
+   *
+   * 那個端點要 Authorization 標頭，而瀏覽器載圖時不會帶 —— 一律 401，
+   * 結果每個上傳過的頭像都退回文字色塊，看起來像「上傳失敗」。
+   * 放寬端點的驗證也能解，但頭像是誰的臉，不該變成公開資源。
+   *
+   * 讀不到就退回色塊：檔案可能因為換機器、volume 沒掛而不見了，
+   * 那不該讓畫面上出現一個破圖。
+   */
+  const [url, setUrl] = useState<string | null>(null)
+  const want = !!userId && !!hasAvatar
+  useEffect(() => {
+    if (!want || !userId) { setUrl(null); return }
+    let alive = true
+    let objectUrl: string | null = null
+    Api.avatarBlob(userId)
+      .then(blob => {
+        if (!alive) return
+        objectUrl = URL.createObjectURL(blob)
+        setUrl(objectUrl)
+      })
+      .catch(() => { if (alive) setUrl(null) })
+    // 換頭像（version 變了）或元件收掉時都要還回去，不然這些 blob 會一直留在記憶體裡
+    return () => {
+      alive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [userId, want, version])
+
   const label = name ?? T.common.unassigned
   const base = cx(
     'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full',
     SIZES[size], className
   )
 
-  if (userId && hasAvatar && !broken) {
+  if (url) {
     return (
-      <img src={Api.avatarUrl(userId, version)} alt={label} title={label}
-           onError={() => setBroken(true)}
+      <img src={url} alt={label} title={label}
            className={cx(base, 'bg-slate-100 object-cover dark:bg-slate-800')} />
     )
   }

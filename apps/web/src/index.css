@@ -104,6 +104,17 @@ body {
 .dark .gantt_cell,
 .dark .gantt_layout_cell { border-color: #334155; }
 
+/* 列的底色 dhtmlx 寫死白色，而且是掛在 .gantt_row 上、不是掛在容器上。
+   改成透明讓底下的卡片色透出來 —— 之前只覆蓋了 hover 與選取，
+   所以捲動時偶爾會閃出一條白的。 */
+.dark .gantt_row,
+.dark .gantt_task_row,
+.dark .gantt_row.gantt_row_task,
+.dark .gantt_row.gantt_row_milestone { background: transparent; }
+/* 單雙列的區隔改用極淡的白，不要用另一個色階 —— 一深一淺兩塊會像兩個區域 */
+.dark .gantt_row.odd,
+.dark .gantt_task_row.odd { background: rgba(255, 255, 255, 0.03); }
+
 .dark .gantt_row:hover,
 .dark .gantt_task_row:hover { background: #1e293b; }
 .dark .gantt_row.gantt_selected,
@@ -122,3 +133,18 @@ body {
 .dark .gantt_task_link .gantt_line_wrapper div { background: #64748b; }
 .dark .gantt_link_arrow_right { border-left-color: #64748b; }
 .dark .gantt_link_arrow_left { border-right-color: #64748b; }
+
+/* 時間軸每一格的分隔線是掛在 scale_cell 的右邊，它自己一條淺灰 */
+.dark .gantt_scale_cell { border-right-color: #334155; }
+.dark .gantt_grid { border-color: #334155; }
+
+/* 拖曳欄寬的把手、連線時的端點與轉角 —— 都是 dhtmlx 自己畫的淺灰小東西，
+   深色下會變成畫面上最亮的幾個點，比它們該有的份量搶眼得多 */
+.dark .gantt_grid_column_resize,
+.dark .gantt_link_point { background: #475569; }
+.dark .gantt_link_point { border-color: #64748b; }
+.dark .gantt_link_corner_right_down { border-top-color: #64748b; }
+.dark .gantt_link_corner_down_right { border-bottom-color: #64748b; }
+
+/* 一般長條的預設藍在深色底下太亮，壓一階；關鍵路徑的紅與發文狀態不動 */
+.dark .gantt_task_line.gantt_bar_task { background: #3b5bd6; border-color: #3b5bd6; }

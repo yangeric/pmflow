@@ -2,6 +2,7 @@ import { sql } from './lib/db.js'
 import { hashPassword } from './lib/auth.js'
 import { rebuildClosure } from './lib/graph.js'
 import { recalcInquiryState, addWorkingDays, toISODate } from './lib/inquiry.js'
+import { fillDefaults } from './routes/parameters.js'
 
 const STATUSES = [
   { key: 'todo',      name: '待辦',     category: 'TODO',   color: '#94a3b8', rank: 1000 },
@@ -59,6 +60,10 @@ export async function seedDemo(): Promise<boolean> {
         await tx`INSERT INTO task_status (project_id, key, name, category, color, rank)
                  VALUES (${p.id}, ${s.key}, ${s.name}, ${s.category}, ${s.color}, ${s.rank})`
       }
+      // 優先度與任務類型現在也是每個專案一份（0011_project_parameters.sql）。
+      // 示範資料是直接 INSERT 專案的，繞過了 POST /projects，所以要自己補
+      await fillDefaults(tx, p.id, 'priority')
+      await fillDefaults(tx, p.id, 'type')
 
       if (pi > 0) continue   // 第二個專案留空，方便試「切換專案」
 

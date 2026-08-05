@@ -7,8 +7,6 @@ import { useAuth } from '../lib/auth'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 import { T } from '../strings'
 
-const TYPE_LABEL: Partial<Record<Task['type'], string>> = T.task.type
-
 /** 清單／樹狀視圖：依 parentId 展開階層（上下關聯） */
 export default function ListView({
   projectId, tasks, statuses, onOpen, parentForNew,
@@ -33,6 +31,9 @@ export default function ListView({
   const { data: project } = useQuery({
     queryKey: ['project', projectId], queryFn: () => Api.project(projectId),
   })
+
+  /** 類型的中文由專案自己定（0011_project_parameters.sql），查不到就不顯示徽章 */
+  const typeOf = (key: string) => project?.types?.find(t => t.key === key)?.name ?? ''
   /*
    * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
    * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
@@ -68,6 +69,29 @@ export default function ListView({
       Api.patchTask(v.id, { statusKey: v.statusKey }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks', projectId] }),
   })
+
+  /**
+   * 負責人也直接在清單上換，跟狀態同一個道理：一整排看下來，
+   * 「這張該給誰」常常是連著好幾張一起決定的。
+   *
+   * 但這裡**不問交接說明** —— 那是逐張慢慢處理時才寫得出來的東西，
+   * 每換一個人就跳一個輸入框，只會讓人一路按取消。要寫就開任務詳情。
+   */
+  const reassign = useMutation({
+    mutationFn: (v: { id: string; assigneeId: string | null }) =>
+      Api.reassignTask(v.id, { assigneeId: v.assigneeId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks', projectId] }),
+  })
+
+  const members = project?.members ?? []
+  /* 現任負責人被移出專案之後，成員名單裡就沒有他了。不補一項回去的話，
+     下拉會顯示成名單上的第一個人，看起來像被誰偷偷換掉 */
+  const assigneeOptions = (t: Task) =>
+    t.assigneeId && !members.some(m => m.id === t.assigneeId)
+      ? [...members,
+         { id: t.assigneeId, role: '',
+           displayName: T.task.reassign.optionFormerMember(t.assigneeName ?? '') }]
+      : members
 
   const create = useMutation({
     mutationFn: (v: { parentId: string | null; title: string }) =>
@@ -145,10 +169,10 @@ export default function ListView({
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
                     {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-500">└</span>}
                     {t.type === 'MILESTONE' && <span className="text-violet-500">◆</span>}
-                    {TYPE_LABEL[t.type] && t.type !== 'MILESTONE' && (
+                    {typeOf(t.type) && t.type !== 'MILESTONE' && (
                       <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700
                                        dark:bg-violet-500/15 dark:text-violet-300">
-                        {TYPE_LABEL[t.type]}
+                        {typeOf(t.type)}
                       </span>
                     )}
                     <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{t.ref}</span>
@@ -183,16 +207,46 @@ export default function ListView({
                     )}
                   </div>
                 </td>
-                <td className="px-3 py-2">
-                  {t.assigneeName ? (
+                {/* 點在下拉上不要順便把任務打開 */}
+                <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                  {canEditTask(t) ? (
+                    <span className="inline-flex max-w-full items-center gap-1.5">
+                      {t.assigneeId && t.assigneeName && (
+                        <Avatar userId={t.assigneeId} name={t.assigneeName}
+                                hasAvatar={t.assigneeHasAvatar} />
+                      )}
+                      <select
+                        value={t.assigneeId ?? ''}
+                        disabled={reassign.isPending}
+                        title={T.task.reassign.listHint}
+                        onChange={e => reassign.mutate({
+                          id: t.id, assigneeId: e.target.value || null,
+                        })}
+                        className="-ml-0.5 min-w-0 cursor-pointer rounded border border-transparent
+                                   bg-transparent py-0.5 pl-1 pr-5 text-xs text-slate-600
+                                   hover:border-slate-300 hover:bg-white
+                                   focus:border-blue-500 focus:bg-white focus:outline-none
+                                   dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
+                                   dark:focus:bg-slate-900">
+                        <option value="">{T.common.unassigned}</option>
+                        {assigneeOptions(t).map(m => (
+                          <option key={m.id} value={m.id}>{m.displayName}</option>
+                        ))}
+                      </select>
+                    </span>
+                  ) : t.assigneeName ? (
+                    /* 改不動就不要畫成下拉。游標停著才說明原因 */
                     <span className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300"
-                          title={t.assigneeName}>
+                          title={T.task.permission.cannotChangeAssignee}>
                       <Avatar userId={t.assigneeId} name={t.assigneeName}
                               hasAvatar={t.assigneeHasAvatar} />
                       <span className="truncate">{t.assigneeName}</span>
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-300 dark:text-slate-500">{T.common.unassigned}</span>
+                    <span className="text-xs text-slate-300 dark:text-slate-500"
+                          title={T.task.permission.cannotChangeAssignee}>
+                      {T.common.unassigned}
+                    </span>
                   )}
                 </td>
                 {/* 點在下拉上不要順便把任務打開 */}

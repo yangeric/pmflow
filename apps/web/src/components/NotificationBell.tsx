@@ -204,8 +204,12 @@ function detail(n: AppNotification): string | null {
       const other = [b.otherRef, b.otherTitle].filter(Boolean).join(' ') || N.otherTask
       return linkedSentence(type, N.quoted(n.taskTitle ?? N.yourTask), other)
     }
-    case 'TASK_ASSIGNED':
-      return n.taskRef
+    case 'TASK_ASSIGNED': {
+      // 轉派時寫的那句交接說明。它是這則通知裡最要緊的一句話 ——
+      // 「為什麼換到我頭上、做到哪裡了」比任務編號有用得多，所以排在編號前面
+      const note = (b.note as string | null) || null
+      return [note && N.quoted(note), n.taskRef].filter(Boolean).join('　') || null
+    }
     case 'JOIN_REQUESTED':
       return (b.message as string | null) || null
     case 'JOIN_APPROVED': {

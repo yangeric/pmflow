@@ -63,6 +63,13 @@ export default function Board({
                 .sort((a, b) => Number(a.rank) - Number(b.rank)),
   })), [statuses, tasks])
 
+  /**
+   * 這個專案最急的那一級＝優先度清單排最後的那一個（後端已依 rank 排好）。
+   * 清單是空的（舊資料還沒補上）就不標。
+   */
+  const priorities = project?.priorities ?? []
+  const topPriority = priorities.length ? priorities[priorities.length - 1] : undefined
+
   const move = useMutation({
     mutationFn: ({ id, ...v }: { id: string; statusKey?: string; beforeId?: string | null; afterId?: string | null }) =>
       Api.moveTask(id, v),
@@ -120,21 +127,24 @@ export default function Board({
                 onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex h-full gap-3 overflow-x-auto p-4">
         {columns.map(col => (
-          <Column key={col.key} column={col} onOpen={onOpen} canDrag={canDrag} />
+          <Column key={col.key} column={col} onOpen={onOpen} canDrag={canDrag}
+                  topPriority={topPriority} />
         ))}
       </div>
       <DragOverlay>
-        {dragging && <Card task={dragging} overlay draggable onOpen={() => {}} />}
+        {dragging && <Card task={dragging} overlay draggable onOpen={() => {}}
+                             topPriority={topPriority} />}
       </DragOverlay>
     </DndContext>
   )
 }
 
 function Column({
-  column, onOpen, canDrag,
+  column, onOpen, canDrag, topPriority,
 }: {
   column: TaskStatus & { tasks: Task[] }
   onOpen: (id: string) => void
+  topPriority?: { key: string; name: string; color: string }
   /** 這張卡片這個人能不能拖 —— 拖曳等於改狀態，權限跟改任務同一條 */
   canDrag: (t: Task) => boolean
 }) {
@@ -163,7 +173,8 @@ function Column({
       <SortableContext items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-3">
           {column.tasks.map(t => (
-            <SortableCard key={t.id} task={t} onOpen={onOpen} canDrag={canDrag(t)} />
+            <SortableCard key={t.id} task={t} onOpen={onOpen} canDrag={canDrag(t)}
+                          topPriority={topPriority} />
           ))}
           {column.tasks.length === 0 && (
             <div className="rounded-md border-2 border-dashed border-slate-200 py-6 text-center text-xs
@@ -177,8 +188,9 @@ function Column({
   )
 }
 
-function SortableCard({ task, onOpen, canDrag }: {
+function SortableCard({ task, onOpen, canDrag, topPriority }: {
   task: Task; onOpen: (id: string) => void; canDrag: boolean
+  topPriority?: { key: string; name: string; color: string }
 }) {
   // disabled 讓 dnd-kit 連感應器都不掛上去，滑鼠與鍵盤兩條路徑一起擋掉
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -187,17 +199,24 @@ function SortableCard({ task, onOpen, canDrag }: {
     <div ref={setNodeRef} {...attributes} {...listeners}
          style={{ transform: CSS.Transform.toString(transform), transition }}
          className={isDragging ? 'opacity-30' : ''}>
-      <Card task={task} onOpen={onOpen} draggable={canDrag} />
+      <Card task={task} onOpen={onOpen} draggable={canDrag} topPriority={topPriority} />
     </div>
   )
 }
 
 function Card({
-  task, onOpen, overlay, draggable,
+  task, onOpen, overlay, draggable, topPriority,
 }: {
   task: Task; onOpen: (id: string) => void; overlay?: boolean
   /** 拖不動的卡片不要長成「可以拖」的樣子 —— 手形游標本身就是一種承諾 */
   draggable?: boolean
+  /**
+   * 這個專案裡最急的那一級（優先度清單的最後一個）。
+   * 優先度現在每個專案自己定，不能再認死 'URGENT' 這個 key ——
+   * 有人會把它改名叫「火燒屁股」，也有人會刪掉它。卡片上只標最急的那一級，
+   * 每一級都標的話等於沒標。
+   */
+  topPriority?: { key: string; name: string; color: string }
 }) {
   return (
     <div
@@ -213,10 +232,13 @@ function Card({
       <div className="mb-1 flex items-center gap-1.5">
         <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{task.ref}</span>
         {task.type === 'MILESTONE' && <span className="text-[11px]">◆</span>}
-        {task.priority === 'URGENT' && (
-          <span className="rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
-                           dark:bg-red-500/15 dark:text-red-300">
-            {T.task.priority.URGENT}
+        {topPriority && task.priority === topPriority.key && (
+          <span className="rounded px-1 text-[10px] font-medium"
+                style={{
+                  backgroundColor: topPriority.color + '26',   // 15% 透明，淺色深色都吃得下
+                  color: topPriority.color,
+                }}>
+            {topPriority.name}
           </span>
         )}
       </div>

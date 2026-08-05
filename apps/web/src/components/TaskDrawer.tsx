@@ -7,10 +7,6 @@ import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
 
-const TYPE_LABEL: Partial<Record<Task['type'], string>> = T.task.type
-
-const PRIORITY_LABEL = T.task.priority
-
 /**
  * 任務詳情。
  *
@@ -46,6 +42,15 @@ export function TaskDrawer({
     queryFn: () => Api.project(data!.projectId),
     enabled: !!data?.projectId,
   })
+
+  /**
+   * 類型與優先度的中文是**這個專案自己定的**（見 0011_project_parameters.sql），
+   * 不再是寫死的四種。查不到就退回原始值 —— 那代表清單被改過而任務還指著舊值，
+   * 顯示代碼總比顯示空白好，至少看得出來是哪裡對不上。
+   */
+  const priorities = project?.priorities ?? []
+  const priorityOf = (key: string) => priorities.find(p => p.key === key)?.name ?? key
+  const typeOf = (key: string) => project?.types?.find(t => t.key === key)?.name ?? ''
   /*
    * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
    * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
@@ -92,6 +97,32 @@ export function TaskDrawer({
   })
   const delLink = useMutation({ mutationFn: (id: string) => Api.deleteLink(id), onSuccess: invalidate })
 
+  /*
+   * 轉派走專屬的端點，不走 patch —— 換人是欄位，交接說明是話，
+   * 兩者要一起寫進同一筆活動紀錄（理由見 api 的 routes/tasks.ts）。
+   *
+   * reassignTo：正在轉派給誰。null＝沒有在轉派；''＝要收回、不指派給任何人。
+   * 選了人先停在這裡，按下「確認轉派」才真的送出 —— 中間那一步就是留給
+   * 交接說明的，改完馬上送出的話那句話永遠沒有地方寫。
+   */
+  const [reassignTo, setReassignTo] = useState<string | null>(null)
+  const [handoverNote, setHandoverNote] = useState('')
+  const closeReassign = () => { setReassignTo(null); setHandoverNote('') }
+  const reassign = useMutation({
+    mutationFn: (v: { assigneeId: string | null; note?: string }) => Api.reassignTask(taskId, v),
+    onSuccess: () => { closeReassign(); invalidate() },
+  })
+
+  const members = project?.members ?? []
+  /* 現任負責人被移出專案之後，成員名單裡就沒有他了。不補一項回去的話，
+     下拉會顯示成名單上的第一個人，看起來像被誰偷偷換掉 */
+  const assigneeOptions = data?.assigneeId && !members.some(m => m.id === data.assigneeId)
+    ? [...members,
+       { id: data.assigneeId, role: '',
+         displayName: T.task.reassign.optionFormerMember(data.assigneeName ?? '') }]
+    : members
+  const nameOf = (id: string) => members.find(m => m.id === id)?.displayName ?? ''
+
   const [targetId, setTargetId] = useState('')
   const [linkType, setLinkType] = useState<LinkType>('FS')
   const [lag, setLag] = useState(0)
@@ -124,10 +155,10 @@ export function TaskDrawer({
                     {data.ref}
                   </span>
                   <InquiryBadge state={data.inquiryState} />
-                  {TYPE_LABEL[data.type] && (
+                  {typeOf(data.type) && (
                     <span className="rounded bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-700
                                      dark:bg-violet-500/15 dark:text-violet-300">
-                      {TYPE_LABEL[data.type]}
+                      {typeOf(data.type)}
                     </span>
                   )}
                 </div>
@@ -174,16 +205,36 @@ export function TaskDrawer({
                     </ReadOnlyValue>
                   )}
                 </Field>
+                <Field label={T.task.drawer.fieldAssignee}>
+                  {canEdit ? (
+                    /* 選了人不會馬上送出：下面會跳出交接說明，按了才算數 */
+                    <Select value={reassignTo ?? (data.assigneeId ?? '')}
+                            onChange={e => {
+                              const v = e.target.value
+                              setHandoverNote('')
+                              setReassignTo(v === (data.assigneeId ?? '') ? null : v)
+                            }}
+                            className="w-full">
+                      <option value="">{T.task.reassign.optionUnassigned}</option>
+                      {assigneeOptions.map(m => (
+                        <option key={m.id} value={m.id}>{m.displayName}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <ReadOnlyValue>{data.assigneeName ?? T.common.unassigned}</ReadOnlyValue>
+                  )}
+                </Field>
                 <Field label={T.task.drawer.fieldPriority}>
                   {canEdit ? (
                     <Select value={data.priority}
                             onChange={e => patch.mutate({ priority: e.target.value })}
                             className="w-full">
-                      {(Object.keys(PRIORITY_LABEL) as Array<keyof typeof PRIORITY_LABEL>)
-                        .map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+                      {priorities.map(p => (
+                        <option key={p.key} value={p.key}>{p.name}</option>
+                      ))}
                     </Select>
                   ) : (
-                    <ReadOnlyValue>{PRIORITY_LABEL[data.priority]}</ReadOnlyValue>
+                    <ReadOnlyValue>{priorityOf(data.priority)}</ReadOnlyValue>
                   )}
                 </Field>
                 <Field label={T.task.drawer.fieldStart}>
@@ -227,6 +278,49 @@ export function TaskDrawer({
                   )}
                 </Field>
               </div>
+
+              {/* ── 轉派的交接說明 ──
+                  刻意放在基本欄位「下面」而不是塞進那一格：那一格只有四分之一寬，
+                  一句交接說明打不了幾個字就看不到開頭 */}
+              {canEdit && reassignTo !== null && (
+                <div className="rounded-md bg-blue-50 px-3 py-2.5 ring-1 ring-inset ring-blue-600/20
+                                dark:bg-blue-500/15 dark:ring-blue-400/30">
+                  <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    {reassignTo
+                      ? (data.assigneeName
+                          ? T.task.reassign.confirmChange(data.assigneeName, nameOf(reassignTo))
+                          : T.task.reassign.confirmAssign(nameOf(reassignTo)))
+                      : (data.assigneeName
+                          ? T.task.reassign.confirmClear(data.assigneeName)
+                          : T.task.reassign.confirmClearNobody)}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Input
+                      autoFocus
+                      value={handoverNote}
+                      onChange={e => setHandoverNote(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !reassign.isPending) {
+                          reassign.mutate({ assigneeId: reassignTo || null, note: handoverNote })
+                        }
+                        if (e.key === 'Escape') closeReassign()
+                      }}
+                      placeholder={T.task.reassign.notePlaceholder}
+                      className="min-w-56 flex-1"
+                    />
+                    <Button variant="primary" disabled={reassign.isPending}
+                            onClick={() => reassign.mutate({
+                              assigneeId: reassignTo || null, note: handoverNote,
+                            })}>
+                      {T.task.reassign.submit}
+                    </Button>
+                    <Button variant="ghost" onClick={closeReassign}>{T.common.cancel}</Button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-blue-700 dark:text-blue-200">
+                    {T.task.reassign.noteHint}
+                  </p>
+                </div>
+              )}
 
               {/* ── 目前遇到的問題 ──
                   放在基本欄位下面、發文追蹤上面：它比日期進度更要緊，
@@ -393,14 +487,23 @@ export function TaskDrawer({
                 </h3>
                 <ul className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
                   {data.activities.slice(0, 15).map(a => (
-                    <li key={a.id} className="flex gap-2">
-                      <span className="text-slate-400 dark:text-slate-400">
-                        {new Date(a.createdAt).toLocaleString('zh-TW')}
-                      </span>
-                      <span className="text-slate-600 dark:text-slate-300">
-                        {a.actorName ?? T.task.drawer.systemActor}
-                      </span>
-                      <span>{describeActivity(a.kind, a.body)}</span>
+                    <li key={a.id}>
+                      <div className="flex gap-2">
+                        <span className="text-slate-400 dark:text-slate-400">
+                          {new Date(a.createdAt).toLocaleString('zh-TW')}
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {a.actorName ?? T.task.drawer.systemActor}
+                        </span>
+                        <span>{describeActivity(a.kind, a.body)}</span>
+                      </div>
+                      {/* 交接說明另起一行帶引號 —— 那是一句人講的話，
+                          接在「把負責人從誰換成誰」後面會跟事實糊在一起 */}
+                      {handoverNoteOf(a.body) && (
+                        <p className="mt-0.5 pl-1 text-slate-600 dark:text-slate-300">
+                          {T.task.activity.handoverNote(handoverNoteOf(a.body))}
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -426,6 +529,11 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
 const fmtDate = (d: string | null) =>
   (d ? d.slice(0, 10).replaceAll('-', '/') : T.common.none)
 
+/** 這筆活動紀錄有沒有附交接說明（只有轉派會有）。沒有就回空字串 */
+function handoverNoteOf(body: Record<string, unknown> | null): string {
+  return body?.reassign && body.note ? String(body.note) : ''
+}
+
 function describeActivity(kind: string, body: Record<string, unknown> | null): string {
   switch (kind) {
     case 'CREATED': return T.task.activity.created
@@ -439,6 +547,17 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
         ? T.task.activity.inquiryAsk(String(body?.unit ?? ''))
         : T.task.activity.inquiryReply(body?.repliedByUnit ? String(body.repliedByUnit) : '')
     default:
+      /*
+       * 轉派也是 FIELD_CHANGE（負責人就是任務的一個欄位），靠 body 的
+       * reassign 認出來。四種情形各自成一句：沒有原負責人、收回不指派時
+       * 用同一句去填空的話，會拼出「把負責人從 （空白） 換成」。
+       */
+      if (body?.reassign) {
+        const from = body.previousAssigneeName ? String(body.previousAssigneeName) : ''
+        const to = body.assigneeName ? String(body.assigneeName) : ''
+        if (to) return from ? T.task.activity.reassigned(from, to) : T.task.activity.assigned(to)
+        return from ? T.task.activity.unassignedFrom(from) : T.task.activity.unassignedNobody
+      }
       /*
        * 問題被清空之後，任務上就沒有它了 —— 這一行是唯一查得回「當初卡在哪」
        * 的地方，所以把清掉之前那段字一起寫出來，而不是只說「更新了欄位」。

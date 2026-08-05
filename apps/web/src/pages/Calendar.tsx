@@ -11,6 +11,7 @@ import {
 import { Button, Empty, Field, Input, Select, cx, textOnColor } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
+import { useRemembered } from '../lib/remember'
 import {
   WEEKDAY_LABELS, diffDays, monthGrid, monthLabel, parseYmd,
   shiftYmd, shortDate, todayYmd, toYmd, ymd,
@@ -109,9 +110,10 @@ export default function CalendarView({
     const d = new Date()
     return { year: d.getFullYear(), month: d.getMonth() }
   })
-  const [showTasks, setShowTasks] = useState(true)
-  const [showInquiries, setShowInquiries] = useState(true)
-  const [showLeaves, setShowLeaves] = useState(true)
+  // 「我想看什麼」是長期偏好，不是這次瀏覽的暫時狀態 —— 每次回來都重勾很煩
+  const [showTasks, setShowTasks] = useRemembered('calendar.tasks', true)
+  const [showInquiries, setShowInquiries] = useRemembered('calendar.inquiries', true)
+  const [showLeaves, setShowLeaves] = useRemembered('calendar.leaves', true)
   const [dragging, setDragging] = useState<Piece | null>(null)
   /** 有值就是請假表單開著。null 代表關著 */
   const [leaveForm, setLeaveForm] = useState<LeaveForm | null>(null)

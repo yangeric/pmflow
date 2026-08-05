@@ -4,7 +4,7 @@ import {
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Background, BackgroundVariant, Handle, MarkerType, Panel, Position, ReactFlow,
+  Background, BackgroundVariant, Handle, MarkerType, NodeResizer, Panel, Position, ReactFlow,
   ReactFlowProvider, useNodesInitialized, useReactFlow,
   type Connection, type Edge, type FitViewOptions, type Node, type NodeChange, type NodeProps,
 } from '@xyflow/react'
@@ -31,6 +31,13 @@ import { T } from '../strings'
  *
  * 介面一律不出現 FS / SS / FF / SF。邊上掛的是短句（完成後開始…），
  * 側欄的關聯清單講完整句型，跟任務詳情頁同一套說法。
+ *
+ * 線分兩類，走的方向刻意不一樣：
+ *
+ *   排程依賴（完成後開始那四種）有先後 → 左進右出，由左往右讀就是時間順序
+ *   任務相關（相關／阻擋／重複於／需要）沒有先後 → 走上下
+ *
+ * 相關類如果也畫成左右，會被讀成「先做這個再做那個」，但它們根本不推動日期。
  */
 
 // ── 畫面上的字全在 strings/chart.ts，跟任務詳情與通知講的是同一套說法 ──
@@ -51,16 +58,26 @@ const SCHEDULING_COLOR: Record<SchedulingType, string> = {
 /**
  * 虛線只有一個意思：**這條線不會推動日期**。
  *
- * 底下兩種都是虛線，所以一定要在別的地方分得開 —— 語意關聯畫得深、畫長虛線，
- * 階層畫得淺、畫圓點。加上線上本來就有的中文短句（相關／阻擋／…／包含），
+ * 任務相關（相關／阻擋／重複於／需要）畫得深、畫長虛線，而且走上下 ——
+ * 排程依賴走左右，兩類光看方向就分得開。加上線上本來就有的中文短句，
  * 就算色弱或列印成黑白也不會混在一起。
  */
-const SEMANTIC_COLOR = '#64748b'
-const SEMANTIC_DASH = '7 4'
-const HIERARCHY_COLOR = '#cbd5e1'
-const HIERARCHY_DASH = '1 5'
-/** 聚焦時的階層線。紫色跟節點上的「大項目」徽章同一個色系，兩邊指的是同一件事 */
-const HIERARCHY_FOCUS_COLOR = '#8b5cf6'
+const RELATION_COLOR = '#64748b'
+const RELATION_DASH = '7 4'
+
+/**
+ * 節點上的四個接點。
+ *
+ *   左（in）／右（out）＝排程依賴。有先後，所以由左往右流。
+ *   上（rel-in）／下（rel-out）＝任務相關。沒有先後，走上下才不會被讀成順序。
+ *
+ * 邊一定要指定 sourceHandle / targetHandle，不然 React Flow 會自己挑一個，
+ * 兩類就會混在同一側。
+ */
+const H_IN = 'in'
+const H_OUT = 'out'
+const H_REL_IN = 'rel-in'
+const H_REL_OUT = 'rel-out'
 
 /**
  * 線上的字不加白底方框。
@@ -157,6 +174,11 @@ type TaskNodeData = {
    * 三者互斥：同一對任務只會落在其中一類，先判同時開始／同時完成，都不是才算單純重疊。
    */
   parallel: ParallelPeers
+  /**
+   * 框自動算出來的大小 —— 同時也是使用者往內縮的下限：再小就會蓋掉裡面的任務。
+   * 不是框的節點就是 null。
+   */
+  minSize: { w: number; h: number } | null
 }
 
 /** 同時開始／同時完成／期間重疊，各自列出對方的任務編號 */
@@ -170,15 +192,16 @@ type TaskNode = Node<TaskNodeData, 'task' | 'box'>
 
 const HELP = G.help
 
-/** 說明列「圖示」那一排。顏色跟節點上的徽章同一組，掃過去對得起來 */
+/**
+ * 說明列「圖示」那一排。顏色跟節點上的徽章同一組，掃過去對得起來。
+ *
+ * 「同時開始」「同時完成」刻意不在這裡 —— 它們在圖上還有一個長相（匯合點的圓點），
+ * 兩排各講一次就是同一件事講兩遍。合併成上面那一排的圓點，說明裡一次講完兩個長相。
+ */
 const ICON_HELP: Array<{ label: string; className?: string; text: string }> = [
   { label: HELP.icon.blocked.label, text: HELP.icon.blocked.text },
   { label: HELP.icon.problem.label, className: 'text-fuchsia-700 dark:text-fuchsia-400',
     text: HELP.icon.problem.text },
-  { label: HELP.icon.sameStart.label, className: 'text-amber-700 dark:text-amber-400',
-    text: HELP.icon.sameStart.text },
-  { label: HELP.icon.sameFinish.label, className: 'text-purple-700 dark:text-purple-400',
-    text: HELP.icon.sameFinish.text },
   { label: HELP.icon.overlap.label, className: 'text-teal-700 dark:text-teal-400',
     text: HELP.icon.overlap.text },
   { label: HELP.icon.entry.label, className: 'text-emerald-700 dark:text-emerald-400',
@@ -231,18 +254,49 @@ function frameClass(data: TaskNodeData): string {
   )
 }
 
+/** 左右那兩個接點（排程依賴）。四個節點型別共用一組樣式 */
+const HANDLE_DOT = '!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900'
+/**
+ * 上下那兩個接點（任務相關）。一樣是小圓點、一樣的大小，只是顏色壓淡 ——
+ * 平常不該讓人覺得節點多長了兩顆疣，要拉線的時候看得到就夠了。
+ */
+const HANDLE_DOT_REL = '!h-2 !w-2 !border !border-white !bg-slate-300 '
+  + 'dark:!border-slate-900 dark:!bg-slate-600'
+
+/** 四個接點。任務與框都要有，相關類的線才有地方接上下 */
+function NodeHandles() {
+  return (
+    <>
+      <Handle id={H_IN} type="target" position={Position.Left} className={HANDLE_DOT} />
+      <Handle id={H_OUT} type="source" position={Position.Right} className={HANDLE_DOT} />
+      <Handle id={H_REL_IN} type="target" position={Position.Top} className={HANDLE_DOT_REL} />
+      <Handle id={H_REL_OUT} type="source" position={Position.Bottom} className={HANDLE_DOT_REL} />
+    </>
+  )
+}
+
+/** 拉框把手的顏色。跟「大項目」徽章同一個紫，深淺兩個主題下都看得見 */
+const RESIZE_COLOR = '#8b5cf6'
+
 /**
  * 大項目＝一個框，底下的任務排在框裡面（它們是 React Flow 的子節點，畫在框上面）。
  *
  * 框裡面刻意留空、只有很淡的底色：真正的內容是那些子節點，框只負責圈範圍。
  * 標題列做成一整條可以點的區域，點它就是點這張任務（聚焦、雙擊開啟都照舊）。
+ *
+ * 框的大小預設是佈局算出來的，但使用者可以自己拉（NodeResizer，React Flow 內建）。
+ * 把手只在框被選起來時出現 —— 常駐的話每個框的四角都多四顆點，圖會很吵。
+ * 下限是自動佈局算出來的尺寸：再小就會把裡面的任務蓋掉。
  */
-function BoxNodeView({ data }: NodeProps<TaskNode>) {
+function BoxNodeView({ data, selected }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
+    <>
+    <NodeResizer isVisible={!!selected} color={RESIZE_COLOR}
+                 minWidth={data.minSize?.w ?? NODE_W}
+                 minHeight={data.minSize?.h ?? NODE_H_FALLBACK} />
     <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10')}>
-      <Handle id="in" type="target" position={Position.Left}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
+      <NodeHandles />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
       <div className="flex items-center gap-1.5 px-3 py-2">
         <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
@@ -290,9 +344,8 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           </span>
         </span>
       </div>
-      <Handle id="out" type="source" position={Position.Right}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
     </div>
+    </>
   )
 }
 
@@ -300,8 +353,7 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
     <div className={cx(frameClass(data), 'w-64 bg-white dark:bg-slate-900')}>
-      <Handle id="in" type="target" position={Position.Left}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
+      <NodeHandles />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
       <div className="px-2.5 py-2">
         {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
@@ -383,8 +435,6 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
                style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
         </div>
       </div>
-      <Handle id="out" type="source" position={Position.Right}
-              className="!h-2 !w-2 !border !border-white !bg-slate-400 dark:!border-slate-900" />
     </div>
   )
 }
@@ -401,7 +451,9 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
  * 圓點放在群組的垂直中點，扇形自己會張開，不需要一根跟群組一樣高的直條
  * 去「連住」它們 —— 那條線看起來像另一種依賴，反而更難讀。
  *
- * 圓點不是任務，不能點、不能拖、不能從它拉線；它只是把「同時」這件事畫出來。
+ * 圓點**拖得動**（位置跟任務節點一樣記進 dragged，按「重新排列」放回算出來的位置）——
+ * 整張圖只有它拖不動的話，使用者一定會以為是壞了。但它不是任務：不能選取、
+ * 不能從它拉線、點兩下也開不出東西，它只是把「同時」這件事畫出來。
  */
 type JunctionData = { kind: 'fork' | 'join'; dimmed: boolean }
 type JunctionNode = Node<JunctionData, 'junction'>
@@ -412,7 +464,7 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
   return (
     <div className={cx('relative h-full w-full transition-opacity', data.dimmed && 'opacity-20')}
          title={fork ? G.junction.forkTip : G.junction.joinTip}>
-      <Handle id="in" type="target" position={Position.Left} isConnectable={false}
+      <Handle id={H_IN} type="target" position={Position.Left} isConnectable={false}
               className="!h-1.5 !w-1.5 !border-0 !bg-transparent" />
       {/* 白色外圈讓圓點在穿過它的線上仍然看得出來 */}
       <div className="h-full w-full rounded-full ring-2 ring-white dark:ring-slate-950"
@@ -426,7 +478,7 @@ function JunctionNodeView({ data }: NodeProps<JunctionNode>) {
             }}>
         {fork ? G.junction.fork : G.junction.join}
       </span>
-      <Handle id="out" type="source" position={Position.Right} isConnectable={false}
+      <Handle id={H_OUT} type="source" position={Position.Right} isConnectable={false}
               className="!h-1.5 !w-1.5 !border-0 !bg-transparent" />
     </div>
   )
@@ -451,7 +503,7 @@ function pad(ref: string): string {
  *
  * 每一層（最外層、以及每個框的裡面）都各自跑同一套排法：
  *
- *   最長路徑分層：排程類依賴由左往右流。語意關聯不參與分層 ——
+ *   最長路徑分層：排程類依賴由左往右流。任務相關不參與分層 ——
  *   它們不推動日期，讓它們影響 X 座標只會把「誰卡住誰」弄糊。
  *
  *   四種排程依賴裡只有兩種真的有先後。「同時開始」「同時完成」講的是
@@ -740,13 +792,18 @@ function GraphCanvas({
   onOpen: (id: string) => void
 }) {
   const qc = useQueryClient()
-  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   // 背景點陣的顏色是 SVG 屬性，吃不到 CSS 變數，只能自己看現在是哪一個主題
   const dark = useTheme().resolved === 'dark'
 
   /** 使用者拖過的節點位置。只存被動過的那幾個，其餘照自動佈局 */
   const [dragged, setDragged] = useState<Record<string, { x: number; y: number }>>({})
+  /**
+   * 使用者自己拉過大小的框。跟 dragged 同一套路：只存被拉過的那幾個，
+   * 其餘仍然用佈局算出來的尺寸，按「重新排列」一起清掉。
+   */
+  const [resized, setResized] = useState<Record<string, { width: number; height: number }>>({})
   /**
    * React Flow 量到的節點尺寸。這個一定要自己收好再疊回節點上。
    *
@@ -758,7 +815,8 @@ function GraphCanvas({
    */
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
   const [focusId, setFocusId] = useState<string | null>(null)
-  const [showSemantic, setShowSemantic] = useState(true)
+  /** 任務相關（相關／阻擋／重複於／需要）那幾條線要不要畫 */
+  const [showRelated, setShowRelated] = useState(true)
   /** 標出「還不能動手」的任務。預設開著 —— 這是進來最想先看到的一件事 */
   const [showBlocked, setShowBlocked] = useState(true)
   /** 標出「可以同時做」的任務。預設關著，因為它是排人力時才會用的分析視角 */
@@ -769,11 +827,20 @@ function GraphCanvas({
   const [relayout, setRelayout] = useState(0)
   const [newLinkType, setNewLinkType] = useState<LinkType>('FS')
   const [error, setError] = useState<string | null>(null)
-  /** 按過「重新排列」，要求即使節點沒變也重新框一次 */
+  /** 按過「全部顯示」或「重新排列」，要求即使節點沒變也重新框一次 */
   const fitPending = useRef(false)
   /** 上一次框過的節點集合，用來判斷「換資料了，該重新框」 */
   const lastFitKey = useRef('')
-  /** 使用者自己平移縮放或拖過節點之後，就不要再自動搶走他的視角 */
+  /** 已經替哪個專案畫過第一張圖了。換專案才算是「新的一張圖」 */
+  const fittedProject = useRef<string | null>(null)
+  /**
+   * 使用者自己平移縮放、拖過節點或拉過框之後，就不要再自動搶走他的視角。
+   *
+   * 只有兩種情況會把它歸零：換了專案（那是新的一張圖，他還沒表達過視角），
+   * 以及他自己按「全部顯示」／「重新排列」（那本來就是在要全景）。
+   * **千萬不要**在每次重新佈局時歸零 —— 之前就是那樣寫的，結果背景重抓資料、
+   * 或側欄換個篩選，畫面就把他放大看的地方硬拉回全景。
+   */
   const userAdjusted = useRef(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -913,6 +980,8 @@ function GraphCanvas({
           // 所以在這裡直接放進去，不必等 styledNodes
           problem: n.problem,
           parallel: NO_PARALLEL,
+          // 算出來的尺寸同時是「往內縮的下限」，交給 NodeResizer 當 minWidth／minHeight
+          minSize: isBox && size ? size : null,
         },
       }
     })
@@ -934,13 +1003,25 @@ function GraphCanvas({
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
     const moves: Record<string, { x: number; y: number }> = {}
     const dims: Record<string, { width: number; height: number }> = {}
+    const sizes: Record<string, { width: number; height: number }> = {}
     for (const c of changes) {
       if (c.type === 'position' && c.position) moves[c.id] = c.position
-      else if (c.type === 'dimensions' && c.dimensions) dims[c.id] = c.dimensions
+      else if (c.type === 'dimensions' && c.dimensions) {
+        // resizing 有值＝使用者正在拉 NodeResizer 的把手（拉的過程 true、放手 false）；
+        // 完全沒有這個欄位才是 React Flow 自己量出來的尺寸。
+        // 兩者一定要分開收：混在一起的話，量測會把使用者拉的大小蓋掉，
+        // 使用者拉的大小又會被當成「量到的」而在下一次佈局被抹掉。
+        if (c.resizing === undefined) dims[c.id] = c.dimensions
+        else sizes[c.id] = c.dimensions
+      }
     }
     if (Object.keys(moves).length) {
       userAdjusted.current = true
       setDragged(d => ({ ...d, ...moves }))
+    }
+    if (Object.keys(sizes).length) {
+      userAdjusted.current = true
+      setResized(r => ({ ...r, ...sizes }))
     }
     // 尺寸沒真的變就不要換物件 —— 平移縮放時 ResizeObserver 會重送同樣的值，
     // 每次都 setState 會讓整張圖白白重畫
@@ -966,21 +1047,56 @@ function GraphCanvas({
    * 代價是節點物件每次 render 都是新的，量到的尺寸得自己收好再疊回去 ——
    * 見上面 measured 的說明，那是同一件事的另一半。
    *
-   * 換了資料就把視角交還給自動佈局（userAdjusted 歸零），讓下面的
-   * ResizeObserver 也能重新接手。
+   * **使用者自己縮放平移之後就不再自動框**。這裡曾經無條件把 userAdjusted 歸零，
+   * 於是每次重新佈局都等於「他沒動過」——背景重抓資料、側欄換篩選、甚至建立一條
+   * 關聯之後，畫面都會把他放大看的地方硬拉回全景。現在分成三種情況：
+   *
+   *   換專案（新的一張圖）  → 框，而且把視角的主導權收回來
+   *   節點集合變了          → 只有在他還沒動過視角時才框
+   *   按了全部顯示／重新排列 → 一定框（那是他自己要的）
    */
   useEffect(() => {
     if (!nodesInitialized || !baseNodes.length) return
-    if (lastFitKey.current === nodeKey && !fitPending.current) return
+    const fresh = fittedProject.current !== projectId
+    const changed = lastFitKey.current !== nodeKey
+    const asked = fitPending.current
+    if (!fresh && !changed && !asked) return
+    fittedProject.current = projectId
     lastFitKey.current = nodeKey
     fitPending.current = false
-    userAdjusted.current = false
+    if (fresh) userAdjusted.current = false
+    // 只是換了一批節點而已，他已經自己選好要看哪裡的話就別搶
+    if (!fresh && !asked && userAdjusted.current) return
     fitView(FIT_OPTIONS)
     // relayout 只是「按過重新排列」的觸發器，effect 裡不會讀它的值 ——
     // 但少了它，按鈕設好的 fitPending 要等到下次換資料才會被消化，
     // 表現成「節點歸位了，視野卻沒跟著框回去」
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodesInitialized, nodeKey, baseNodes.length, fitView, relayout])
+  }, [nodesInitialized, nodeKey, baseNodes.length, projectId, fitView, relayout])
+
+  /**
+   * ＋／－ 的縮放。
+   *
+   * 沒有用 useReactFlow 的 zoomIn／zoomOut —— 實測那兩支在這個畫面上是靜悄悄的
+   * 沒有作用（滾輪縮放正常，所以 d3 那一層是通的），按了完全不動。
+   * 自己讀 viewport 再寫回去，走的是同一條 setViewport，行為確定。
+   *
+   * 以畫布中心為錨點放大縮小，不然按一次就會把畫面往左上角推。
+   */
+  const zoomBy = useCallback((factor: number) => {
+    const el = wrapperRef.current
+    const { x, y, zoom } = getViewport()
+    const next = Math.min(2, Math.max(0.15, zoom * factor))
+    if (next === zoom) return
+    userAdjusted.current = true
+    const cx = (el?.clientWidth ?? 0) / 2
+    const cy = (el?.clientHeight ?? 0) / 2
+    // 讓畫布中心那一點在縮放前後對到同一個圖上座標
+    setViewport(
+      { x: cx - ((cx - x) / zoom) * next, y: cy - ((cy - y) / zoom) * next, zoom: next },
+      { duration: 150 }
+    )
+  }, [getViewport, setViewport])
 
   /**
    * 畫布尺寸一變就重框，除非使用者已經自己動過視角。
@@ -990,6 +1106,8 @@ function GraphCanvas({
    * 這種時候 fitView 算出來的結果沒有意義，而它不會自己重試。
    * 用尺寸當觸發條件比追時間點可靠，順便也把「視窗縮放」「側欄展開」
    * 這些情況一併處理掉。
+   *
+   * userAdjusted 是唯一的煞車：他自己動過視角之後，連視窗改大小都不該把他拉回全景。
    */
   useEffect(() => {
     const el = wrapperRef.current
@@ -1207,23 +1325,29 @@ function GraphCanvas({
   // 顏色、淡出、拖曳位移與量到的尺寸都在這裡疊上去。自動佈局的結果（baseNodes）
   // 保持不變，所以狀態改色、切換聚焦都不會把使用者拖好的版面弄亂。
   const styledNodes = useMemo(
-    () => baseNodes.map(n => ({
-      ...n,
-      position: dragged[n.id] ?? n.position,
-      // 框的尺寸是我們自己算的（見 layout），量到的值不要蓋掉它 ——
-      // 蓋成 undefined 的話 React Flow 會認為它還沒量好，整張圖停在 visibility:hidden
-      measured: n.measured ?? measured[n.id],
-      data: {
-        ...n.data,
-        color: statusColor(n.data.statusKey),
-        dimmed: !!neighbours && !neighbours.has(n.id),
-        focused: n.id === focusId,
-        kin: kin.get(n.id) ?? null,
-        blockedBy: blockedBy.get(n.id) ?? [],
-        parallel: parallelWith.get(n.id) ?? NO_PARALLEL,
-      },
-    })),
-    [baseNodes, dragged, measured, neighbours, kin, focusId, statusColor, blockedBy, parallelWith]
+    () => baseNodes.map(n => {
+      // 使用者自己拉過的框，尺寸以他拉的為準；沒拉過的照佈局算出來的
+      const size = resized[n.id]
+      return {
+        ...n,
+        position: dragged[n.id] ?? n.position,
+        ...(size ? { style: { ...n.style, width: size.width, height: size.height } } : {}),
+        // 框的尺寸是我們自己算的（見 layout），量到的值不要蓋掉它 ——
+        // 蓋成 undefined 的話 React Flow 會認為它還沒量好，整張圖停在 visibility:hidden
+        measured: size ?? n.measured ?? measured[n.id],
+        data: {
+          ...n.data,
+          color: statusColor(n.data.statusKey),
+          dimmed: !!neighbours && !neighbours.has(n.id),
+          focused: n.id === focusId,
+          kin: kin.get(n.id) ?? null,
+          blockedBy: blockedBy.get(n.id) ?? [],
+          parallel: parallelWith.get(n.id) ?? NO_PARALLEL,
+        },
+      }
+    }),
+    [baseNodes, dragged, resized, measured, neighbours, kin, focusId, statusColor,
+     blockedBy, parallelWith]
   )
 
   /**
@@ -1261,10 +1385,12 @@ function GraphCanvas({
       return [{
         id: g.id,
         type: 'junction' as const,
-        position: { x, y: mid - JUNCTION_SIZE / 2 },
+        // 圓點也可以自己拖，拖過的位置跟任務節點記在同一個地方（dragged），
+        // 「重新排列」清掉之後就回到這裡算出來的位置
+        position: dragged[g.id] ?? { x, y: mid - JUNCTION_SIZE / 2 },
         measured: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
         style: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
-        draggable: false,
+        // 拖得動，但不是任務：選不起來、也不能從它拉線
         selectable: false,
         connectable: false,
         data: {
@@ -1299,8 +1425,8 @@ function GraphCanvas({
           id: `${g.id}~${m}`,
           source: g.kind === 'fork' ? g.id : m,
           target: g.kind === 'fork' ? m : g.id,
-          sourceHandle: 'out',
-          targetHandle: 'in',
+          sourceHandle: H_OUT,
+          targetHandle: H_IN,
           type: 'smoothstep',
           selectable: false,
           // 這幾支箭頭不掛字：字寫在棒子上，一群有幾張就重複幾次會太吵
@@ -1323,7 +1449,7 @@ function GraphCanvas({
       if (!visibleIds.has(e.sourceId) || !visibleIds.has(e.targetId)) continue
       const type = e.linkType
       const scheduling = isScheduling(type)
-      if (!scheduling && !showSemantic) continue
+      if (!scheduling && !showRelated) continue
       // 同時開始／同時完成已經由匯合點畫掉了
       if (type === 'SS' || type === 'FF') continue
 
@@ -1339,7 +1465,7 @@ function GraphCanvas({
       if (seen.has(dedup)) continue
       seen.add(dedup)
 
-      const color = scheduling ? SCHEDULING_COLOR[type] : SEMANTIC_COLOR
+      const color = scheduling ? SCHEDULING_COLOR[type] : RELATION_COLOR
       const faded = dim(e.sourceId, e.targetId)
       const lag = e.lagDays
         ? G.lag(e.lagDays)
@@ -1349,8 +1475,9 @@ function GraphCanvas({
         id: e.id,
         source,
         target,
-        sourceHandle: 'out',
-        targetHandle: 'in',
+        // 排程有先後走左右；任務相關沒有先後，走上下才不會被讀成順序
+        sourceHandle: scheduling ? H_OUT : H_REL_OUT,
+        targetHandle: scheduling ? H_IN : H_REL_IN,
         type: 'smoothstep',
         label: LINK_CHIP[e.linkType] + lag,
         labelShowBg: false,
@@ -1358,7 +1485,7 @@ function GraphCanvas({
         style: {
           stroke: color,
           strokeWidth: scheduling ? 1.8 : 1.2,
-          strokeDasharray: scheduling ? undefined : SEMANTIC_DASH,
+          strokeDasharray: scheduling ? undefined : RELATION_DASH,
           opacity: faded ? 0.15 : 1,
         },
         markerEnd: {
@@ -1368,7 +1495,7 @@ function GraphCanvas({
       })
     }
     return out
-  }, [graph, shownNodes, visibleIds, showSemantic, neighbours, simul])
+  }, [graph, shownNodes, visibleIds, showRelated, neighbours, simul])
 
   // ── 建立 / 刪除關聯 ──────────────────────────────────────
   const invalidate = () => {
@@ -1391,6 +1518,20 @@ function GraphCanvas({
     mutationFn: (id: string) => Api.deleteLink(id),
     onSuccess: () => { setError(null); invalidate() },
   })
+
+  /**
+   * 拉線時只讓「跟選的關聯種類對得上的那一對接點」吃得下。
+   *
+   * 排程類走左右（右側的圓點 → 下一張的左側），任務相關走上下
+   * （下緣的圓點 → 另一張的上緣）。不擋的話，選了「相關」卻從右邊拉出去，
+   * 線會被畫成左右，看起來就跟排程依賴一樣有先後 —— 那正是這次要修掉的誤讀。
+   */
+  const isValidConnection = useCallback((c: Connection | Edge) => {
+    if (!c.source || !c.target || c.source === c.target) return false
+    const viaRelation = c.sourceHandle === H_REL_OUT && c.targetHandle === H_REL_IN
+    const viaScheduling = c.sourceHandle === H_OUT && c.targetHandle === H_IN
+    return isScheduling(newLinkType) ? viaScheduling : viaRelation
+  }, [newLinkType])
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
@@ -1424,12 +1565,22 @@ function GraphCanvas({
       {/* ── 工具列 ── */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2
                       dark:border-slate-700 dark:bg-slate-900">
-        <Button variant="ghost" onClick={() => zoomIn({ duration: 150 })}
+        {/* 用按鈕縮放也是「他自己選了視角」—— 不記下來的話，畫布一改尺寸
+            下面那個 ResizeObserver 就會把他放大看的地方拉回全景 */}
+        <Button variant="ghost" onClick={() => zoomBy(1.25)}
                 aria-label={G.toolbar.zoomIn}>＋</Button>
-        <Button variant="ghost" onClick={() => zoomOut({ duration: 150 })}
+        <Button variant="ghost" onClick={() => zoomBy(1 / 1.25)}
                 aria-label={G.toolbar.zoomOut}>－</Button>
-        <Button onClick={() => fitView(FIT_OPTIONS)}>{G.toolbar.fitAll}</Button>
-        <Button onClick={() => { setDragged({}); fitPending.current = true; setRelayout(n => n + 1) }}
+        {/* 他親口要全景，視角的主導權就還給自動佈局 */}
+        <Button onClick={() => { userAdjusted.current = false; fitView(FIT_OPTIONS) }}
+                title={G.toolbar.fitAllTip}>{G.toolbar.fitAll}</Button>
+        <Button onClick={() => {
+                  setDragged({})
+                  setResized({})
+                  userAdjusted.current = false
+                  fitPending.current = true
+                  setRelayout(n => n + 1)
+                }}
                 title={G.toolbar.relayoutTip}>{G.toolbar.relayout}</Button>
         {/* 框選本來按住 Shift 拉框就有，但沒有人看得出來。給它一顆按鈕，
             開著的時候左鍵直接拉框、右鍵平移 */}
@@ -1444,23 +1595,27 @@ function GraphCanvas({
         </Button>
 
         <div className="ml-3 flex items-center gap-3 text-sm">
-          <GraphToggle checked={showSemantic} onChange={setShowSemantic}
-                       label={G.toolbar.showSemantic} />
+          <GraphToggle checked={showRelated} onChange={setShowRelated}
+                       label={G.toolbar.showRelated} />
           <GraphToggle checked={showBlocked} onChange={setShowBlocked}
                        label={G.toolbar.showBlocked} />
           <GraphToggle checked={showParallel} onChange={setShowParallel}
                        label={G.toolbar.showParallel} />
         </div>
 
+        {/* 兩類要從不同的圓點拉，選了哪一類就把該從哪拉寫在 title 上 */}
         <label className="ml-3 flex items-center gap-1.5 text-sm text-slate-600
-                          dark:text-slate-300">
+                          dark:text-slate-300"
+               title={isScheduling(newLinkType)
+                 ? G.toolbar.newLinkTipScheduling
+                 : G.toolbar.newLinkTipRelated}>
           {G.toolbar.newLink}
           <Select value={newLinkType} className="py-1"
                   onChange={e => setNewLinkType(e.target.value as LinkType)}>
             <optgroup label={G.toolbar.groupScheduling}>
               {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
             </optgroup>
-            <optgroup label={G.toolbar.groupSemantic}>
+            <optgroup label={G.toolbar.groupRelated}>
               {(['RELATES', 'BLOCKS', 'DUPLICATES', 'REQUIRES'] as LinkType[])
                 .map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
             </optgroup>
@@ -1486,6 +1641,7 @@ function GraphCanvas({
           nodeTypes={nodeTypes}
           onNodesChange={onNodesChange}
           onConnect={onConnect}
+          isValidConnection={isValidConnection}
           onEdgeClick={onEdgeClick}
           // 匯合點不是任務，點它不該聚焦、雙擊也開不出東西
           onNodeClick={(_, n) => {
@@ -1680,15 +1836,11 @@ function LegendBar() {
 
       {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
       <div className="min-w-0 flex-1">
-      <LegendRowStrip label={G.legend.rowLine}>
-        {SCHEDULING.map(t => (
-          <LegendLine key={t} color={SCHEDULING_COLOR[t]} label={LINK_CHIP[t]}
-                      onMouseEnter={hover(LINK_CHIP[t], HELP.scheduling[t])}
-                      onMouseLeave={unhover} />
-        ))}
-        <LegendLine color={SEMANTIC_COLOR} dash={SEMANTIC_DASH} label={G.legend.semantic}
-                    onMouseEnter={hover(G.legend.semantic, HELP.semantic)}
-                    onMouseLeave={unhover} />
+      {/*
+        * 線不列在這裡：每條邊上本來就掛著中文短句（完成後開始、相關…），
+        * 說明列再抄一次等於同一件事講兩遍。留下來的只有「猜不出意思的形狀」。
+        */}
+      <LegendRowStrip label={G.legend.rowShape}>
         {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
         <button type="button"
                 onMouseEnter={hover(G.legend.box, HELP.box)} onMouseLeave={unhover}
@@ -1698,16 +1850,14 @@ function LegendBar() {
                            dark:bg-violet-500/20" />
           {G.legend.box}
         </button>
-        <button type="button"
-                onMouseEnter={hover(G.legend.junction, HELP.junction)} onMouseLeave={unhover}
-                className="flex shrink-0 cursor-help items-center gap-1
-                           hover:text-slate-800 dark:hover:text-slate-100">
-          <span className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: SCHEDULING_COLOR.SS }} />
-          <span className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: SCHEDULING_COLOR.FF }} />
-          {G.legend.junction}
-        </button>
+        {/* 同時開始／同時完成在圖上是圓點、在節點上是徽章，那是同一件事的兩個長相，
+            所以只在這裡出現一次，說明裡一次講完兩種 */}
+        <LegendDot color={SCHEDULING_COLOR.SS} label={HELP.icon.sameStart.label}
+                   onMouseEnter={hover(HELP.icon.sameStart.label, HELP.icon.sameStart.text)}
+                   onMouseLeave={unhover} />
+        <LegendDot color={SCHEDULING_COLOR.FF} label={HELP.icon.sameFinish.label}
+                   onMouseEnter={hover(HELP.icon.sameFinish.label, HELP.icon.sameFinish.text)}
+                   onMouseLeave={unhover} />
       </LegendRowStrip>
 
       <LegendRowStrip label={G.legend.rowIcon}>
@@ -1788,18 +1938,16 @@ function LegendChip({ className, children, ...h }: LegendItemProps & {
   )
 }
 
-function LegendLine({ color, label, dash, ...h }: LegendItemProps & {
-  color: string; label: string; dash?: string
+/** 說明列上的一顆圓點。跟圖上的匯合點畫的是同一顆，顏色也一樣 */
+function LegendDot({ color, label, ...h }: LegendItemProps & {
+  color: string; label: string
 }) {
   return (
     <button type="button" {...h}
             className="flex shrink-0 cursor-help items-center gap-1.5
                        hover:text-slate-800 dark:hover:text-slate-100">
-      {/* 用 svg 而不是 border-style，才能跟畫面上的線用同一組 strokeDasharray */}
-      <svg width="20" height="2" className="shrink-0" aria-hidden>
-        <line x1="0" y1="1" x2="20" y2="1"
-              stroke={color} strokeWidth="2" strokeDasharray={dash} />
-      </svg>
+      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+            style={{ backgroundColor: color }} />
       {label}
     </button>
   )
