@@ -230,10 +230,11 @@ export const DEFAULT_PARAMS: Record<'priority' | 'type', InsertArgs[]> = {
   type: [
     { key: 'EPIC',      name: '大項目', color: '#d97706', rank: 1000, category: 'ACTIVE' },
     { key: 'TASK',      name: '任務',   color: '#3178c6', rank: 2000, category: 'ACTIVE' },
-    // 這裡叫「問題」不叫「缺陷」：他要的是「東西壞了、有人要修」這件事，
-    // 「缺陷」是品管的行話，看的人得先翻譯一次。key 維持 BUG 不動 ——
-    // 任務是靠 key 指回來的（0012_rename_bug_type.sql 只改既有專案的名稱）。
-    { key: 'BUG',       name: '問題',   color: '#dc2626', rank: 3000, category: 'ACTIVE' },
+    // 「東西壞了、有人要修」這件事。名字換過兩次：「缺陷」是品管行話、
+    // 「問題」跟「對外詢問」撞在一起（而且任務身上另有一個「目前遇到的問題」
+    // 欄位，講的是「現在卡在哪」，完全不同的東西），最後定為「錯誤」。
+    // key 一直是 BUG，沒有動過 —— 任務是靠 key 指回來的。
+    { key: 'BUG',       name: '錯誤',   color: '#dc2626', rank: 3000, category: 'ACTIVE' },
     { key: 'MILESTONE', name: '里程碑', color: '#8b5cf6', rank: 4000, category: 'ACTIVE' },
   ],
 }

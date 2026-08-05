@@ -109,6 +109,15 @@ export default function ListView({
    * 畫出來按了被後端拒絕，比一開始就沒有那個選項難懂得多。
    */
   const typesUnder = (parentType: string | null) => typesAllowedUnder(allTypes, parentType)
+
+  /**
+   * 這張任務還有沒有對外詢問沒回。有的話「做完」那幾個狀態不給選 ——
+   * 東西還在外面沒回來，這件事就沒有結束（見 AGENTS.md）。
+   * 已回覆的不算，`REPLIED` 與 `NONE` 都放行。
+   */
+  const hasOpenInquiry = (t: Task) =>
+    t.inquiryState === 'AWAITING' || t.inquiryState === 'PARTIAL'
+    || t.inquiryState === 'OVERDUE'
   /**
    * 選過的種類留著（連開三張問題不用選三次），但換到不能放那一種的地方時要退回
    * 第一個合法的 —— 不然畫面顯示的跟真的送出去的會是兩回事。
@@ -314,7 +323,13 @@ export default function ListView({
                                    focus:border-blue-500 focus:bg-white focus:outline-none
                                    dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
                                    dark:focus:bg-slate-900">
-                        {statuses.map(s => (
+                        {/* 還有對外詢問沒回就不給選「做完」那幾個（規矩見 AGENTS.md）。
+                            目前這一個永遠留著，否則下拉會顯示成別的狀態、
+                            一存檔就把它靜悄悄改掉 */}
+                        {statuses
+                          .filter(s => s.key === t.statusKey
+                            || !(hasOpenInquiry(t) && s.category === 'DONE'))
+                          .map(s => (
                           <option key={s.key} value={s.key}>{s.name}</option>
                         ))}
                       </select>

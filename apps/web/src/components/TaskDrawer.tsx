@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type LinkType, type Task, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
-import { Button, Input, Select, Field, Spinner, InquiryBadge, cx } from './ui'
+import { Button, Input, Select, Field, Spinner, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
@@ -146,6 +146,20 @@ export function TaskDrawer({
     childTypes: allTasks.filter(t => t.parentId === data?.id).map(t => t.type),
   })
 
+  /**
+   * 還有幾件對外詢問沒回。已回覆的不算 —— 那件事已經完成了。
+   * 這個數字決定「做完了」那幾個狀態畫不畫得出來（見 AGENTS.md）。
+   */
+  const openInquiries = (data?.inquiries ?? []).filter(q => !q.isReplied).length
+
+  /** 標題列上那幾顆：還在等的、已經逾期的、還是全部都回來了 */
+  const inquiryCounts = (() => {
+    const all = data?.inquiries ?? []
+    const overdue = all.filter(q => !q.isReplied && q.status === 'OVERDUE').length
+    const waiting = all.filter(q => !q.isReplied && q.status !== 'OVERDUE').length
+    return { waiting, overdue, allReplied: all.length > 0 && waiting + overdue === 0 }
+  })()
+
   const [targetId, setTargetId] = useState('')
   const [linkType, setLinkType] = useState<LinkType>('FS')
   const [lag, setLag] = useState(0)
@@ -209,7 +223,6 @@ export function TaskDrawer({
                                    dark:bg-slate-800 dark:text-slate-400">
                     {data.ref}
                   </span>
-                  <InquiryBadge state={data.inquiryState} />
                   {/* 顏色是那一種種類自己的（系統參數頁裡挑的），不是寫死的紫色；
                       只畫成左邊那條細槓，理由見 pages/List.tsx 同一段註解 */}
                   {typeOf(data.type) && (
@@ -220,6 +233,33 @@ export function TaskDrawer({
                             style={{ background: types.find(t => t.key === data.type)?.color
                                                  ?? '#94a3b8' }} />
                       {typeOf(data.type)}
+                    </span>
+                  )}
+
+                  {/*
+                    * 對外詢問的狀況接在種類後面。原本這裡是一顆只講狀態的徽章
+                    * （待回覆／逾期未回），但一張任務可以同時問好幾個單位 ——
+                    * 沒有數字就看不出來是還剩一件還是剩五件。
+                    * 寫法跟側欄一致（「外 1」「逾 1」），兩邊要對得起來。
+                    */}
+                  {inquiryCounts.waiting > 0 && (
+                    <span title={T.task.drawer.inquiryWaitingTip(inquiryCounts.waiting)}
+                          className="rounded bg-blue-100 px-1 text-[11px] font-medium text-blue-700
+                                     dark:bg-blue-500/15 dark:text-blue-300">
+                      {T.task.drawer.inquiryWaiting(inquiryCounts.waiting)}
+                    </span>
+                  )}
+                  {inquiryCounts.overdue > 0 && (
+                    <span title={T.task.drawer.inquiryOverdueTip(inquiryCounts.overdue)}
+                          className="rounded bg-red-100 px-1 text-[11px] font-medium text-red-700
+                                     dark:bg-red-500/15 dark:text-red-300">
+                      {T.task.drawer.inquiryOverdue(inquiryCounts.overdue)}
+                    </span>
+                  )}
+                  {inquiryCounts.allReplied && (
+                    <span className="rounded bg-emerald-100 px-1.5 text-[11px] font-medium
+                                     text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+                      {T.task.drawer.inquiryAllReplied}
                     </span>
                   )}
                 </div>
@@ -261,8 +301,12 @@ export function TaskDrawer({
                 *    不是「哪天開始的」。
                 * 3. 進度給拖拉條 + 數字兩種輸入。拖拉條快，鍵盤打字準，
                 *    只給其中一種一定有人不順手。
+                *
+                * 格線是**六欄**不是四欄。四欄的話進度與日期各佔兩欄就把第二列填滿，
+                * 排程模式被擠到第三列自己一個人站著 —— 那一列看起來像是後來
+                * 補上去的東西，而它只是眾多欄位裡的一個。
                 */}
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
                 <Field label={T.task.drawer.fieldTaskType}>
                   {canEdit ? (
                     /*
@@ -284,17 +328,32 @@ export function TaskDrawer({
                 </Field>
                 <Field label={T.task.drawer.fieldStatus}>
                   {canEdit ? (
+                    /*
+                     * 還有對外詢問沒回的時候，「算是做完了」那幾個狀態不畫出來
+                     * （規矩見 AGENTS.md；後端也擋，這裡只是不要畫出按了會被拒絕的選項）。
+                     * 目前這一個永遠留著 —— 既有資料可能本來就違反，
+                     * 拿掉的話下拉會顯示成別的狀態，然後一存檔就靜悄悄改掉它。
+                     */
                     <Select value={data.statusKey}
                             onChange={e => patch.mutate({ statusKey: e.target.value })}
                             className="w-full">
-                      {statuses.map(s => <option key={s.key} value={s.key}>{s.name}</option>)}
+                      {statuses
+                        .filter(s => s.key === data.statusKey
+                          || !(openInquiries > 0 && s.category === 'DONE'))
+                        .map(s => <option key={s.key} value={s.key}>{s.name}</option>)}
                     </Select>
                   ) : (
                     <ReadOnlyValue>
                       {statuses.find(s => s.key === data.statusKey)?.name ?? T.common.none}
                     </ReadOnlyValue>
                   )}
+                  {canEdit && openInquiries > 0 && (
+                    <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+                      {T.task.drawer.statusBlockedByInquiry(openInquiries)}
+                    </p>
+                  )}
                 </Field>
+                <div className="sm:col-span-2">
                 <Field label={T.task.drawer.fieldAssignee}>
                   {canEdit ? (
                     /* 選了人不會馬上送出：下面會跳出交接說明，按了才算數 */
@@ -314,6 +373,7 @@ export function TaskDrawer({
                     <ReadOnlyValue>{data.assigneeName ?? T.common.unassigned}</ReadOnlyValue>
                   )}
                 </Field>
+                </div>
                 <Field label={T.task.drawer.fieldPriority}>
                   {canEdit ? (
                     <Select value={data.priority}
@@ -327,8 +387,8 @@ export function TaskDrawer({
                     <ReadOnlyValue>{priorityOf(data.priority)}</ReadOnlyValue>
                   )}
                 </Field>
-                {/* 進度佔兩欄：拖拉條擠在四分之一欄寬裡拖不準 */}
-                <div className="col-span-2">
+                {/* 進度佔兩欄：拖拉條再窄就拖不準了 */}
+                <div className="sm:col-span-2">
                   <Field label={T.task.drawer.fieldProgress}>
                     {canEdit ? (
                       <ProgressField value={data.progress}
@@ -339,7 +399,7 @@ export function TaskDrawer({
                   </Field>
                 </div>
                 {/* 開始與結束擺在同一格，中間一個破折號 —— 它們是一段期間，不是兩個欄位 */}
-                <div className="col-span-2">
+                <div className="sm:col-span-4">
                   <Field label={`${T.task.drawer.fieldStart} – ${T.task.drawer.fieldDue}`}>
                     {canEdit ? (
                       <div className="flex items-center gap-2">
@@ -651,6 +711,8 @@ function ProgressField({ value, onCommit }: {
   value: number
   onCommit: (v: number) => void
 }) {
+  // useId 產出的字串帶冒號，當 HTML id 用要先換掉
+  const ticksId = `ticks-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
   const [draft, setDraft] = useState(value)
   const dragging = useRef(false)
   useEffect(() => { if (!dragging.current) setDraft(value) }, [value])
@@ -665,7 +727,7 @@ function ProgressField({ value, onCommit }: {
   return (
     <div className="flex items-center gap-3">
       <input
-        type="range" min={0} max={100} step={5} value={draft}
+        type="range" min={0} max={100} step={10} list={ticksId} value={draft}
         aria-label={T.task.drawer.progressAria}
         onPointerDown={() => { dragging.current = true }}
         onChange={e => setDraft(Number(e.target.value))}
@@ -675,6 +737,15 @@ function ProgressField({ value, onCommit }: {
         className="h-1.5 min-w-0 flex-1 cursor-pointer appearance-none rounded-full
                    bg-slate-200 accent-blue-600 dark:bg-slate-700 dark:accent-blue-500"
       />
+      {/* 十格刻度。拖的時候會吸附到整十，也看得出來現在大概在第幾格 ——
+          沒有刻度的話 40% 跟 45% 在畫面上分不出來，而那兩個數字沒有差別到
+          需要分辨的程度（進度本來就是概數） */}
+      <datalist id={ticksId}>
+        {[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100].map(v => (
+          <option key={v} value={v} />
+        ))}
+      </datalist>
+
       {/*
         * 數字也能直接打 —— 要 35% 的時候拖拉條對不準。
         * 寬度掛在外面這層 div，不是掛在 Input 上：`Input` 自己帶 `w-full`，

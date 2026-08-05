@@ -9,8 +9,8 @@ import type { ProjectParam } from './api'
  *
  * 規則（使用者 2026-08-05 定，寫在 `D:\NewProject\AGENTS.md`）：
  * - **大項目一定在任務上面**：只能放最上層，或掛在另一個大項目底下。
- * - **問題只能在任務下面**：上層一定要是任務。
- * - 任務與里程碑不受限制。
+ * - **錯誤只能在任務下面**：上層一定要是任務。
+ * - **任務與里程碑一定要掛在大項目底下**：最上層只放得下大項目。
  * - 專案自己新增的種類（key 不是這四種）完全不受限制。
  */
 
@@ -32,6 +32,10 @@ export function canBeUnder(type: string, parentType: string | null): boolean {
   if (type === BUG) {
     // 一定要有上層，而且那個上層一定是任務
     return parentType === 'TASK'
+  }
+  if (type === 'TASK' || type === 'MILESTONE') {
+    // 一定要掛在大項目底下；最上層只放得下大項目
+    return parentType === EPIC || (parentType !== null && !RULED.has(parentType))
   }
   return true
 }
@@ -65,7 +69,7 @@ export function typesAllowedFor(
   return types.filter(t => {
     if (t.key === opts.current) return true
     if (!canBeUnder(t.key, opts.parentType)) return false
-    // 底下有問題 → 自己一定要是任務；底下有大項目 → 自己一定要是大項目
+    // 底下有錯誤 → 自己一定要是任務；底下有大項目 → 自己一定要是大項目
     if (kids.has(BUG) && t.key !== 'TASK') return false
     if (kids.has(EPIC) && t.key !== EPIC) return false
     return true

@@ -19,7 +19,7 @@ export const task = {
   type: {
     EPIC: '大項目',
     MILESTONE: '里程碑',
-    BUG: '問題',
+    BUG: '錯誤',
   },
   priority: {
     LOW: '低',
@@ -36,7 +36,25 @@ export const task = {
      * 選項是這個專案自己在系統參數頁定的，不是寫死的四種。
      */
     fieldTaskType: '任務種類',
+    /**
+     * 標題列上、種類徽章後面的對外詢問狀況。
+     *
+     * 全部回來了就講「已回覆」一句話就好 —— 那是結束了的狀態，不需要數字。
+     * 還有沒回的才給數字，而且跟側欄同一套寫法（「外 1」「逾 1」），
+     * 兩個地方看到的東西要能對得起來。
+     */
+    inquiryAllReplied: '對外詢問都回覆了',
+    inquiryWaiting: (n: number) => `外 ${n}`,
+    inquiryOverdue: (n: number) => `逾 ${n}`,
+    inquiryWaitingTip: (n: number) => `${n} 件對外詢問還在等回覆`,
+    inquiryOverdueTip: (n: number) => `${n} 件對外詢問過了期望回覆日還沒回`,
     fieldStatus: '狀態',
+    /**
+     * 還有對外詢問沒回的時候，「算是做完了」那幾個狀態不畫出來。
+     * 少了選項一定要講原因 —— 無故消失比按了被拒絕更難懂。
+     */
+    statusBlockedByInquiry: (n: number) =>
+      `還有 ${n} 件對外詢問沒回，先登錄回覆才選得到「做完」那幾個狀態。`,
     fieldAssignee: '負責人',
     fieldPriority: '優先級',
     fieldStart: '開始日',

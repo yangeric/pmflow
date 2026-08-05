@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Api, type Project, type Task } from '../lib/api'
+import { Api, type Project, type ProjectParam, type Task } from '../lib/api'
 import { rollup } from '../lib/rollup'
 import { T } from '../strings'
 import { Button, Input, cx } from './ui'
@@ -43,11 +43,17 @@ function rememberCollapsed(v: boolean): void {
 }
 
 export function EpicSidebar({
-  project, tasks, selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
+  project, tasks, types = [], selectedEpicId, onSelectEpic, selectedTaskId, onOpenTask,
   onSwitchProject,
 }: {
   project?: Project
   tasks: Task[]
+  /**
+   * 這個專案的任務種類。側欄每一列要標出自己是哪一種 ——
+   * 少了它，最上層的大項目跟最上層的任務長得一模一樣，
+   * 掛在任務底下的錯誤也看不出來跟兄弟任務有什麼不同。
+   */
+  types?: ProjectParam[]
   /** null = 全部任務（不篩選） */
   selectedEpicId: string | null
   onSelectEpic: (id: string | null) => void
@@ -64,7 +70,7 @@ export function EpicSidebar({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
 
-  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn } = useMemo(() => {
+  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn } = useMemo(() => {
     const ids = new Set(tasks.map(t => t.id))
     const epics = tasks.filter(t => !t.parentId)
     const rolled = rollup(tasks)
@@ -82,6 +88,30 @@ export function EpicSidebar({
         seen.add(id)
         const self = tasks.find(t => t.id === id)
         if (self?.inquiryState === 'OVERDUE') n++
+        for (const k of kids.get(id) ?? []) walk(k.id, seen)
+      }
+      walk(rootId)
+      return n
+    }
+
+    /**
+     * 這一支有幾件**還沒逾期**的對外詢問（含自己）。
+     *
+     * 刻意扣掉逾期的：逾期已經有自己的徽章了，兩邊都算的話同一件事會被數兩次，
+     * 而「外 3 逾 1」也會被讀成「總共四件」。分開之後兩個數字加起來
+     * 才剛好是「這一支發出去的對外詢問」的總數。
+     *
+     * **已回覆的不算**：那件事已經完成了。這兩顆徽章同時是「還能不能結案」的
+     * 儀表板（見 AGENTS.md「還有對外詢問沒回，就不能完成」）——
+     * 把已回覆的算進來的話，任務只要問過一次就永遠有數字、永遠結不了案。
+     */
+    const inquiriesIn = (rootId: string): number => {
+      let n = 0
+      const walk = (id: string, seen = new Set<string>()) => {
+        if (seen.has(id)) return
+        seen.add(id)
+        const self = tasks.find(t => t.id === id)
+        if (self?.inquiryState === 'AWAITING' || self?.inquiryState === 'PARTIAL') n++
         for (const k of kids.get(id) ?? []) walk(k.id, seen)
       }
       walk(rootId)
@@ -125,7 +155,7 @@ export function EpicSidebar({
     }))
 
     const looseCount = tasks.filter(t => t.parentId && !ids.has(t.parentId)).length
-    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn }
+    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn, inquiriesIn }
   }, [tasks])
 
   /** 一列任務的問題數：底下的，加上自己（如果它本身就是一張問題） */
@@ -253,135 +283,26 @@ export function EpicSidebar({
           </div>
         )}
 
-        {epics.map(epic => {
-          const s = stat.get(epic.id)!
-          const active = selectedEpicId === epic.id && !selectedTaskId
-          const kids = childrenOf.get(epic.id) ?? []
-          const open = expanded.has(epic.id) || autoOpen === epic.id
-          return (
-            <div key={epic.id} className="mb-0.5">
-            <div className={cx('flex items-start rounded-md',
-              active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}>
-            <button
-              onClick={e => { e.stopPropagation(); toggle(epic.id) }}
-              disabled={!kids.length}
-              aria-label={open ? T.nav.sidebar.collapseEpic : T.nav.sidebar.expandEpic}
-              aria-expanded={open}
-              className={cx('w-6 shrink-0 py-2.5 text-xs',
-                kids.length
-                  ? 'text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
-                  : 'text-transparent')}>
-              {open ? '▾' : '▸'}
-            </button>
-            <button
-              onClick={() => onSelectEpic(epic.id)}
-              title={s.hasChildren
-                ? T.nav.sidebar.epicSummary(epic.title, s.done, s.total)
-                : epic.title}
-              className="block min-w-0 flex-1 rounded-md py-2 pr-2.5 text-left">
-              <div className="flex items-center gap-2">
-                <span className={cx(
-                  'min-w-0 flex-1 truncate text-sm',
-                  active
-                    ? 'font-medium text-slate-800 dark:text-slate-100'
-                    : 'text-slate-700 dark:text-slate-300'
-                )}>{epic.title}</span>
-                {/*
-                  * 問題數排在逾期前面：問題是「這裡有多少事情壞了」，
-                  * 逾期是「有多少事情在等外面」，兩件事分開標，不要合成一個數字。
-                  *
-                  * **展開之後這兩顆就不畫了** —— 底下每一列各自標著自己的數字，
-                  * 上面再留一個總數，同一個畫面就有兩層數字在互相解釋，
-                  * 看的人得自己算「這 2 是不是就是下面那 1 加 1」。
-                  */}
-                {!open && s.bugs > 0 && (
-                  <span title={T.nav.sidebar.epicBugs(s.bugs)}
-                        className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
-                                   dark:bg-rose-500/15 dark:text-rose-300">
-                    {T.nav.sidebar.bugBadge(s.bugs)}
-                  </span>
-                )}
-                {!open && s.overdue > 0 && (
-                  <span title={T.nav.sidebar.epicOverdue(s.overdue)}
-                        className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
-                                   dark:bg-red-500/15 dark:text-red-300">
-                    {T.nav.sidebar.overdueBadge(s.overdue)}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1.5 flex items-center gap-2">
-                <span className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                  <span className={cx('block h-full',
-                          s.progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500')}
-                        style={{ width: `${s.progress}%` }} />
-                </span>
-                <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
-                  {s.progress}%
-                </span>
-                {s.hasChildren && (
-                  <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
-                    {s.done}/{s.total}
-                  </span>
-                )}
-              </div>
-            </button>
-            </div>
-
-            {/* 小項目：點了在右邊開詳情，選中的那張會 highlight */}
-            {open && kids.map(kid => {
-              const on = kid.id === selectedTaskId
-              return (
-                <button
-                  key={kid.id}
-                  onClick={() => onOpenTask(kid.id)}
-                  title={T.nav.sidebar.taskTitle(kid.ref, kid.title)}
-                  aria-current={on ? 'true' : undefined}
-                  className={cx(
-                    'flex w-full items-center gap-2 rounded-md py-1.5 pl-8 pr-2 text-left text-[13px]',
-                    on ? 'bg-blue-50 font-medium text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
-                       : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700 dark:text-slate-400 '
-                         + 'dark:hover:bg-slate-800 dark:hover:text-slate-300'
-                  )}>
-                  <span className={cx('h-1.5 w-1.5 shrink-0 rounded-full',
-                    kid.progress >= 100 ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600')} />
-                  <span className="min-w-0 flex-1 truncate">{kid.title}</span>
-                  {/*
-                    * 任務列算的是「這一支底下有幾張問題」，**而且含自己** ——
-                    * 大項目一展開，它的總數就換成這幾個數字，加起來要對得上。
-                    * 不含自己的話，像「採購與到貨」這種本身就是問題的直屬子任務
-                    * 會一個數字都沒有，展開前後就湊不回同一個總數。
-                    */}
-                  {bugCount(kid) > 0 && (
-                    <span title={kid.type === 'BUG' && bugCount(kid) === 1
-                      ? T.nav.sidebar.taskIsBug
-                      : T.nav.sidebar.taskBugs(bugCount(kid))}
-                          className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
-                                     dark:bg-rose-500/15 dark:text-rose-300">
-                      {T.nav.sidebar.bugBadge(bugCount(kid))}
-                    </span>
-                  )}
-                  {/*
-                    * 逾期也算**整支子樹**，不是只看這一列自己。
-                    * 側欄只畫得出直屬子項，孫層以下沒有自己的列 ——
-                    * 只看自己的話，大項目一展開，掛在孫層的那筆逾期就整個消失，
-                    * 展開反而比收著看得少。
-                    *
-                    * 樣式跟「問 N」一致：一個文字徽章、一個表情符號的話，
-                    * 同一列看起來像兩套系統。
-                    */}
-                  {overdueIn(kid.id) > 0 && (
-                    <span title={T.nav.sidebar.taskOverdue}
-                          className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
-                                     dark:bg-red-500/15 dark:text-red-300">
-                      {T.nav.sidebar.overdueBadge(overdueIn(kid.id))}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-            </div>
-          )
-        })}
+        {epics.map(epic => (
+          <TreeNode
+            key={epic.id}
+            task={epic}
+            depth={0}
+            childrenOf={childrenOf}
+            stat={stat.get(epic.id)}
+            bugsUnder={bugsUnder}
+            overdueIn={overdueIn}
+            inquiriesIn={inquiriesIn}
+            types={types}
+            expanded={expanded}
+            autoOpen={autoOpen}
+            toggle={toggle}
+            selectedEpicId={selectedEpicId}
+            selectedTaskId={selectedTaskId}
+            onSelectEpic={onSelectEpic}
+            onOpenTask={onOpenTask}
+          />
+        ))}
 
         {looseCount > 0 && (
           <div className="mt-2 px-2.5 text-[11px] leading-snug text-slate-400 dark:text-slate-400">
@@ -417,5 +338,197 @@ export function EpicSidebar({
       </nav>
 
     </aside>
+  )
+}
+
+/**
+ * 樹上的一列，會遞迴畫出自己底下的每一層。
+ *
+ * **為什麼要遞迴**：原本只畫兩層（大項目 → 直屬子項），所以掛在任務底下的錯誤
+ * 根本不會出現在側欄上 —— 而種類的上下關係就規定錯誤只能掛在任務底下
+ * （見 AGENTS.md）。畫不出來的話，左邊看到的結構跟實際的結構是兩回事。
+ *
+ * 深度只影響縮排與字級：最上層那一列（大項目）多一條進度條與 x/y，
+ * 底下每一層都是同一種緊湊的樣子，再深也不會多出新花樣。
+ */
+function TreeNode({
+  task, depth, childrenOf, stat, bugsUnder, overdueIn, inquiriesIn, types,
+  expanded, autoOpen, toggle, selectedEpicId, selectedTaskId, onSelectEpic, onOpenTask,
+}: {
+  task: Task
+  depth: number
+  types: ProjectParam[]
+  childrenOf: Map<string, Task[]>
+  /** 只有最上層那一列有：進度與 x/y 個已完成 */
+  stat?: { progress: number; done: number; total: number; hasChildren: boolean }
+  bugsUnder: (id: string) => number
+  overdueIn: (id: string) => number
+  inquiriesIn: (id: string) => number
+  expanded: Set<string>
+  autoOpen: string | null
+  toggle: (id: string) => void
+  selectedEpicId: string | null
+  selectedTaskId: string | null
+  onSelectEpic: (id: string) => void
+  onOpenTask: (id: string) => void
+}) {
+  const kids = childrenOf.get(task.id) ?? []
+  const open = expanded.has(task.id) || autoOpen === task.id
+  const kind = types.find(t => t.key === task.type)
+  const kindName = kind?.name ?? task.type
+  const kindColor = kind?.color ?? '#94a3b8'
+  const isRoot = depth === 0
+  const active = isRoot
+    ? selectedEpicId === task.id && !selectedTaskId
+    : task.id === selectedTaskId
+
+  /*
+   * 收著的時候標整支子樹的量，展開之後只標「這一列自己」的 ——
+   * 底下每一列都各自標著自己的數字了，上面再留一個總數，
+   * 同一個畫面就有兩層數字在互相解釋。
+   *
+   * 錯誤**不含自己**：一張錯誤本來就長得像錯誤（種類徽章、縮排位置都看得到），
+   * 旁邊再標一個「錯 1」只會讓人以為它底下還有東西。
+   * 逾期含自己 —— 那是狀態不是身分，不標就看不出來。
+   */
+  const bugs = open ? 0 : bugsUnder(task.id)
+  const overdue = open
+    ? (task.inquiryState === 'OVERDUE' ? 1 : 0)
+    : overdueIn(task.id)
+  const asked = open
+    ? (task.inquiryState === 'AWAITING' || task.inquiryState === 'PARTIAL' ? 1 : 0)
+    : inquiriesIn(task.id)
+
+  return (
+    <div className={isRoot ? 'mb-0.5' : undefined}>
+      <div className={cx('flex items-start rounded-md',
+        active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}>
+
+        {/* 沒有子項的列一樣佔一格箭頭的寬度，不然同一層的文字會左右參差 */}
+        <button
+          onClick={e => { e.stopPropagation(); toggle(task.id) }}
+          disabled={!kids.length}
+          aria-label={open ? T.nav.sidebar.collapseEpic : T.nav.sidebar.expandEpic}
+          aria-expanded={open}
+          style={{ marginLeft: depth * 12 }}
+          className={cx('w-6 shrink-0 text-xs', isRoot ? 'py-2.5' : 'py-1.5',
+            kids.length
+              ? 'text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+              : 'text-transparent')}>
+          {open ? '▾' : '▸'}
+        </button>
+
+        <button
+          onClick={() => (isRoot ? onSelectEpic(task.id) : onOpenTask(task.id))}
+          title={isRoot && stat?.hasChildren
+            ? T.nav.sidebar.epicSummary(task.title, stat.done, stat.total)
+            : T.nav.sidebar.taskTitle(task.ref, task.title)}
+          aria-current={!isRoot && active ? 'true' : undefined}
+          className={cx('block min-w-0 flex-1 rounded-md pr-2.5 text-left',
+                        isRoot ? 'py-2' : 'py-1.5')}>
+          <div className="flex items-center gap-2">
+            {/*
+              * 每一列前面一條種類色的細槓（顏色是他在系統參數頁自己挑的）。
+              * 沒有它的話，最上層的大項目跟最上層的任務長得一模一樣，
+              * 掛在任務底下的錯誤也看不出來跟兄弟任務有什麼不同。
+              *
+              * 只當細槓、不當底色也不當文字色：顏色是使用者挑的，深淺不受控，
+              * 拿去當底色在深色模式下會有一半讀不到（跟清單、週檢視同一套畫法）。
+              */}
+            <span className={cx('shrink-0 rounded-full', isRoot ? 'h-4 w-1' : 'h-3 w-0.5')}
+                  title={kindName}
+                  style={{ background: kindColor }} />
+            <span className={cx('min-w-0 flex-1 truncate',
+              isRoot ? 'text-sm' : 'text-[13px]',
+              active
+                ? isRoot
+                  ? 'font-medium text-slate-800 dark:text-slate-100'
+                  : 'font-medium text-blue-700 dark:text-blue-300'
+                : isRoot
+                  ? 'text-slate-700 dark:text-slate-300'
+                  : 'text-slate-500 dark:text-slate-400'
+            )}>{task.title}</span>
+
+            {/*
+              * 做完了才畫一個勾。沒做完就不畫 —— 前面那條槓已經佔住
+              * 「這一列是什麼」的位置，再放一個灰點只是多一個要解讀的東西。
+              *
+              * 用勾不用綠點：綠點得先知道規則才看得懂（他第一次看到就問了
+              * 「綠色點是什麼意思」），勾不必解釋。
+              */}
+            {!isRoot && task.progress >= 100 && (
+              <span aria-hidden title={T.nav.sidebar.doneDot}
+                    className="shrink-0 text-[11px] leading-none text-emerald-600
+                               dark:text-emerald-400">✓</span>
+            )}
+
+            {/* 錯誤排在逾期前面：一個是「這裡有多少事情壞了」，
+                一個是「有多少事情在等外面回」，兩件事分開標 */}
+            {bugs > 0 && (
+              <span title={T.nav.sidebar.bugsUnder(bugs)}
+                    className="shrink-0 rounded bg-rose-100 px-1 text-[10px] font-medium text-rose-700
+                               dark:bg-rose-500/15 dark:text-rose-300">
+                {T.nav.sidebar.bugBadge(bugs)}
+              </span>
+            )}
+            {/* 「外」排在「逾」前面，而且已經扣掉逾期的那幾件 ——
+                兩個數字加起來才是這一支發出去的對外詢問總數，不會重複算 */}
+            {asked > 0 && (
+              <span title={T.nav.sidebar.askedUnder(asked)}
+                    className="shrink-0 rounded bg-blue-100 px-1 text-[10px] font-medium text-blue-700
+                               dark:bg-blue-500/15 dark:text-blue-300">
+                {T.nav.sidebar.askedBadge(asked)}
+              </span>
+            )}
+            {overdue > 0 && (
+              <span title={T.nav.sidebar.overdueUnder(overdue)}
+                    className="shrink-0 rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
+                               dark:bg-red-500/15 dark:text-red-300">
+                {T.nav.sidebar.overdueBadge(overdue)}
+              </span>
+            )}
+          </div>
+
+          {/* 進度條只有最上層那一列有 —— 每一層都畫的話，側欄會變成一片條 */}
+          {isRoot && stat && (
+            <div className="mt-1.5 flex items-center gap-2">
+              <span className="h-1 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <span className={cx('block h-full',
+                        stat.progress >= 100 ? 'bg-emerald-500' : 'bg-blue-500')}
+                      style={{ width: `${stat.progress}%` }} />
+              </span>
+              <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
+                {stat.progress}%
+              </span>
+              {stat.hasChildren && (
+                <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-400">
+                  {stat.done}/{stat.total}
+                </span>
+              )}
+            </div>
+          )}
+        </button>
+      </div>
+
+      {open && kids.map(kid => (
+        <TreeNode
+          key={kid.id}
+          task={kid}
+          depth={depth + 1}
+          childrenOf={childrenOf}
+          bugsUnder={bugsUnder}
+          overdueIn={overdueIn}
+          inquiriesIn={inquiriesIn}
+          types={types}
+          expanded={expanded}
+          autoOpen={autoOpen}
+          toggle={toggle}
+          selectedEpicId={selectedEpicId}
+          selectedTaskId={selectedTaskId}
+          onSelectEpic={onSelectEpic}
+          onOpenTask={onOpenTask}
+        />
+      ))}
+    </div>
   )
 }

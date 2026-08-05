@@ -1,7 +1,8 @@
 import type { Db } from './db.js'
+import { badRequest } from './errors.js'
 
 /**
- * 重算某張任務的發文追蹤彙總欄位。
+ * 重算某張任務的對外詢問彙總欄位。
  * 詢問單每次新增／修改／刪除，都要在**同一個交易**內呼叫，
  * 否則看板篩選會拿到過期的狀態。
  *
@@ -73,3 +74,43 @@ export function addWorkingDays(from: Date, days: number): Date {
 }
 
 export const toISODate = (d: Date): string => d.toISOString().slice(0, 10)
+
+/**
+ * 還有對外詢問沒回，就不能把任務改成「算是做完了」那一類的狀態。
+ *
+ * **為什麼**：東西還在外面沒回來，這件事就沒有結束。先結案只會讓那筆詢問
+ * 變成沒有人在追的孤兒 —— 任務從清單上消失了，而外面那個單位還在等我們的人催。
+ *
+ * **哪些算沒回**：還在等（`AWAITING`）、部分回覆（`PARTIAL`）、逾期（`OVERDUE`）。
+ * **已回覆不算** —— 問過又收到回覆，那件事就完成了，不該再卡住任務；
+ * 不然一張任務只要問過一次就永遠結不了案。
+ *
+ * **只看這張任務自己的**，不看子任務。子任務會被同一條規則各自擋住，
+ * 而父任務的進度本來就是子任務彙總出來的，兩邊都擋等於同一件事擋兩次。
+ *
+ * 不改狀態、或改成的狀態不算完成，就直接放行 —— 既有資料可能本來就違反
+ * （這條規則是後來才定的），那些任務還是要能改標題、換負責人。
+ */
+export async function assertNoOpenInquiries(
+  db: Db, taskId: string, nextStatusKey: string, projectId: string
+): Promise<void> {
+  const [status] = await db<{ category: string }[]>`
+    SELECT category FROM task_status
+    WHERE project_id = ${projectId} AND key = ${nextStatusKey}`
+  if (status?.category !== 'DONE') return
+
+  const [row] = await db<{ open: number; overdue: number }[]>`
+    SELECT count(*) FILTER (WHERE replied_at IS NULL AND (due_date IS NULL OR due_date >= CURRENT_DATE))::int AS open,
+           count(*) FILTER (WHERE replied_at IS NULL AND due_date < CURRENT_DATE)::int AS overdue
+      FROM task_inquiry
+     WHERE task_id = ${taskId}`
+  const open = (row?.open ?? 0) + (row?.overdue ?? 0)
+  if (open === 0) return
+
+  throw badRequest(
+    `還有 ${open} 件對外詢問沒有回覆，這張任務還不能算做完`,
+    row && row.overdue > 0
+      ? `其中 ${row.overdue} 件已經過了期望回覆日。`
+        + '請先登錄回覆，或把那幾筆刪掉，再把狀態改成做完。'
+      : '請先登錄回覆，或把那幾筆刪掉，再把狀態改成做完。')
+}

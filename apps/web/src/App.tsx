@@ -293,6 +293,7 @@ function ProjectWorkspace({
       <EpicSidebar
         project={project}
         tasks={tasks}
+        types={project?.types ?? []}
         selectedEpicId={epicId}
         onSelectEpic={id => {
           setEpicId(id)
@@ -357,12 +358,6 @@ function ProjectWorkspace({
                 <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">
                   {epic.title}
                 </h1>
-                <button onClick={() => setEpicId(null)}
-                        className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500
-                                   hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400
-                                   dark:hover:bg-slate-700">
-                  ✕ {T.nav.showAll}
-                </button>
               </>
             ) : (
               <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100">

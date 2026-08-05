@@ -9,6 +9,7 @@ import { schedule, type SchedTask, type SchedLink } from '../lib/schedule.js'
 import { notify } from '../lib/notify.js'
 import { badRequest, forbidden, notFound } from '../lib/errors.js'
 import { assertParamKey } from './parameters.js'
+import { assertNoOpenInquiries } from '../lib/inquiry.js'
 
 /**
  * 誰能改任務本身：**開這張任務的人、專案的建立者、專案管理者**，其他人不行。
@@ -259,6 +260,8 @@ export default async function taskRoutes(app: FastifyInstance) {
     if (b.type) await assertParamKey(sql, projectId, 'type', b.type)
     if (b.priority) await assertParamKey(sql, projectId, 'priority', b.priority)
     if (b.statusKey) await assertParamKey(sql, projectId, 'status', b.statusKey)
+    // 還有對外詢問沒回就不能結案（見 lib/inquiry.ts 的說明）
+    if (b.statusKey) await assertNoOpenInquiries(sql, req.params.id, b.statusKey, projectId)
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
@@ -439,8 +442,9 @@ export default async function taskRoutes(app: FastifyInstance) {
       user.id, req.params.id, 'EDITOR')
     await assertCanEditTask(req.params.id, user.id, role)
     const b = moveBody.parse(req.body)
-    // 拖到別的欄也是在改狀態，一樣要確認那個狀態存在
+    // 拖到別的欄也是在改狀態，一樣要確認那個狀態存在、一樣不能帶著沒回的詢問結案
     if (b.statusKey) await assertParamKey(sql, projectId, 'status', b.statusKey)
+    if (b.statusKey) await assertNoOpenInquiries(sql, req.params.id, b.statusKey, projectId)
 
     const neighbours = await sql<{ id: string; rank: string }[]>`
       SELECT id, rank::text FROM task

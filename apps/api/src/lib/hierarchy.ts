@@ -6,8 +6,8 @@ import { badRequest } from './errors.js'
  * 「任務種類的上下關係」）。
  *
  *  - **大項目（EPIC）一定在任務上面**：只能放最上層，或放在另一個大項目底下。
- *  - **問題（BUG）只能在任務下面**：上層一定要是任務，也不能放最上層。
- *  - 任務（TASK）與里程碑（MILESTONE）不受限制。
+ *  - **錯誤（BUG）只能在任務下面**：上層一定要是任務，也不能放最上層。
+ *  - **任務與里程碑一定要掛在大項目底下**：最上層只放得下大項目。
  *  - **專案自己新增的種類不受限制** —— 每個專案的種類清單是自己的
  *    （見 routes/parameters.ts），這條規則只認預設那四個 key。自訂種類
  *    不管當上層還是當下層都一律放行，不要順便也擋。
@@ -17,7 +17,7 @@ import { badRequest } from './errors.js'
  *
  * ## 既有資料可能已經違反
  *
- * 規則是後來才定的，示範資料裡就有「問題掛在大項目底下」。所以：
+ * 規則是後來才定的，示範資料裡就有「錯誤掛在大項目底下」。所以：
  *
  *  - **讀取一律照舊**，不合規的資料照樣讀得到、看得到，不藏也不報錯 ——
  *    藏起來只會讓人以為資料掉了。
@@ -39,7 +39,7 @@ const MILESTONE = 'MILESTONE'
 const LABEL: Record<string, string> = {
   [EPIC]: '大項目',
   [TASK]: '任務',
-  [BUG]: '問題',
+  [BUG]: '錯誤',
   [MILESTONE]: '里程碑',
 }
 
@@ -82,7 +82,30 @@ function checkPlacement(type: string, parentType: string | null): Violation | nu
     }
   }
 
-  // 任務、里程碑、以及專案自己新增的種類：不受限制
+  /*
+   * 任務與里程碑一定要掛在大項目底下（2026-08-05 加）。
+   * 最上層只放得下大項目 —— 側欄的第一層就是「大項目」，
+   * 一張任務站在那裡會被讀成一個大項目，左邊看到的結構就跟實際的對不起來。
+   *
+   * 上層是自訂種類時放行：那一種完全不受這條規則管。
+   */
+  if (type === TASK || type === MILESTONE) {
+    if (parentType === EPIC) return null
+    if (parentType !== null && !isBuiltin(parentType)) return null
+    if (parentType === null) {
+      return {
+        title: `${label(type)}一定要掛在一個${label(EPIC)}底下`,
+        detail: `最上層只放得下${label(EPIC)}。`
+          + `請先挑一個${label(EPIC)}當它的上層，或是把它改成${label(EPIC)}。`,
+      }
+    }
+    return {
+      title: `${label(type)}不能放在${label(parentType)}底下`,
+      detail: `${label(type)}的上層一定要是一個${label(EPIC)}。`,
+    }
+  }
+
+  // 專案自己新增的種類：不受限制
   return null
 }
 
