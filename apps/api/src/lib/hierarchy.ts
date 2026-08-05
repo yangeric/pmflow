@@ -7,7 +7,8 @@ import { badRequest } from './errors.js'
  *
  *  - **大項目（EPIC）一定在任務上面**：只能放最上層，或放在另一個大項目底下。
  *  - **錯誤（BUG）只能在任務下面**：上層一定要是任務，也不能放最上層。
- *  - **任務與里程碑一定要掛在大項目底下**：最上層只放得下大項目。
+ *  - **任務與里程碑不能站在最上層**：最上層只放得下大項目。
+ *    掛在另一張任務底下（子任務）是可以的。
  *  - **專案自己新增的種類不受限制** —— 每個專案的種類清單是自己的
  *    （見 routes/parameters.ts），這條規則只認預設那四個 key。自訂種類
  *    不管當上層還是當下層都一律放行，不要順便也擋。
@@ -90,18 +91,17 @@ function checkPlacement(type: string, parentType: string | null): Violation | nu
    * 上層是自訂種類時放行：那一種完全不受這條規則管。
    */
   if (type === TASK || type === MILESTONE) {
-    if (parentType === EPIC) return null
-    if (parentType !== null && !isBuiltin(parentType)) return null
-    if (parentType === null) {
-      return {
-        title: `${label(type)}一定要掛在一個${label(EPIC)}底下`,
-        detail: `最上層只放得下${label(EPIC)}。`
-          + `請先挑一個${label(EPIC)}當它的上層，或是把它改成${label(EPIC)}。`,
-      }
-    }
+    /*
+     * 規則是「不能站在最上層」，不是「上層一定要是大項目」——
+     * 任務掛在另一張任務底下就是**子任務**，畫面上到處都有「＋ 子任務」。
+     * 往上追一定會走到某個大項目，這樣就夠了。
+     */
+    if (parentType !== null) return null
     return {
-      title: `${label(type)}不能放在${label(parentType)}底下`,
-      detail: `${label(type)}的上層一定要是一個${label(EPIC)}。`,
+      title: `${label(type)}不能放在最上層`,
+      detail: `最上層只放得下${label(EPIC)}。`
+        + `請先挑一個${label(EPIC)}或一張${label(TASK)}當它的上層，`
+        + `或是把它改成${label(EPIC)}。`,
     }
   }
 

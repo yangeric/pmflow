@@ -324,13 +324,15 @@ export default function ListView({
                                    dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
                                    dark:focus:bg-slate-900">
                         {/* 還有對外詢問沒回就不給選「做完」那幾個（規矩見 AGENTS.md）。
-                            目前這一個永遠留著，否則下拉會顯示成別的狀態、
+                            灰掉而不是抽掉 —— 整個不見的話，看的人不知道那些狀態
+                            跑哪去了。目前這一個一定選得到，否則下拉會顯示成別的狀態，
                             一存檔就把它靜悄悄改掉 */}
-                        {statuses
-                          .filter(s => s.key === t.statusKey
-                            || !(hasOpenInquiry(t) && s.category === 'DONE'))
-                          .map(s => (
-                          <option key={s.key} value={s.key}>{s.name}</option>
+                        {statuses.map(s => (
+                          <option key={s.key} value={s.key}
+                                  disabled={hasOpenInquiry(t) && s.category === 'DONE'
+                                            && s.key !== t.statusKey}>
+                            {s.name}
+                          </option>
                         ))}
                       </select>
                     ) : (

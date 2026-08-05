@@ -217,8 +217,10 @@ export function TaskDrawer({
           <>
             <header className="flex items-start justify-between border-b border-slate-200 px-6 py-4
                                dark:border-slate-700">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
+              {/* flex-1 不能省：沒有它這一格只有內容寬，
+                  標題就只用得到畫面的一小段，長標題會被擠成很窄的一直條 */}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500
                                    dark:bg-slate-800 dark:text-slate-400">
                     {data.ref}
@@ -264,11 +266,9 @@ export function TaskDrawer({
                   )}
                 </div>
                 {canEdit ? (
-                  <input
-                    defaultValue={data.title}
-                    onBlur={e => e.target.value !== data.title && patch.mutate({ title: e.target.value })}
-                    className="mt-1.5 w-full border-0 bg-transparent p-0 text-xl font-semibold text-slate-800
-                               focus:outline-none focus:ring-0 dark:text-slate-100"
+                  <TitleBox
+                    value={data.title}
+                    onCommit={v => v !== data.title && patch.mutate({ title: v })}
                   />
                 ) : (
                   /* 改不動就不要畫成輸入框 —— 看起來能打字卻存不進去最難懂 */
@@ -306,6 +306,23 @@ export function TaskDrawer({
                 * 排程模式被擠到第三列自己一個人站著 —— 那一列看起來像是後來
                 * 補上去的東西，而它只是眾多欄位裡的一個。
                 */}
+              {/*
+                * 「做完了」那幾個狀態還在清單上，只是選不動（`disabled`）——
+                * 整個抽掉的話，看的人不知道那些狀態跑哪去了，
+                * 灰掉才看得出來「有這個選項，但現在不行」。
+                *
+                * 說明放在整排欄位**上面一整行**，不放在狀態那一格底下：
+                * 那一格只有六分之一寬，一句話會被擠成三、四行，
+                * 把整排欄位撐開。
+                */}
+              {canEdit && openInquiries > 0 && (
+                <p className="mb-2 rounded-md bg-amber-50 px-3 py-2 text-xs leading-relaxed
+                              text-amber-700 ring-1 ring-inset ring-amber-600/20
+                              dark:bg-amber-500/15 dark:text-amber-300 dark:ring-amber-400/30">
+                  {T.task.drawer.statusBlockedByInquiry(openInquiries)}
+                </p>
+              )}
+
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
                 <Field label={T.task.drawer.fieldTaskType}>
                   {canEdit ? (
@@ -337,20 +354,18 @@ export function TaskDrawer({
                     <Select value={data.statusKey}
                             onChange={e => patch.mutate({ statusKey: e.target.value })}
                             className="w-full">
-                      {statuses
-                        .filter(s => s.key === data.statusKey
-                          || !(openInquiries > 0 && s.category === 'DONE'))
-                        .map(s => <option key={s.key} value={s.key}>{s.name}</option>)}
+                      {statuses.map(s => (
+                        <option key={s.key} value={s.key}
+                                disabled={openInquiries > 0 && s.category === 'DONE'
+                                          && s.key !== data.statusKey}>
+                          {s.name}
+                        </option>
+                      ))}
                     </Select>
                   ) : (
                     <ReadOnlyValue>
                       {statuses.find(s => s.key === data.statusKey)?.name ?? T.common.none}
                     </ReadOnlyValue>
-                  )}
-                  {canEdit && openInquiries > 0 && (
-                    <p className="mt-1 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-                      {T.task.drawer.statusBlockedByInquiry(openInquiries)}
-                    </p>
                   )}
                 </Field>
                 <div className="sm:col-span-2">
@@ -696,6 +711,76 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
 
 const fmtDate = (d: string | null) =>
   (d ? d.slice(0, 10).replaceAll('-', '/') : T.common.none)
+
+/**
+ * 任務標題。**會自己長高，不是單行輸入框。**
+ *
+ * 原本是 `<input>`：一行放不下的標題不會換行，只是往旁邊捲出去 ——
+ * 「外部系統自動建立的任務（API 權杖測試）」在畫面上被切成
+ * 「外部系統自動建立的任務（API 檔」，而且看不出來後面還有字。
+ * 標題是最不該被截斷的東西。
+ *
+ * 用 `<textarea>` 而不是加 `title=`：滑過去才看得到全文，等於要求他先發現
+ * 有東西被藏起來。改成看得到全部，框自己長。
+ * 按 Enter 不換行 —— 標題是一句話，換行只會把版面撐開又存不進意義。
+ */
+function TitleBox({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  /** 開始編輯時把游標放到最後面，而不是選起來 —— 多半是要接著打，不是整句重寫 */
+  useEffect(() => {
+    const el = ref.current
+    if (!editing || !el) return
+    fit()
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [editing])
+
+  /** 高度跟著內容長。標題是最不該被截斷的東西，所以不捲、直接長高 */
+  const fit = () => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  const base = 'mt-1.5 w-full text-xl font-semibold leading-snug text-slate-800 dark:text-slate-100'
+
+  if (!editing) {
+    /*
+     * 平常就是一行字，點一下才變輸入框。
+     *
+     * 原本一進來就是輸入框（只是長得像文字）—— 那讓「看」跟「改」分不出來：
+     * 想選字複製會不小心改到，而真的要改的人也看不出來這裡能改。
+     * 用 button 不用 div：鍵盤 Tab 得到、Enter 也進得去。
+     */
+    return (
+      <button type="button" onClick={() => setEditing(true)} title={T.task.drawer.editTitle}
+              className={cx(base, 'block rounded text-left hover:bg-slate-100',
+                            'dark:hover:bg-slate-800')}>
+        {value}
+      </button>
+    )
+  }
+
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      defaultValue={value}
+      onInput={fit}
+      onKeyDown={e => {
+        // Enter 存檔（標題是一句話，不需要換行）；Esc 放棄這次的修改
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+        if (e.key === 'Escape') { e.currentTarget.value = value; e.currentTarget.blur() }
+      }}
+      onBlur={e => { setEditing(false); onCommit(e.target.value.trim()) }}
+      className={cx(base, 'resize-none overflow-hidden rounded border-0 bg-transparent p-0',
+                    'focus:outline-none focus:ring-0')}
+    />
+  )
+}
 
 /**
  * 進度：拖拉條 + 數字，兩種都能改。

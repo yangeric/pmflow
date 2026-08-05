@@ -35,6 +35,8 @@ export const task = {
      * 兩個都叫「類型」會分不出來，所以這裡把「任務」講出來。
      * 選項是這個專案自己在系統參數頁定的，不是寫死的四種。
      */
+    /** 標題平常是一行字，點一下才變成輸入框 */
+    editTitle: '點一下改標題',
     fieldTaskType: '任務種類',
     /**
      * 標題列上、種類徽章後面的對外詢問狀況。
@@ -43,7 +45,8 @@ export const task = {
      * 還有沒回的才給數字，而且跟側欄同一套寫法（「外 1」「逾 1」），
      * 兩個地方看到的東西要能對得起來。
      */
-    inquiryAllReplied: '對外詢問都回覆了',
+    /** 前面那個勾是字的一部分，不是圖示 —— 這一格很窄，一個勾比四個字省位置 */
+    inquiryAllReplied: '✓ 已回覆',
     inquiryWaiting: (n: number) => `外 ${n}`,
     inquiryOverdue: (n: number) => `逾 ${n}`,
     inquiryWaitingTip: (n: number) => `${n} 件對外詢問還在等回覆`,
