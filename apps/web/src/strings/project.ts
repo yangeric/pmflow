@@ -7,7 +7,8 @@ export const project = {
   createFirst: '建立第一個專案',
   createAnother: '建立新專案',
   taskCount: (n: number) => `${n} 個任務`,
-  overdueUnreplied: (n: number) => `${n} 件逾期未回`,
+  /** 首頁的專案卡片。只說「逾期未回」的話，看的人不知道是什麼東西逾期 */
+  overdueUnreplied: (n: number) => `${n} 件對外詢問逾期`,
   pendingJoins: (n: number) => `${n} 人申請加入`,
   keyPlaceholder: '專案代碼，如 MRG',
   namePlaceholder: '專案名稱',

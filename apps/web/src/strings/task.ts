@@ -117,7 +117,7 @@ export const task = {
     created: '建立了這張任務',
     comment: (text: string) => `留言：${text}`,
     linkChange: (label: string) => `調整關聯（${label}）`,
-    inquiryAsk: (unit: string) => `發文給 ${unit}`,
+    inquiryAsk: (unit: string) => `詢問 ${unit}`,
     inquiryReply: (unit: string) => `登錄回覆${unit ? `（${unit}）` : ''}`,
     problemSet: (text: string) => `記下目前遇到的問題：${text}`,
     problemCleared: (before: string) => `把問題標為已解決${before ? `（原本：${before}）` : ''}`,
@@ -139,7 +139,7 @@ export const task = {
     colTask: '任務',
     colAssignee: '負責人',
     colStatus: '狀態',
-    colInquiry: '發文追蹤',
+    colInquiry: '對外詢問',
     colStart: '開始',
     colDue: '結束',
     colProgress: '進度',
@@ -165,7 +165,7 @@ export const task = {
   /**
    * 權限說明。後端的規則寫在 apps/api/src/routes/tasks.ts 的 assertCanEditTask：
    * 任務的內容只有開這張任務的人與專案管理者改得動，
-   * 但「目前遇到的問題」與登錄發文追蹤的回覆是每個專案成員都能做的。
+   * 但「目前遇到的問題」與登錄對外詢問的回覆是每個專案成員都能做的。
    *
    * 沒權限的控制項一律不畫（不是畫出來再灰掉），所以這裡的句子是用來
    * 回答「為什麼這裡只剩文字」—— 少了這一句，畫面看起來只是壞掉。
@@ -173,7 +173,7 @@ export const task = {
   permission: {
     readOnlyTitle: '這張任務你只能看，不能修改內容',
     readOnlyWhy: '任務的內容只有開這張任務的人與專案管理者可以修改。'
-      + '你仍然可以填寫「目前遇到的問題」，也可以登錄發文追蹤的回覆。',
+      + '你仍然可以填寫「目前遇到的問題」，也可以登錄對外詢問的回覆。',
     /** 清單上的狀態變成純文字時，游標停著看得到原因 */
     cannotChangeStatus: '狀態只有開這張任務的人與專案管理者可以調整',
     /** 負責人同上：改不動就只留名字，游標停著才說明原因 */

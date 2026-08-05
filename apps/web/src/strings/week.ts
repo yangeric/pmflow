@@ -24,7 +24,7 @@ export const week = {
   colAssignee: '負責人',
   colDates: '起訖日',
   colProgress: '進度',
-  colInquiry: '發文追蹤',
+  colInquiry: '對外詢問',
 
   /** 狀態分組的標題：狀態名稱後面接張數 */
   groupCount: (n: number) => `${n} 張`,

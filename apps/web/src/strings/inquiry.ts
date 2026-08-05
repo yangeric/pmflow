@@ -1,4 +1,4 @@
-/** 發文追蹤用到的文字。寫法見 strings/index.ts */
+/** 對外詢問用到的文字。寫法見 strings/index.ts */
 export const inquiry = {
   /** 徽章。這是整個系統最常被看到的四個字，改之前想清楚 */
   badge: {
@@ -20,11 +20,11 @@ export const inquiry = {
   days: (n: number | string) => `${n} 天`,
   percent: (n: number | string) => `${n}%`,
 
-  /** 任務詳情裡的發文追蹤表格 */
+  /** 任務詳情裡的對外詢問表格 */
   table: {
-    title: '發文追蹤',
+    title: '對外詢問',
     add: '＋ 新增單位',
-    empty: '還沒有發文紀錄。按「＋ 新增單位」記錄這件事提給了誰。',
+    empty: '還沒有對外詢問紀錄。按「＋ 新增單位」記錄這件事提給了誰。',
     column: {
       askedToUnit: '提給單位',
       askedToPerson: '承辦人',
@@ -86,19 +86,19 @@ export const inquiry = {
     usage: (n: number) => `用過 ${n} 次`,
   },
 
-  /** 專案裡的發文追蹤頁籤，只看得到這個專案的 */
+  /** 專案裡的對外詢問頁籤，只看得到這個專案的 */
   board: {
-    title: '發文追蹤',
+    title: '對外詢問',
     subtitle: '這個專案發出去的事情回了沒',
     groupByUnit: '依單位分組',
     emptyColumn: '沒有項目',
-    empty: '這個專案還沒有發文紀錄。到任務詳情頁的「發文追蹤」新增一筆。',
+    empty: '這個專案還沒有對外詢問紀錄。到任務詳情頁的「對外詢問」新增一筆。',
     /** 分組標題後面的件數 */
     groupCount: (n: number) => `(${n})`,
     stats: {
       title: '單位回覆統計',
       unit: '單位',
-      totalAsked: '發文次數',
+      totalAsked: '詢問次數',
       totalReplied: '已回覆',
       currentOverdue: '目前逾期',
       avgDaysToReply: '平均回覆天數',

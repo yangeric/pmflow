@@ -96,7 +96,7 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 }
 
 /**
- * 發文追蹤徽章 —— 這是整個系統最常被看到的元件。
+ * 對外詢問徽章 —— 這是整個系統最常被看到的元件。
  * 卡片、清單、甘特上都掛這個，一眼看出「誰還沒回、逾期幾天」。
  */
 export const INQUIRY_META: Record<InquiryState, { label: string; cls: string; icon: string }> = {

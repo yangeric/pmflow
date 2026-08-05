@@ -46,7 +46,7 @@ export function TaskDrawer({
    * 後端的規則（apps/api/src/routes/tasks.ts）：
    *   改任務內容  → 要編輯者以上，而且還要是開這張任務的人；專案管理者一律放行
    *   建立／移除關聯 → 兩端都要編輯者，但跟「誰開的」無關（routes/links.ts）
-   *   目前遇到的問題、登錄發文追蹤的回覆 → 專案成員都可以，所以永遠留著
+   *   目前遇到的問題、登錄對外詢問的回覆 → 專案成員都可以，所以永遠留著
    */
   const { user } = useAuth()
   const { data: project } = useQuery({
@@ -422,8 +422,8 @@ export function TaskDrawer({
               )}
 
               {/* ── 目前遇到的問題 ──
-                  放在基本欄位下面、發文追蹤上面：它比日期進度更要緊，
-                  但它常常就是「發文出去在等回覆」的那個原因，兩者要挨著看 */}
+                  放在基本欄位下面、對外詢問上面：它比日期進度更要緊，
+                  但它常常就是「問出去了還在等回覆」的那個原因，兩者要挨著看 */}
               <div>
                 <div className="mb-2 flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -458,7 +458,7 @@ export function TaskDrawer({
                 </p>
               </div>
 
-              {/* ── 發文追蹤：核心功能 ──
+              {/* ── 對外詢問：核心功能 ──
                   canEdit 一律給 true。登錄回覆後端只要求專案成員，是「誰收到誰登錄」，
                   絕不能因為任務不是自己開的就收起來；而這個元件目前用同一個
                   canEdit 同時管著新增與登錄回覆，收掉就會把回覆一起收掉。

@@ -12,7 +12,7 @@ export const nav = {
   /** 任務還沒載到名字時的替代標題 */
   fallbackTaskTitle: '任務',
   showAll: '看全部',
-  overdueHere: (n: number) => `${n} 張任務有單位逾期未回`,
+  overdueHere: (n: number) => `${n} 張任務的對外詢問逾期`,
 
   /**
    * 成員的入口在右上角的頭像選單裡，只有人在專案裡的時候才畫。
@@ -31,8 +31,8 @@ export const nav = {
     graph: '關聯圖',
     /** 燃盡圖與負載熱圖。看的是整個專案的走勢，不是單張任務 */
     dashboard: '儀表板',
-    /** 發文追蹤是專案裡的一個頁籤，只看得到這個專案的 */
-    inquiry: '發文追蹤',
+    /** 對外詢問是專案裡的一個頁籤，只看得到這個專案的 */
+    inquiry: '對外詢問',
   },
   loadingGantt: '載入甘特圖…',
   loadingGraph: '載入關聯圖…',
@@ -50,8 +50,8 @@ export const nav = {
     collapseEpic: '收合',
     epicSummary: (title: string, done: number, total: number) =>
       `${title}　${done}/${total} 個小項目已完成`,
-    epicOverdue: (n: number) => `底下有 ${n} 張任務的單位逾期未回`,
-    taskOverdue: '單位逾期未回',
+    epicOverdue: (n: number) => `底下有 ${n} 張任務的對外詢問逾期`,
+    taskOverdue: '對外詢問逾期',
     taskTitle: (ref: string, title: string) => `${ref}　${title}`,
     loose: (n: number) => `另有 ${n} 個任務的上層已被刪除，在「全部任務」裡找得到`,
     epicNamePlaceholder: '大項目名稱',
@@ -119,7 +119,7 @@ export const nav = {
     register: '註冊',
     toRegister: '還沒有帳號？註冊一個',
     toLogin: '已經有帳號了？登入',
-    demoHint: '示範帳號已經幫你填好了，直接按登入就能看到含甘特、看板與發文追蹤的示範資料。',
+    demoHint: '示範帳號已經幫你填好了，直接按登入就能看到含甘特、看板與對外詢問的示範資料。',
     /** 連不上後端是前端自己判斷的，不是後端回的訊息 */
     connectFailed: '連線失敗，請確認後端是否啟動',
   },

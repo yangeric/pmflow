@@ -92,7 +92,7 @@ export default function GanttView({
     })
     g.i18n.setLocale('zh-TW')
 
-    // 關鍵路徑與發文狀態上色
+    // 關鍵路徑與對外詢問的狀態上色
     g.templates.task_class = (_s: Date, _e: Date, t: { critical?: boolean; inquiry?: string; type?: string }) => {
       const cls: string[] = []
       if (t.critical) cls.push('critical')

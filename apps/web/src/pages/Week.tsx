@@ -440,7 +440,7 @@ function TaskRow({ row, onOpen, typeName, typeColor }: {
         <span className="tabular-nums">{W.progressLabel(t.progress)}</span>
       </div>
 
-      {/* 發文追蹤 */}
+      {/* 對外詢問 */}
       <div><InquiryBadge state={t.inquiryState} /></div>
     </div>
   )

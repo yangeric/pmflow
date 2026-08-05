@@ -122,7 +122,7 @@ export default function CalendarView({
   const grid = useMemo(() => monthGrid(cursor.year, cursor.month), [cursor])
   const gridYmd = useMemo(() => grid.map(ymd), [grid])
 
-  // 發文追蹤是工作區層級的端點，這裡只取這個專案的
+  // 對外詢問是工作區層級的端點，這裡只取這個專案的
   const { data: board } = useQuery({
     queryKey: ['inquiry-board', workspaceId],
     queryFn: () => Api.inquiryBoard(workspaceId),
