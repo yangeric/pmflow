@@ -70,9 +70,36 @@ export interface Project {
   startDate?: string | null; endDate?: string | null
   role?: string; taskCount?: number; overdueInquiryCount?: number
   isCreator?: boolean; pendingJoinRequestCount?: number
+  /** 公開只影響「找不找得到」，不影響「進不進得去」。見 api 的 0010 migration */
+  isPublic?: boolean
 }
 
 export type ProjectRole = 'MANAGER' | 'EDITOR' | 'COMMENTER' | 'VIEWER'
+
+/** 假別。中文說法在 strings/calendar.ts，這裡跟後端一樣只認 key */
+export type LeaveType =
+  | 'PERSONAL' | 'SICK' | 'ANNUAL' | 'OFFICIAL' | 'MARRIAGE' | 'BEREAVEMENT' | 'OTHER'
+
+/**
+ * 一筆請假。**備註只有本人與工作區管理者拿得到**，其他人看到的是 null ——
+ * 那是後端濾掉的，不是前端不畫（見 api/src/routes/leaves.ts）。
+ */
+export interface Leave {
+  id: string
+  userId: string
+  userName: string
+  leaveType: LeaveType
+  /** 含頭含尾的日曆日，一律 YYYY-MM-DD */
+  startDate: string
+  endDate: string
+  days: number
+  note: string | null
+  createdById: string | null
+  createdByName: string | null
+  createdAt: string
+  /** 這個人能不能改這一筆。本人或管理者才是 true */
+  canEdit: boolean
+}
 
 /** 同工作區的帳號，給建立者挑人加進專案用 */
 export interface WorkspaceUser {
@@ -192,6 +219,12 @@ export interface Task {
   estimateHours: string | null; progress: number
   scheduleMode: 'AUTO' | 'MANUAL'; rank: string
   inquiryState: InquiryState; earliestDueDate: string | null
+  /**
+   * 誰開的這張任務。前端要用它決定「這個人能不能改」——
+   * 改任務只有開的人與專案管理者可以（規則在後端 `assertCanEditTask`，
+   * 這裡只是不要畫出按了會被拒絕的按鈕）。
+   */
+  createdById: string | null
 }
 
 export type LinkType = 'FS' | 'SS' | 'FF' | 'SF' | 'RELATES' | 'BLOCKS' | 'DUPLICATES' | 'REQUIRES'
@@ -246,10 +279,21 @@ export const Api = {
     api<Project & { statuses: TaskStatus[]; members: Array<{ id: string; displayName: string; role: string }> }>(`/projects/${id}`),
   createProject: (json: { workspaceId: string; key: string; name: string }) =>
     api<Project>('/projects', { method: 'POST', json }),
+  patchProject: (id: string, json: {
+    name?: string; description?: string | null; color?: string
+    startDate?: string | null; endDate?: string | null; isPublic?: boolean
+  }) => api<Project>(`/projects/${id}`, { method: 'PATCH', json }),
 
   // ── 成員與加入申請。放人進來只有建立者做得到 ──
-  workspaceUsers: (workspaceId: string) =>
-    api<{ users: WorkspaceUser[] }>(`/workspace-users?workspaceId=${workspaceId}`),
+  /**
+   * 可以找來加進專案的帳號。給了 q 就跨工作區找（比對名字或 email）——
+   * 專案管理者要找的人不見得已經在這個工作區裡。
+   * 跨工作區搜尋一定要帶 projectId：後端要據此確認你是那個專案的管理者，
+   * 否則任何人都能拿 email 一個一個試「這個帳號在不在」。
+   */
+  workspaceUsers: (workspaceId: string, q = '', projectId = '') =>
+    api<{ users: WorkspaceUser[] }>(
+      `/workspace-users?${new URLSearchParams({ workspaceId, q, projectId })}`),
   members: (projectId: string) =>
     api<{ members: ProjectMember[]; createdBy: string | null; canManage: boolean }>(
       `/projects/${projectId}/members`),
@@ -278,6 +322,25 @@ export const Api = {
     api(`/projects/${projectId}/join-requests/${reqId}/reject`, { method: 'POST', json: { note } }),
   cancelJoinRequest: (reqId: string) =>
     api(`/join-requests/${reqId}`, { method: 'DELETE' }),
+
+  // ── 請假。同工作區的人都看得到誰請假，備註只有本人與管理者拿得到 ──
+  leaves: (workspaceId: string, range?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams()
+    if (range?.from) q.set('from', range.from)
+    if (range?.to) q.set('to', range.to)
+    const s = q.toString()
+    return api<{ leaves: Leave[]; canManage: boolean }>(
+      `/workspaces/${workspaceId}/leaves${s ? `?${s}` : ''}`)
+  },
+  /** 不給 userId 就是填自己的；填別人的要工作區管理者 */
+  createLeave: (workspaceId: string, json: {
+    userId?: string; leaveType: LeaveType
+    startDate: string; endDate: string; note?: string | null
+  }) => api<Leave>(`/workspaces/${workspaceId}/leaves`, { method: 'POST', json }),
+  patchLeave: (id: string, json: {
+    leaveType?: LeaveType; startDate?: string; endDate?: string; note?: string | null
+  }) => api<Leave>(`/leaves/${id}`, { method: 'PATCH', json }),
+  deleteLeave: (id: string) => api(`/leaves/${id}`, { method: 'DELETE' }),
 
   // ── 通知。沒有 WebSocket，前端自己輪詢 ──
   notifications: (limit = 30) =>
@@ -381,10 +444,4 @@ export const Api = {
       taskId: string; taskRef: string; taskTitle: string
       projectId: string; projectName: string; projectColor: string
     }> }>(`/workspaces/${workspaceId}/inquiry-board?state=${state}`),
-  inquiryStats: (workspaceId: string) =>
-    api<{
-      byUnit: Array<{ unit: string; totalAsked: number; totalReplied: number
-        currentOverdue: number; avgDaysToReply: string | null; lateReplyRate: string | null }>
-      transferred: Array<{ askedToUnit: string; repliedByUnit: string; count: number }>
-    }>(`/workspaces/${workspaceId}/inquiry-stats`),
 }
