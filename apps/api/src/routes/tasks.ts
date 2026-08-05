@@ -44,6 +44,10 @@ const TASK_COLUMNS = sql`
   t.estimate_hours AS "estimateHours", t.spent_hours AS "spentHours",
   t.progress, t.schedule_mode AS "scheduleMode", t.rank,
   t.inquiry_state AS "inquiryState", t.earliest_due_date AS "earliestDueDate",
+  -- 開這張任務的人。前端要靠它決定「這些控制項要不要畫出來」——
+  -- 誰能改任務是看它加上專案角色（見上面的 assertCanEditTask），
+  -- 不回傳的話前端只能把每個按鈕都畫出來，讓人按了才被拒絕。
+  t.created_by AS "createdById",
   t.created_at AS "createdAt", t.updated_at AS "updatedAt"`
 
 /** 空白只有空白，就是「沒有問題」。資料庫也擋著空字串，兩種空值不要並存 */

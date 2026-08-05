@@ -91,7 +91,7 @@ export function InquiryTable({
           </thead>
           <tbody>
             {inquiries.length === 0 && !adding && (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400 dark:text-slate-500">
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400 dark:text-slate-400">
                 {T.inquiry.table.empty}
               </td></tr>
             )}
@@ -142,7 +142,7 @@ export function InquiryTable({
                       ? <Button variant="ghost" className="text-xs" onClick={() => reopen.mutate(q.id)}>{T.inquiry.table.reopen}</Button>
                       : <Button variant="primary" className="text-xs" onClick={() => setReplyingId(q.id)}>{T.inquiry.table.markReplied}</Button>)}
                     {canEdit && (
-                      <Button variant="ghost" className="ml-1 text-xs text-slate-400 dark:text-slate-500"
+                      <Button variant="ghost" className="ml-1 text-xs text-slate-400 dark:text-slate-400"
                               onClick={() => remove.mutate(q.id)} title={T.common.delete}>✕</Button>
                     )}
                   </td>
@@ -236,7 +236,7 @@ function AskRow({
       </td>
       <td className="px-2 py-2"><Input value={person} onChange={e => setPerson(e.target.value)} placeholder={T.inquiry.table.placeholder.person} /></td>
       <td className="px-2 py-2"><Input value={contact} onChange={e => setContact(e.target.value)} placeholder={T.inquiry.table.placeholder.contact} /></td>
-      <td className="px-2 py-2 text-xs text-slate-400 dark:text-slate-500">{T.inquiry.table.askedToday}</td>
+      <td className="px-2 py-2 text-xs text-slate-400 dark:text-slate-400">{T.inquiry.table.askedToday}</td>
       <td className="px-2 py-2 align-top">
         <DueDateField state={due} />
       </td>
@@ -345,7 +345,7 @@ function DueDateField({ state }: { state: ReturnType<typeof useDueDate> }) {
       {/* color-scheme 決定日期選擇器那顆小日曆的長相，只給背景色它還是白的 */}
       <Input type="date" className="dark:[color-scheme:dark]"
              value={state.date} onChange={e => state.setDate(e.target.value)} />
-      <span className="block text-[10px] text-slate-400 dark:text-slate-500">
+      <span className="block text-[10px] text-slate-400 dark:text-slate-400">
         {state.date
           ? T.inquiry.due.resolved(
               state.date.replaceAll('-', '/'),
@@ -512,7 +512,7 @@ export function UnitInput({
                 onMouseDown={e => { e.preventDefault(); onChange(u.unit); setOpen(false) }}
               >
                 <span className="truncate">{u.unit}</span>
-                <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
+                <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-400">
                   {T.inquiry.unit.usage(u.usageCount)}
                 </span>
               </button>

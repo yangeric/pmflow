@@ -8,9 +8,10 @@ import {
   SortableContext, useSortable, verticalListSortingStrategy, sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, cx } from '../components/ui'
+import { useAuth } from '../lib/auth'
 import { T } from '../strings'
 
 /**
@@ -29,6 +30,25 @@ export default function Board({
 }) {
   const qc = useQueryClient()
   const [dragging, setDragging] = useState<Task | null>(null)
+
+  /*
+   * 拖一張卡片就是改它的狀態，走的是 POST /tasks/:id/move ——
+   * 後端要編輯者以上而且還要是開這張任務的人，專案管理者一律放行。
+   * 拖得動卻被退回是最糟的互動，所以拖不了的卡片直接不給拖。
+   * queryKey 跟 App 那一層同一組，讀到的是快取。
+   */
+  const { user } = useAuth()
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId], queryFn: () => Api.project(projectId),
+  })
+  /*
+   * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
+   * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
+   */
+  const role = project?.members.find(m => m.id === user?.id)?.role
+  // 專案建立者在建立專案時就拿到 MANAGER，所以判斷一律看角色
+  const canDrag = (t: Task) =>
+    role === 'MANAGER' || (role === 'EDITOR' && !!user && t.createdById === user.id)
 
   const sensors = useSensors(
     // 要拖 6px 才算開始拖，否則單純點擊會被誤判
@@ -73,6 +93,8 @@ export default function Board({
 
     const activeTask = tasks.find(t => t.id === active.id)
     if (!activeTask) return
+    // 卡片本身已經設成不能拖，這一行是鍵盤與程式路徑的最後一道
+    if (!canDrag(activeTask)) return
 
     // 放在欄的空白處 → over.id 是欄的 key；放在卡片上 → over.id 是卡片 id
     const overColumn = statuses.find(s => s.key === over.id)
@@ -98,21 +120,23 @@ export default function Board({
                 onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="flex h-full gap-3 overflow-x-auto p-4">
         {columns.map(col => (
-          <Column key={col.key} column={col} onOpen={onOpen} />
+          <Column key={col.key} column={col} onOpen={onOpen} canDrag={canDrag} />
         ))}
       </div>
       <DragOverlay>
-        {dragging && <Card task={dragging} overlay onOpen={() => {}} />}
+        {dragging && <Card task={dragging} overlay draggable onOpen={() => {}} />}
       </DragOverlay>
     </DndContext>
   )
 }
 
 function Column({
-  column, onOpen,
+  column, onOpen, canDrag,
 }: {
   column: TaskStatus & { tasks: Task[] }
   onOpen: (id: string) => void
+  /** 這張卡片這個人能不能拖 —— 拖曳等於改狀態，權限跟改任務同一條 */
+  canDrag: (t: Task) => boolean
 }) {
   const { setNodeRef, isOver } = useSortable({ id: column.key, data: { type: 'column' } })
   const overdue = column.tasks.filter(t => t.inquiryState === 'OVERDUE').length
@@ -138,10 +162,12 @@ function Column({
       </div>
       <SortableContext items={column.tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
         <div className="flex-1 space-y-2 overflow-y-auto px-2 pb-3">
-          {column.tasks.map(t => <SortableCard key={t.id} task={t} onOpen={onOpen} />)}
+          {column.tasks.map(t => (
+            <SortableCard key={t.id} task={t} onOpen={onOpen} canDrag={canDrag(t)} />
+          ))}
           {column.tasks.length === 0 && (
             <div className="rounded-md border-2 border-dashed border-slate-200 py-6 text-center text-xs
-                            text-slate-400 dark:border-slate-700 dark:text-slate-500">
+                            text-slate-400 dark:border-slate-700 dark:text-slate-400">
               {T.task.board.dropHere}
             </div>
           )}
@@ -151,34 +177,41 @@ function Column({
   )
 }
 
-function SortableCard({ task, onOpen }: { task: Task; onOpen: (id: string) => void }) {
+function SortableCard({ task, onOpen, canDrag }: {
+  task: Task; onOpen: (id: string) => void; canDrag: boolean
+}) {
+  // disabled 讓 dnd-kit 連感應器都不掛上去，滑鼠與鍵盤兩條路徑一起擋掉
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: task.id })
+    useSortable({ id: task.id, disabled: !canDrag })
   return (
     <div ref={setNodeRef} {...attributes} {...listeners}
          style={{ transform: CSS.Transform.toString(transform), transition }}
          className={isDragging ? 'opacity-30' : ''}>
-      <Card task={task} onOpen={onOpen} />
+      <Card task={task} onOpen={onOpen} draggable={canDrag} />
     </div>
   )
 }
 
 function Card({
-  task, onOpen, overlay,
+  task, onOpen, overlay, draggable,
 }: {
   task: Task; onOpen: (id: string) => void; overlay?: boolean
+  /** 拖不動的卡片不要長成「可以拖」的樣子 —— 手形游標本身就是一種承諾 */
+  draggable?: boolean
 }) {
   return (
     <div
       onClick={() => onOpen(task.id)}
+      title={draggable ? undefined : T.task.permission.cannotDragCard}
       className={cx(
-        'cursor-grab rounded-lg bg-white p-2.5 ring-1 ring-slate-200 active:cursor-grabbing',
+        'rounded-lg bg-white p-2.5 ring-1 ring-slate-200',
+        draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         'dark:bg-slate-900 dark:ring-slate-700',
         overlay ? 'rotate-2 shadow-xl' : 'hover:ring-slate-300 dark:hover:ring-slate-600'
       )}
     >
       <div className="mb-1 flex items-center gap-1.5">
-        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{task.ref}</span>
+        <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{task.ref}</span>
         {task.type === 'MILESTONE' && <span className="text-[11px]">◆</span>}
         {task.priority === 'URGENT' && (
           <span className="rounded bg-red-100 px-1 text-[10px] font-medium text-red-700
@@ -198,7 +231,7 @@ function Card({
         </div>
       )}
 
-      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+      <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-400">
         {task.dueDate && <span>📅 {task.dueDate.slice(5, 10).replace('-', '/')}</span>}
         {task.assigneeName && <span>👤 {task.assigneeName}</span>}
         {task.progress > 0 && (

@@ -1,8 +1,9 @@
 import { Fragment, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, Empty, Input, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
+import { useAuth } from '../lib/auth'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 import { T } from '../strings'
 
@@ -20,6 +21,27 @@ export default function ListView({
   const qc = useQueryClient()
   const statusName = useMemo(
     () => Object.fromEntries(statuses.map(s => [s.key, s])), [statuses])
+
+  /*
+   * 我在這個專案是什麼角色。跟 App 那一層同一組 queryKey，讀到的是快取。
+   *
+   * 後端（apps/api/src/routes/tasks.ts）：改狀態走的是 PATCH /tasks/:id，
+   * 要編輯者以上而且還要是開這張任務的人，專案管理者一律放行；
+   * 新增任務只要編輯者，跟「誰開的」無關。
+   */
+  const { user } = useAuth()
+  const { data: project } = useQuery({
+    queryKey: ['project', projectId], queryFn: () => Api.project(projectId),
+  })
+  /*
+   * 我的角色要從成員名單裡撈自己那一列 —— GET /projects/:id 只回成員名單，
+   * 沒有「我是什麼角色」這個欄位（回那個欄位的是專案清單 GET /projects）。
+   */
+  const role = project?.members.find(m => m.id === user?.id)?.role
+  // 專案建立者在建立專案時就拿到 MANAGER，所以判斷一律看角色
+  const canCreate = role === 'MANAGER' || role === 'EDITOR'
+  const canEditTask = (t: Task) =>
+    role === 'MANAGER' || (canCreate && !!user && t.createdById === user.id)
 
   /**
    * 正在替哪一張任務加子任務。
@@ -121,7 +143,7 @@ export default function ListView({
                              dark:border-slate-800 dark:hover:bg-slate-800">
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
-                    {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-600">└</span>}
+                    {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-500">└</span>}
                     {t.type === 'MILESTONE' && <span className="text-violet-500">◆</span>}
                     {TYPE_LABEL[t.type] && t.type !== 'MILESTONE' && (
                       <span className="shrink-0 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700
@@ -129,7 +151,7 @@ export default function ListView({
                         {TYPE_LABEL[t.type]}
                       </span>
                     )}
-                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500">{t.ref}</span>
+                    <span className="font-mono text-[11px] text-slate-400 dark:text-slate-400">{t.ref}</span>
                     <span className={cx(t.type === 'EPIC'
                       ? 'font-medium text-slate-900 dark:text-slate-100'
                       : 'text-slate-800 dark:text-slate-200')}>
@@ -139,7 +161,9 @@ export default function ListView({
                         為它固定讓出一欄寬度，換來的是整張表每一列都變窄 */}
                     <ProblemBadge problem={t.problem} />
                     {/* 一直看得到。藏在 hover 底下的話，等於還是只有右上角那一個入口 ——
-                        找得到才叫入口，顏色淡一點就不會吵 */}
+                        找得到才叫入口，顏色淡一點就不會吵。
+                        沒有建立任務的權限就整顆不畫 */}
+                    {canCreate && (
                     <button
                       onClick={e => {
                         e.stopPropagation()          // 不要順便把任務打開
@@ -152,10 +176,11 @@ export default function ListView({
                         addingTo === t.id
                           ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
                           : 'text-slate-300 hover:bg-slate-200 hover:text-slate-700 '
-                            + 'dark:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200'
+                            + 'dark:text-slate-500 dark:hover:bg-slate-700 dark:hover:text-slate-200'
                       )}>
                       {T.task.list.addChild}
                     </button>
+                    )}
                   </div>
                 </td>
                 <td className="px-3 py-2">
@@ -167,7 +192,7 @@ export default function ListView({
                       <span className="truncate">{t.assigneeName}</span>
                     </span>
                   ) : (
-                    <span className="text-xs text-slate-300 dark:text-slate-600">{T.common.unassigned}</span>
+                    <span className="text-xs text-slate-300 dark:text-slate-500">{T.common.unassigned}</span>
                   )}
                 </td>
                 {/* 點在下拉上不要順便把任務打開 */}
@@ -175,20 +200,29 @@ export default function ListView({
                   <span className="inline-flex items-center gap-1.5">
                     <span className="h-2 w-2 shrink-0 rounded-full"
                           style={{ background: st?.color ?? '#cbd5e1' }} />
-                    <select
-                      value={t.statusKey}
-                      disabled={setStatus.isPending}
-                      onChange={e => setStatus.mutate({ id: t.id, statusKey: e.target.value })}
-                      className="-ml-0.5 cursor-pointer rounded border border-transparent bg-transparent
-                                 py-0.5 pl-1 pr-5 text-xs text-slate-600
-                                 hover:border-slate-300 hover:bg-white
-                                 focus:border-blue-500 focus:bg-white focus:outline-none
-                                 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
-                                 dark:focus:bg-slate-900">
-                      {statuses.map(s => (
-                        <option key={s.key} value={s.key}>{s.name}</option>
-                      ))}
-                    </select>
+                    {canEditTask(t) ? (
+                      <select
+                        value={t.statusKey}
+                        disabled={setStatus.isPending}
+                        onChange={e => setStatus.mutate({ id: t.id, statusKey: e.target.value })}
+                        className="-ml-0.5 cursor-pointer rounded border border-transparent bg-transparent
+                                   py-0.5 pl-1 pr-5 text-xs text-slate-600
+                                   hover:border-slate-300 hover:bg-white
+                                   focus:border-blue-500 focus:bg-white focus:outline-none
+                                   dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-900
+                                   dark:focus:bg-slate-900">
+                        {statuses.map(s => (
+                          <option key={s.key} value={s.key}>{s.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      /* 改不動就不要畫成下拉。游標停著才說明原因，
+                         每一列都印一句「沒有權限」會把整張表變成告示欄 */
+                      <span className="py-0.5 text-xs text-slate-600 dark:text-slate-300"
+                            title={T.task.permission.cannotChangeStatus}>
+                        {st?.name ?? T.common.none}
+                      </span>
+                    )}
                   </span>
                 </td>
                 <td className="px-3 py-2"><InquiryBadge state={t.inquiryState} /></td>
@@ -211,7 +245,7 @@ export default function ListView({
                             style={{ width: `${progress}%` }} />
                     </span>
                     <span className="tabular-nums">{progress}%</span>
-                    {r?.derived && <span className="text-slate-300 dark:text-slate-600" aria-hidden>∑</span>}
+                    {r?.derived && <span className="text-slate-300 dark:text-slate-500" aria-hidden>∑</span>}
                   </span>
                 </td>
               </tr>
@@ -222,7 +256,7 @@ export default function ListView({
                   <td colSpan={7} className="px-3 py-2">
                     <div className="flex items-center gap-2"
                          style={{ paddingLeft: (t.depth + 1) * 20 }}>
-                      <span className="select-none text-slate-300 dark:text-slate-600">└</span>
+                      <span className="select-none text-slate-300 dark:text-slate-500">└</span>
                       <Input
                         autoFocus
                         value={title}
@@ -238,10 +272,10 @@ export default function ListView({
                       />
                       <button onClick={() => { setAddingTo(null); setTitle('') }}
                               className="text-xs text-slate-400 hover:text-slate-600
-                                         dark:text-slate-500 dark:hover:text-slate-300">
+                                         dark:text-slate-400 dark:hover:text-slate-300">
                         {T.common.cancel}
                       </button>
-                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                      <span className="text-xs text-slate-400 dark:text-slate-400">
                         {T.task.list.keepOpenHint}
                       </span>
                     </div>
@@ -254,7 +288,9 @@ export default function ListView({
         </tbody>
 
         {/* 新增任務的入口就放在清單最後 —— 東西加在哪裡，入口就在哪裡。
-            上面每一列的「＋ 子任務」加的是那一張底下的，這裡加的是同一層的 */}
+            上面每一列的「＋ 子任務」加的是那一張底下的，這裡加的是同一層的。
+            沒有建立任務的權限就整列不畫 */}
+        {canCreate && (
         <tfoot>
           <tr className="border-t border-slate-100 dark:border-slate-800">
             <td colSpan={7} className="px-3 py-2">
@@ -274,10 +310,10 @@ export default function ListView({
                   />
                   <button onClick={() => { setAddingTop(false); setTopTitle('') }}
                           className="text-xs text-slate-400 hover:text-slate-600
-                                     dark:text-slate-500 dark:hover:text-slate-300">
+                                     dark:text-slate-400 dark:hover:text-slate-300">
                     {T.common.cancel}
                   </button>
-                  <span className="text-xs text-slate-400 dark:text-slate-500">
+                  <span className="text-xs text-slate-400 dark:text-slate-400">
                     {T.task.list.keepOpenHint}
                   </span>
                 </div>
@@ -285,13 +321,14 @@ export default function ListView({
                 <button onClick={() => { setAddingTop(true); setTopTitle('') }}
                         className="rounded px-1.5 py-0.5 text-sm text-slate-400
                                    hover:bg-slate-100 hover:text-slate-700
-                                   dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200">
+                                   dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200">
                   {T.task.list.addTask}
                 </button>
               )}
             </td>
           </tr>
         </tfoot>
+        )}
       </table>
     </div>
   )
