@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Api, ApiError, type LinkType, type Task, type TaskStatus } from '../lib/api'
+import { Api, ApiError, type LinkType, type Task, type TaskDetail, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
 import { Button, Input, Select, Field, Spinner, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
@@ -110,6 +110,18 @@ export function TaskDrawer({
   })
   const delLink = useMutation({ mutationFn: (id: string) => Api.deleteLink(id), onSuccess: invalidate })
 
+  /** 按下保存才送出。只送動過的那幾格 */
+  const save = useMutation({
+    mutationFn: (v: Record<string, unknown>) => Api.patchTask(taskId, v),
+    onSuccess: () => { setDraft({}); invalidate() },
+  })
+  const remove = useMutation({
+    mutationFn: () => Api.deleteTask(taskId),
+    onSuccess: () => { invalidate(); onClose() },
+  })
+  /** 刪除是兩段式：按一次問一句，再按一次才真的刪 */
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
   /*
    * 轉派走專屬的端點，不走 patch —— 換人是欄位，交接說明是話，
    * 兩者要一起寫進同一筆活動紀錄（理由見 api 的 routes/tasks.ts）。
@@ -159,6 +171,38 @@ export function TaskDrawer({
     const waiting = all.filter(q => !q.isReplied && q.status !== 'OVERDUE').length
     return { waiting, overdue, allReplied: all.length > 0 && waiting + overdue === 0 }
   })()
+
+  /*
+   * ── 草稿 ──
+   *
+   * 欄位改了先留在這裡，按「保存」才送出。原本是改一格存一次 ——
+   * 改三個欄位就是三筆活動紀錄、三次重畫，而且中途反悔沒有辦法收回。
+   *
+   * 存的是「動過的那幾格」而不是整份任務：只送真的改過的欄位，
+   * 後端的活動紀錄才不會每次都寫上一整排沒變的值。
+   *
+   * 「目前遇到的問題」不走這裡，維持改完就存 —— 那一欄的權限跟其他欄位不同
+   * （誰遇到誰寫，不必是開任務的人），混進同一顆保存鈕的話，
+   * 沒有編輯權的人就沒有東西可以按。
+   */
+  type Draft = Partial<Pick<TaskDetail,
+    'title' | 'type' | 'statusKey' | 'priority' | 'progress'
+    | 'startDate' | 'dueDate' | 'scheduleMode'>>
+  const [draft, setDraft] = useState<Draft>({})
+  const edit = (v: Draft) => setDraft(d => ({ ...d, ...v }))
+  /** 畫面上顯示的值：伺服器的資料疊上還沒保存的修改 */
+  const form = { ...(data as TaskDetail | undefined), ...draft } as TaskDetail
+  const dirty = !!data && (Object.keys(draft) as Array<keyof Draft>)
+    .some(k => draft[k] !== data[k])
+
+  /**
+   * 選了「做完了」那一類、但還有對外詢問沒回 —— 保存鈕要變灰並說明原因。
+   * 下拉那邊也已經把那幾個選項灰掉了，這裡是同一條規則的第二道 ——
+   * 既有資料本來就可能停在做完的狀態上，那種情況下拉留著它，
+   * 但只要他動了別的欄位就會走到這裡來。
+   */
+  const saveBlocked = openInquiries > 0
+    && statuses.some(s => s.key === form?.statusKey && s.category === 'DONE')
 
   const [targetId, setTargetId] = useState('')
   const [linkType, setLinkType] = useState<LinkType>('FS')
@@ -267,8 +311,8 @@ export function TaskDrawer({
                 </div>
                 {canEdit ? (
                   <TitleBox
-                    value={data.title}
-                    onCommit={v => v !== data.title && patch.mutate({ title: v })}
+                    value={form.title}
+                    onCommit={v => v !== form.title && edit({ title: v })}
                   />
                 ) : (
                   /* 改不動就不要畫成輸入框 —— 看起來能打字卻存不進去最難懂 */
@@ -277,7 +321,50 @@ export function TaskDrawer({
                   </h2>
                 )}
               </div>
-              <Button variant="ghost" onClick={onClose} className="text-lg leading-none">✕</Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {/*
+                  * 保存與刪除放在標題列右邊，不放在整頁最下面 ——
+                  * 這一頁很長（欄位、問題、對外詢問、關聯、活動紀錄），
+                  * 按鈕擺在底下的話，改完上面那排欄位還要先捲到最後才存得了。
+                  */}
+                {canEdit && (
+                  <Button
+                    variant="primary"
+                    disabled={!dirty || save.isPending || saveBlocked}
+                    title={saveBlocked
+                      ? T.task.drawer.saveBlockedByInquiry(openInquiries)
+                      : (!dirty ? T.task.drawer.nothingToSave : undefined)}
+                    onClick={() => save.mutate(draft as Record<string, unknown>)}>
+                    {save.isPending ? T.task.drawer.saving : T.task.drawer.save}
+                  </Button>
+                )}
+                {canEdit && dirty && (
+                  <Button onClick={() => setDraft({})}>{T.task.drawer.discard}</Button>
+                )}
+
+                {/* 刪除兩段式：按一次問一句，再按一次才真的刪。
+                    不用瀏覽器的 confirm —— 那會擋住整個分頁 */}
+                {canEdit && (confirmDelete ? (
+                  <>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                      {(data.children?.length ?? 0) > 0
+                        ? T.task.drawer.deleteHasChildren(data.children.length)
+                        : T.task.drawer.deleteConfirm}
+                    </span>
+                    <Button variant="danger" disabled={remove.isPending}
+                            onClick={() => remove.mutate()}>
+                      {T.task.drawer.deleteYes}
+                    </Button>
+                    <Button onClick={() => setConfirmDelete(false)}>{T.common.cancel}</Button>
+                  </>
+                ) : (
+                  <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+                    {T.task.drawer.delete}
+                  </Button>
+                ))}
+
+                <Button variant="ghost" onClick={onClose} className="text-lg leading-none">✕</Button>
+              </div>
             </header>
 
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-5">
@@ -332,15 +419,15 @@ export function TaskDrawer({
                      * 從任務變成別的（問題的上層一定要是任務）。
                      * 判斷在 lib/hierarchy.ts，後端有同一份守門員。
                      */
-                    <Select value={data.type}
-                            onChange={e => patch.mutate({ type: e.target.value })}
+                    <Select value={form.type}
+                            onChange={e => edit({ type: e.target.value as TaskDetail['type'] })}
                             className="w-full">
                       {typeChoices.map(t => (
                         <option key={t.key} value={t.key}>{t.name}</option>
                       ))}
                     </Select>
                   ) : (
-                    <ReadOnlyValue>{typeOf(data.type) || data.type}</ReadOnlyValue>
+                    <ReadOnlyValue>{typeOf(form.type) || form.type}</ReadOnlyValue>
                   )}
                 </Field>
                 <Field label={T.task.drawer.fieldStatus}>
@@ -351,8 +438,8 @@ export function TaskDrawer({
                      * 目前這一個永遠留著 —— 既有資料可能本來就違反，
                      * 拿掉的話下拉會顯示成別的狀態，然後一存檔就靜悄悄改掉它。
                      */
-                    <Select value={data.statusKey}
-                            onChange={e => patch.mutate({ statusKey: e.target.value })}
+                    <Select value={form.statusKey}
+                            onChange={e => edit({ statusKey: e.target.value })}
                             className="w-full">
                       {statuses.map(s => (
                         <option key={s.key} value={s.key}
@@ -364,7 +451,7 @@ export function TaskDrawer({
                     </Select>
                   ) : (
                     <ReadOnlyValue>
-                      {statuses.find(s => s.key === data.statusKey)?.name ?? T.common.none}
+                      {statuses.find(s => s.key === form.statusKey)?.name ?? T.common.none}
                     </ReadOnlyValue>
                   )}
                 </Field>
@@ -391,25 +478,41 @@ export function TaskDrawer({
                 </div>
                 <Field label={T.task.drawer.fieldPriority}>
                   {canEdit ? (
-                    <Select value={data.priority}
-                            onChange={e => patch.mutate({ priority: e.target.value })}
+                    <Select value={form.priority}
+                            onChange={e => edit({ priority: e.target.value as TaskDetail['priority'] })}
                             className="w-full">
                       {priorities.map(p => (
                         <option key={p.key} value={p.key}>{p.name}</option>
                       ))}
                     </Select>
                   ) : (
-                    <ReadOnlyValue>{priorityOf(data.priority)}</ReadOnlyValue>
+                    <ReadOnlyValue>{priorityOf(form.priority)}</ReadOnlyValue>
+                  )}
+                </Field>
+                <Field label={T.task.drawer.fieldScheduleMode}>
+                  {canEdit ? (
+                    <Select value={form.scheduleMode}
+                            onChange={e => edit({ scheduleMode: e.target.value as TaskDetail['scheduleMode'] })}
+                            className="w-full">
+                      <option value="AUTO">{T.task.drawer.scheduleAuto}</option>
+                      <option value="MANUAL">{T.task.drawer.scheduleManual}</option>
+                    </Select>
+                  ) : (
+                    <ReadOnlyValue>
+                      {form.scheduleMode === 'AUTO'
+                        ? T.task.drawer.scheduleAuto
+                        : T.task.drawer.scheduleManual}
+                    </ReadOnlyValue>
                   )}
                 </Field>
                 {/* 進度佔兩欄：拖拉條再窄就拖不準了 */}
                 <div className="sm:col-span-2">
                   <Field label={T.task.drawer.fieldProgress}>
                     {canEdit ? (
-                      <ProgressField value={data.progress}
-                                     onCommit={v => patch.mutate({ progress: v })} />
+                      <ProgressField value={form.progress}
+                                     onCommit={v => edit({ progress: v })} />
                     ) : (
-                      <ReadOnlyValue>{T.task.drawer.progressValue(data.progress)}</ReadOnlyValue>
+                      <ReadOnlyValue>{T.task.drawer.progressValue(form.progress)}</ReadOnlyValue>
                     )}
                   </Field>
                 </div>
@@ -419,38 +522,22 @@ export function TaskDrawer({
                     {canEdit ? (
                       <div className="flex items-center gap-2">
                         <Input type="date" className="min-w-0 flex-1"
-                               defaultValue={data.startDate?.slice(0, 10) ?? ''}
+                               value={form.startDate?.slice(0, 10) ?? ''}
                                aria-label={T.task.drawer.fieldStart}
-                               onBlur={e => patch.mutate({ startDate: e.target.value || null })} />
+                               onChange={e => edit({ startDate: e.target.value || null })} />
                         <span aria-hidden className="text-slate-400 dark:text-slate-400">–</span>
                         <Input type="date" className="min-w-0 flex-1"
-                               defaultValue={data.dueDate?.slice(0, 10) ?? ''}
+                               value={form.dueDate?.slice(0, 10) ?? ''}
                                aria-label={T.task.drawer.fieldDue}
-                               onBlur={e => patch.mutate({ dueDate: e.target.value || null })} />
+                               onChange={e => edit({ dueDate: e.target.value || null })} />
                       </div>
                     ) : (
                       <ReadOnlyValue>
-                        {fmtDate(data.startDate)} – {fmtDate(data.dueDate)}
+                        {fmtDate(form.startDate)} – {fmtDate(form.dueDate)}
                       </ReadOnlyValue>
                     )}
                   </Field>
                 </div>
-                <Field label={T.task.drawer.fieldScheduleMode}>
-                  {canEdit ? (
-                    <Select value={data.scheduleMode}
-                            onChange={e => patch.mutate({ scheduleMode: e.target.value })}
-                            className="w-full">
-                      <option value="AUTO">{T.task.drawer.scheduleAuto}</option>
-                      <option value="MANUAL">{T.task.drawer.scheduleManual}</option>
-                    </Select>
-                  ) : (
-                    <ReadOnlyValue>
-                      {data.scheduleMode === 'AUTO'
-                        ? T.task.drawer.scheduleAuto
-                        : T.task.drawer.scheduleManual}
-                    </ReadOnlyValue>
-                  )}
-                </Field>
               </div>
 
               {/* ── 轉派的交接說明 ──

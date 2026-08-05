@@ -35,6 +35,25 @@ export const task = {
      * 兩個都叫「類型」會分不出來，所以這裡把「任務」講出來。
      * 選項是這個專案自己在系統參數頁定的，不是寫死的四種。
      */
+    /**
+     * 任務詳情不再改一格存一次 —— 改完按「保存」才送出。
+     * 每動一下就打一次 API 的話，改三個欄位就是三筆活動紀錄、三次重畫，
+     * 而且中途反悔沒有辦法收回。
+     */
+    save: '保存',
+    saving: '儲存中…',
+    saved: '已保存',
+    discard: '還原',
+    unsaved: '有還沒保存的修改',
+    /** 沒有東西改過的時候，按鈕是灰的；游標停著說明為什麼 */
+    nothingToSave: '沒有修改要保存',
+
+    /** 刪除。兩段式：按一次問一句，再按一次才真的刪 */
+    delete: '刪除任務',
+    deleteConfirm: '確定要刪除嗎？',
+    deleteYes: '確定刪除',
+    deleteHasChildren: (n: number) => `這張任務底下還有 ${n} 張，會一起刪掉`,
+
     /** 標題平常是一行字，點一下才變成輸入框 */
     editTitle: '點一下改標題',
     fieldTaskType: '任務種類',
@@ -58,6 +77,9 @@ export const task = {
      */
     statusBlockedByInquiry: (n: number) =>
       `還有 ${n} 件對外詢問沒回，先登錄回覆才選得到「做完」那幾個狀態。`,
+    /** 保存鈕變灰時，游標停著看得到的原因 */
+    saveBlockedByInquiry: (n: number) =>
+      `還有 ${n} 件對外詢問沒回，這張任務還不能改成做完。`,
     fieldAssignee: '負責人',
     fieldPriority: '優先級',
     fieldStart: '開始日',
