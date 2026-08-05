@@ -137,7 +137,14 @@ export default function ListView({
   }
 
   return (
-    <div className="overflow-auto p-4">
+    /*
+     * `h-full` 不能省。上層是 `min-h-0 flex-1 overflow-hidden`（App.tsx），
+     * 這一層沒有高度的話會直接長到內容的高度，然後被上層裁掉 ——
+     * `overflow-auto` 因為沒有超出自己，捲軸根本不會出現，
+     * 任務一多就整批看不到，而且捲不到。其他視圖是用 `flex h-full flex-col`
+     * 撐住的，這裡沒有工具列要固定，所以直接 h-full。
+     */
+    <div className="h-full overflow-auto p-4">
       {/* 視窗窄的時候寧可讓整張表左右捲，也不要把任務名稱擠成一個字一行 */}
       {/* 固定欄寬：任務名稱長的時候讓它自己截斷，不要把整張表撐寬到右邊欄位被推出畫面。
           視窗真的太窄時整張表左右捲 */}
