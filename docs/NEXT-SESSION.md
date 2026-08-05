@@ -8,7 +8,7 @@
 ## 貼給 Claude 的開場白（直接複製）
 
 ```
-繼續 PMFlow。先讀 D:\NewProject\CLAUDE.md（共用規矩）與 docs/NEXT-SESSION.md，
+繼續 PMFlow。先讀 D:\NewProject\AGENTS.md（共用規矩）與 docs/NEXT-SESSION.md，
 再看 docs/CHANGELOG.md 最上面的索引。
 M4 已經做完（儀表板是最後一項），這一批的東西都驗過了，不用重驗。
 接下來要做什麼由我指定；還沒決定的話先問我，不要自己挑一件開始做。
@@ -94,7 +94,9 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 別忘了
 
-- 規矩全在 `D:\NewProject\CLAUDE.md`，那個檔每個視窗都會自動讀到；
-  新規則寫進去，**不要另外開檔**
+- 規矩全在 `D:\NewProject\AGENTS.md`，**唯一一份、所有 AI 共用**
+  （`CLAUDE.md` 與 `GEMINI.md` 只有一行 `@AGENTS.md` 指過去）。
+  新規則寫進 `AGENTS.md`，**不要另外開檔，也不要只存進某個工具自己的長期記憶**
+  —— 換一個工具就等於沒交代過。（2026-08-05 改，原本是寫在 `CLAUDE.md`）
 - 每批改動寫進 `docs/CHANGELOG.md`（索引一列＋詳細條目一段）
 - 發版的 bat 交出去就停手，等他回覆。推 tag 才會發版，推 main 只跑 CI
