@@ -4,6 +4,16 @@ import { Api, type AppNotification, type Task, type WorkspaceRole } from './lib/
 import { useAuth } from './lib/auth'
 import { T } from './strings'
 import { Button, Spinner, cx } from './components/ui'
+import { useRemembered } from './lib/remember'
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove, SortableContext, sortableKeyboardCoordinates,
+  useSortable, verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { TaskDrawer } from './components/TaskDrawer'
 import { EpicSidebar } from './components/EpicSidebar'
 import { NotificationBell } from './components/NotificationBell'
@@ -20,6 +30,7 @@ import CalendarView from './pages/Calendar'
 import InquiryBoard from './pages/InquiryBoard'
 import ProjectPicker from './pages/ProjectPicker'
 import MembersPanel from './components/MembersPanel'
+import MembersView from './pages/Members'
 import ProjectSettings from './components/ProjectSettings'
 import AccountPanel from './components/AccountPanel'
 import AdminPanel from './components/AdminPanel'
@@ -29,7 +40,7 @@ import WeekView from './pages/Week'
 const DashboardView = lazy(() => import('./pages/Dashboard'))
 
 type View = 'list' | 'board' | 'week' | 'calendar' | 'gantt' | 'graph' | 'dashboard'
-  | 'inquiry' | 'members' | 'settings'
+  | 'inquiry' | 'members' | 'memberAdmin' | 'settings'
 
 /**
  * 帳號設定與系統管理不是專案底下的視圖 —— 沒選專案也要進得去，
@@ -52,8 +63,15 @@ const VIEWS: Array<{ key: View; label: string }> = [
   // 發文追蹤放在這一排：它跟其他頁籤一樣是「這個專案的任務」的一種看法 ——
   // 只是看的是「發出去的事情回了沒」。不再是跨專案的入口。
   { key: 'inquiry', label: T.nav.views.inquiry },
-  // 成員刻意不放在這一排。這排是「同一批任務的不同看法」，
-  // 成員是專案的設定，混在裡面會讓人以為它也是一種任務視圖。入口在右上角的頭像選單。
+  /*
+   * 成員原本刻意不在這一排（理由是「這排是同一批任務的不同看法，成員是專案設定」）。
+   * 2026-08-06 推翻：成員頁現在回答的是「這個人手上有什麼、以前經手過什麼」，
+   * 那就是同一批任務按人切的一種看法，該站到這一排來。
+   *
+   * 頭像選單那個入口留著，但指向的是**管理**成員（改角色、核准加入申請），
+   * 走 `memberAdmin` —— 看人跟管人是兩件事，混在一頁只會兩邊都難用。
+   */
+  { key: 'members', label: T.nav.views.members },
 ]
 
 /**
@@ -61,7 +79,9 @@ const VIEWS: Array<{ key: View; label: string }> = [
  * 儀表板則是整個專案一起算的。停在這些畫面上點大項目，按下去會沒有任何反應，
  * 所以一律先回清單。
  */
-const NOT_FILTERED_BY_EPIC: View[] = ['inquiry', 'members', 'settings', 'dashboard']
+const NOT_FILTERED_BY_EPIC: View[] = [
+  'inquiry', 'members', 'memberAdmin', 'settings', 'dashboard',
+]
 
 export default function App() {
   const { user, workspaces, ready, logout } = useAuth()
@@ -124,8 +144,8 @@ export default function App() {
      * 動畫本身在 index.css 的 `.pmflow-flash`，閃三下就停。
      */
     setFlashTask(n.taskId)
-    // 有人來敲門要在「成員」頁籤才處理得了；其他都回到任務清單
-    setView(n.kind === 'JOIN_REQUESTED' ? 'members' : 'list')
+    // 有人來敲門要在成員**管理**那一頁才核准得了（頁籤上那個成員頁只看不管）
+    setView(n.kind === 'JOIN_REQUESTED' ? 'memberAdmin' : 'list')
   }
   const bell = <NotificationBell onOpen={openNotification} />
 
@@ -149,7 +169,7 @@ export default function App() {
       onAdmin={() => setAccount('admin')}
       onLogout={logout}
       onMembers={projectId
-        ? () => { setAccount(null); setView('members'); setOpenTask(null) }
+        ? () => { setAccount(null); setView('memberAdmin'); setOpenTask(null) }
         : undefined}
       onSettings={projectId && canManageProject
         ? () => { setAccount(null); setView('settings'); setOpenTask(null) }
@@ -228,13 +248,175 @@ function AccountTab({ active, onClick, children }: {
   )
 }
 
+function SortableTabItem({
+  v, hidden, lastOne, toggle, P,
+}: {
+  v: { key: View; label: string }
+  hidden: View[]
+  lastOne: boolean
+  toggle: (key: View) => void
+  P: typeof T.nav.tabPrefs
+}) {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: v.key })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 30 : 1,
+  }
+
+  const on = !hidden.includes(v.key)
+  const stuck = on && lastOne
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cx(
+        'flex items-center gap-1.5 rounded px-2 py-1 text-sm bg-white dark:bg-slate-800',
+        'border border-slate-100 dark:border-slate-700/60',
+        isDragging ? 'shadow-md border-blue-400 dark:border-blue-500' : 'hover:bg-slate-50 dark:hover:bg-slate-700/40'
+      )}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        title={P.dragHandleTip}
+        aria-label={P.dragHandleTip}
+        className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 touch-none px-0.5"
+      >
+        ≡
+      </button>
+      <label title={stuck ? P.keepOne : undefined}
+             className={cx('flex min-w-0 flex-1 items-center gap-2',
+               stuck ? 'cursor-not-allowed opacity-50' : 'cursor-pointer')}>
+        <input type="checkbox" checked={on} disabled={stuck}
+               onChange={() => toggle(v.key)}
+               className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600
+                          focus:ring-blue-500/40 dark:border-slate-500 dark:bg-slate-900" />
+        <span className="truncate text-slate-700 dark:text-slate-200">{v.label}</span>
+      </label>
+    </div>
+  )
+}
+
+/**
+ * 頁籤右邊那顆齒輪：勾選要顯示哪幾個頁籤、拖曳調整左右順序。
+ *
+ * **只影響自己這台瀏覽器**，不是專案設定（見 AGENTS.md「頁籤可以自己藏起來」）。
+ * 面板裡把這句話寫出來 —— 不寫的話，藏掉甘特圖的人會以為自己剛剛
+ * 把全專案的甘特圖關掉了。
+ *
+ * **至少留一個**：全部取消勾選會讓上面整排消失，變成一個不知道怎麼救回來的畫面。
+ * 剩最後一個時那一格直接 disabled，而不是按下去才跳錯誤。
+ */
+function TabPrefs({ hidden, setHidden, ordered, onReorder, onResetOrder, view, setView }: {
+  hidden: View[]
+  setHidden: (v: View[]) => void
+  /** 目前的左右順序（已經把存值與 VIEWS 合併過） */
+  ordered: Array<{ key: View; label: string }>
+  onReorder: (activeKey: View, overKey: View) => void
+  onResetOrder: () => void
+  view: View
+  setView: (v: View) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const P = T.nav.tabPrefs
+  const shown = ordered.filter(v => !hidden.includes(v.key))
+  const lastOne = shown.length <= 1
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      onReorder(active.id as View, over.id as View)
+    }
+  }
+
+  function toggle(key: View) {
+    const next = hidden.includes(key)
+      ? hidden.filter(k => k !== key)
+      : [...hidden, key]
+    setHidden(next)
+    // 藏掉的正好是現在看著的那一頁 → 跳到還留著的第一個，不然畫面會空掉
+    if (key === view && next.includes(key)) {
+      const first = VIEWS.find(v => !next.includes(v.key))
+      if (first) setView(first.key)
+    }
+  }
+
+  return (
+    <div className="relative ml-auto">
+      <button onClick={() => setOpen(o => !o)}
+              title={P.open} aria-label={P.open} aria-expanded={open}
+              className="rounded-md px-2 py-1.5 text-sm text-slate-400 hover:bg-slate-100
+                         hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800
+                         dark:hover:text-slate-200">
+        ⚙
+      </button>
+
+      {open && (
+        <>
+          {/* 點旁邊就收起來。蓋在整個畫面上但透明，不然要按兩次才關得掉 */}
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-slate-200
+                          bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-800">
+            <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{P.title}</div>
+            <p className="mt-0.5 text-[11px] leading-snug text-slate-400 dark:text-slate-400">
+              {P.hint}
+            </p>
+            <p className="mt-0.5 text-[11px] leading-snug text-slate-400 dark:text-slate-400">
+              {P.orderHint}
+            </p>
+
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={ordered.map(v => v.key)} strategy={verticalListSortingStrategy}>
+                <div className="mt-2 space-y-1">
+                  {ordered.map(v => (
+                    <SortableTabItem
+                      key={v.key}
+                      v={v}
+                      hidden={hidden}
+                      lastOne={lastOne}
+                      toggle={toggle}
+                      P={P}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-700/60">
+              <Button variant="ghost" className="text-xs"
+                      onClick={() => { setHidden([]); onResetOrder() }}>
+                {P.reset}
+              </Button>
+              <Button variant="ghost" className="text-xs" onClick={() => setOpen(false)}>
+                {P.done}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /**
  * 有選定專案時的主畫面：左側大項目、右側視圖。
  * 查詢集中在這一層，側欄和主視圖吃同一份資料，不會各抓一次。
  */
 function ProjectWorkspace({
-  projectId, workspaceId, view, setView, openTask, setOpenTask, flashTask, onFlashSeen,
-  onSwitchProject, bell, menu,
+  projectId, workspaceId, view: requestedView, setView, openTask, setOpenTask,
+  flashTask, onFlashSeen, onSwitchProject, bell, menu,
 }: {
   projectId: string
   workspaceId: string
@@ -254,6 +436,46 @@ function ProjectWorkspace({
 }) {
   /** 側欄選中的大項目；null＝不篩選 */
   const [epicId, setEpicId] = useState<string | null>(null)
+
+  /**
+   * 藏起來的頁籤。**每個人自己的偏好，存這台瀏覽器**（見 AGENTS.md）——
+   * 不做成專案設定：一個人嫌甘特圖礙眼把它收掉，會連帶害到同專案
+   * 每天都在看甘特圖的人。跟側欄收合、行事曆勾選同一套 `lib/remember.ts`。
+   */
+  const [hiddenTabs, setHiddenTabs] = useRemembered<View[]>('tabs.hidden', [])
+  /**
+   * 頁籤由左到右的順序，一樣是自己這台瀏覽器的偏好。
+   *
+   * 存下來的清單**不能直接拿來用**：版本更新多一個頁籤時，舊的存值裡沒有它，
+   * 照著存值畫就等於那個新頁籤永遠出不來。所以一律「先照存值排，
+   * 存值裡沒有的照 VIEWS 原順序補在後面，存值裡有但已經不存在的跳過」。
+   */
+  const [tabOrder, setTabOrder] = useRemembered<View[]>('tabs.order', [])
+  const orderedViews = useMemo(() => {
+    const known = new Map(VIEWS.map(v => [v.key, v]))
+    const out = tabOrder.map(k => known.get(k)).filter(v => v !== undefined)
+    for (const v of VIEWS) if (!out.includes(v)) out.push(v)
+    return out
+  }, [tabOrder])
+  const shownViews = orderedViews.filter(v => !hiddenTabs.includes(v.key))
+
+  /**
+   * 存下來的偏好可能正好藏著現在這一頁（上次藏完就關掉、或換了一台裝置），
+   * 那就退到還留著的第一個 —— 不然會停在一個「上面沒有任何頁籤亮著」的畫面，
+   * 看起來就像壞掉了。成員管理與系統參數不在頁籤那一排，不受影響。
+   */
+  const view: View = VIEWS.some(v => v.key === requestedView) && hiddenTabs.includes(requestedView)
+    ? (shownViews[0]?.key ?? 'list')
+    : requestedView
+
+  /** 拖曳調整頁籤左右順序。存的是完整順序，不是差異 */
+  function reorderTab(activeKey: View, overKey: View) {
+    const keys = orderedViews.map(v => v.key)
+    const oldIndex = keys.indexOf(activeKey)
+    const newIndex = keys.indexOf(overKey)
+    if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
+    setTabOrder(arrayMove(keys, oldIndex, newIndex))
+  }
 
   const { data: project } = useQuery({
     queryKey: ['project', projectId], queryFn: () => Api.project(projectId),
@@ -372,8 +594,8 @@ function ProjectWorkspace({
             )}
             <div className="ml-auto flex items-center gap-2">{bell}{menu}</div>
           </div>
-          <nav className="flex gap-1 px-3 pt-2">
-            {VIEWS.map(v => (
+          <nav className="flex items-center gap-1 px-3 pt-2">
+            {shownViews.map(v => (
               <button key={v.key} onClick={() => { setView(v.key); setOpenTask(null) }}
                       className={cx(
                         'flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-sm font-medium',
@@ -385,6 +607,10 @@ function ProjectWorkspace({
                 {v.label}
               </button>
             ))}
+            <TabPrefs hidden={hiddenTabs} setHidden={setHiddenTabs}
+                      ordered={orderedViews} onReorder={reorderTab}
+                      onResetOrder={() => setTabOrder([])}
+                      view={view} setView={setView} />
           </nav>
         </header>
         )}
@@ -446,7 +672,13 @@ function ProjectWorkspace({
                 <InquiryBoard projectId={projectId} workspaceId={workspaceId}
                               onOpenTask={setOpenTask} />
               )}
+              {/* 頁籤上的成員頁：看人手上有什麼、以前經手過什麼 */}
               {view === 'members' && (
+                <MembersView projectId={projectId} workspaceId={workspaceId}
+                             onOpenTask={setOpenTask} />
+              )}
+              {/* 頭像選單進來的成員管理：改角色、核准加入申請 */}
+              {view === 'memberAdmin' && (
                 <MembersPanel projectId={projectId} workspaceId={workspaceId} />
               )}
               {view === 'settings' && <ProjectSettings projectId={projectId} />}
