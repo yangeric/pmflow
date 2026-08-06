@@ -5,14 +5,12 @@
 
 ---
 
-## 貼給 Claude 的開場白（直接複製）
+## 貼給 AI 的開場白 / 接手提示詞（直接複製）
 
 ```
-繼續 PMFlow。先讀 D:\NewProject\AGENTS.md（共用規矩，唯一一份）與
-docs/NEXT-SESSION.md，再看 docs/CHANGELOG.md 最上面的索引。
-0.2.0 的 bat 已經在專案根目錄，先問我發了沒有再動檔案。
-下面「還沒動工」那幾項照順序做，不確定的先問我，不要自己挑別的開始做。
-不衝突就開多個子代理，但要先分好誰改哪些檔。做完在畫面上看過再說改好了。
+繼續 PMFlow 專案。請先閱讀 D:\NewProject\AGENTS.md（共用規矩）與 docs/NEXT-SESSION.md，並查看 docs/CHANGELOG.md 最上面的索引。
+所有前置工作與修正均已 typecheck 通過並 push 至 main。
+請精簡覆述我的需求後開始工作。
 ```
 
 起環境（前端改檔即時生效，不用重建）：
