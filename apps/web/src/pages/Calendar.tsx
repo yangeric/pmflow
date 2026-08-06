@@ -8,6 +8,7 @@ import {
   Api, ApiError,
   type Inquiry, type InquiryState, type Leave, type LeaveType, type Task, type TaskStatus,
 } from '../lib/api'
+import { Avatar } from '../components/Avatar'
 import { Button, Empty, Field, Input, Select, cx, textOnColor } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
@@ -79,6 +80,19 @@ type Piece =
 
 type Segment = { piece: Piece; startCol: number; endCol: number; lane: number }
 
+/**
+ * 代理人是後來才加的欄位，`lib/api.ts` 的型別由另一個視窗在改 ——
+ * 這裡先用介面合併把兩個欄位補上（後端已經回傳了，見 api/src/routes/leaves.ts）。
+ * `lib/api.ts` 補上同樣的欄位之後，這一段可以整塊刪掉，型別完全一樣不會衝突。
+ */
+declare module '../lib/api' {
+  interface Leave {
+    /** 代理人。沒指定就是 null —— 不是每次請假都要找人代 */
+    deputyId: string | null
+    deputyName: string | null
+  }
+}
+
 /** 請假表單的內容。空字串的 userId 代表「填自己的」，送出時不帶 userId */
 interface LeaveForm {
   /** 有值就是在改既有的那一筆 */
@@ -89,10 +103,29 @@ interface LeaveForm {
   startDate: string
   endDate: string
   note: string
+  /** 空字串＝不指定代理人。跟 userId 同一套寫法 */
+  deputyId: string
+  /**
+   * 只是為了顯示。名單還沒載回來、或那個人已經不在這個工作區時，
+   * 下拉裡沒有對應的選項 —— 沒有這個名字的話，畫面會變成一個空白的下拉，
+   * 存下去就把原本指定的代理人默默清掉了。
+   */
+  deputyName: string
 }
 
 const LEAVE_TYPE_KEYS: LeaveType[] =
   ['PERSONAL', 'SICK', 'ANNUAL', 'OFFICIAL', 'MARRIAGE', 'BEREAVEMENT', 'OTHER']
+
+/**
+ * 送出時把代理人接上去。**空字串一律送 null** —— 那是「取消代理」，
+ * 跟「這次沒有動到這個欄位」是兩件事，後端分得開（見 routes/leaves.ts）。
+ *
+ * 之所以是一個小函式而不是直接寫在物件裡：`lib/api.ts` 的 createLeave／
+ * patchLeave 簽章還沒有 deputyId（那個檔由另一個視窗在改），
+ * 補上之後這裡不用改，只是多了一層型別保障。
+ */
+const withDeputy = <T extends object>(json: T, deputyId: string): T =>
+  ({ ...json, deputyId: deputyId || null })
 
 export default function CalendarView({
   projectId, workspaceId, tasks, statuses, onOpen,
@@ -323,19 +356,19 @@ export default function CalendarView({
   const saveLeave = useMutation({
     mutationFn: (f: LeaveForm) => f.id
       // 改的時候不送 userId —— 換人請假等於換一筆，後端也不收
-      ? Api.patchLeave(f.id, {
+      ? Api.patchLeave(f.id, withDeputy({
           leaveType: f.leaveType,
           startDate: f.startDate,
           endDate: f.endDate,
           note: f.note.trim() || null,
-        })
-      : Api.createLeave(workspaceId, {
+        }, f.deputyId))
+      : Api.createLeave(workspaceId, withDeputy({
           userId: f.userId || undefined,
           leaveType: f.leaveType,
           startDate: f.startDate,
           endDate: f.endDate,
           note: f.note.trim() || null,
-        }),
+        }, f.deputyId)),
     onSuccess: () => { setLeaveForm(null); setLeaveError(null); invalidateLeaves() },
     onError: e => failure(e, C.leave.saveFailed),
   })
@@ -395,6 +428,7 @@ export default function CalendarView({
     setLeaveForm({
       id: null, userId: '', userName: '',
       leaveType: 'PERSONAL', startDate: today, endDate: today, note: '',
+      deputyId: '', deputyName: '',
     })
   }
   /** 點長條進來改。只有 canEdit 的那幾筆會走到這裡 */
@@ -404,6 +438,7 @@ export default function CalendarView({
       id: l.id, userId: l.userId, userName: l.userName,
       leaveType: l.leaveType, startDate: l.startDate, endDate: l.endDate,
       note: l.note ?? '',
+      deputyId: l.deputyId ?? '', deputyName: l.deputyName ?? '',
     })
   }
 
@@ -453,7 +488,10 @@ export default function CalendarView({
 
           <Button onClick={openNewLeave}>{C.leave.add}</Button>
 
-          <span className="ml-auto text-xs text-slate-400 dark:text-slate-400">{C.dragHint}</span>
+          <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-400 cursor-help"
+                title={C.dragHint}>
+            {C.dragHintLabel}
+          </span>
         </div>
 
         {/* 請假讀不到時講一聲 —— 不然畫面上「沒有人請假」跟「沒讀到」長得一樣 */}
@@ -707,10 +745,14 @@ function LeaveBar({ seg, leave, onEdit }: {
   onEdit: (l: Leave) => void
 }) {
   const typeLabel = C.leave.types[leave.leaveType]
-  const base = C.leave.tooltip(
+  const plain = C.leave.tooltip(
     leave.userName, typeLabel,
     shortDate(leave.startDate), shortDate(leave.endDate), leave.days
   )
+  // 代理人接在最前面：知道「他不在」之後，下一個問題一定是「那找誰」
+  const base = leave.deputyName
+    ? C.leave.tooltipWithDeputy(plain, leave.deputyName)
+    : plain
   // 備註只有本人與管理者拿得到，拿不到的人這裡本來就是 null
   const title = leave.note
     ? C.leave.tooltipWithNote(base, leave.note)
@@ -731,7 +773,11 @@ function LeaveBar({ seg, leave, onEdit }: {
           : 'cursor-default'
       )}
     >
-      <span className="truncate">{C.leave.bar(leave.userName, typeLabel)}</span>
+      <span className="truncate">
+        {leave.deputyName
+          ? C.leave.barWithDeputy(leave.userName, typeLabel, leave.deputyName)
+          : C.leave.bar(leave.userName, typeLabel)}
+      </span>
     </div>
   )
 }
@@ -759,13 +805,23 @@ function LeaveDialog({
 }) {
   const editing = form.id !== null
 
-  // 幫別人登記是管理者的權力。改既有那筆時不列人 —— 換人請假等於換一筆
+  /**
+   * 同工作區的人。兩件事都要用它：幫別人登記（管理者才有）、挑代理人（誰都有），
+   * 所以**不再只在管理者新增時才要**。這條端點只要求「是這個工作區的成員」
+   * （見 api/src/routes/members.ts 的 /workspace-users），不會因此多給誰權限。
+   */
   const { data: userData } = useQuery({
     queryKey: ['workspace-users', workspaceId],
     queryFn: () => Api.workspaceUsers(workspaceId),
-    enabled: canManage && !editing && !!workspaceId,
+    enabled: !!workspaceId,
   })
   const others = (userData?.users ?? []).filter(u => u.id !== meId)
+
+  /** 這筆假是誰的。新增時沒選人就是填自己的 */
+  const subjectId = editing ? form.userId : (form.userId || meId)
+  /** 代理人不能是請假的人自己 —— 不合法的選項直接不畫出來，後端也擋 */
+  const deputyChoices = (userData?.users ?? []).filter(u => u.id !== subjectId)
+  const chosenDeputy = deputyChoices.find(u => u.id === form.deputyId)
 
   const ok = !!form.startDate && !!form.endDate && form.startDate <= form.endDate
   const days = ok
@@ -777,6 +833,9 @@ function LeaveDialog({
     // 前端先擋一次是為了當場給回饋；後端與資料表各自還會再擋一次
     if (!form.startDate || !form.endDate) { onError(C.leave.errorRequired); return }
     if (form.startDate > form.endDate) { onError(C.leave.errorRange); return }
+    if (form.deputyId && form.deputyId === subjectId) {
+      onError(C.leave.errorDeputySelf); return
+    }
     onSave(form)
   }
 
@@ -806,7 +865,13 @@ function LeaveDialog({
                 <Select
                   className="w-full"
                   value={form.userId}
-                  onChange={e => onChange({ ...form, userId: e.target.value })}
+                  onChange={e => onChange({
+                    ...form,
+                    userId: e.target.value,
+                    // 換了請假的人之後，原本選的代理人可能正好就是他自己
+                    ...(form.deputyId === (e.target.value || meId)
+                      ? { deputyId: '', deputyName: '' } : null),
+                  })}
                 >
                   <option value="">{C.leave.selfOption}</option>
                   {others.map(u => (
@@ -856,6 +921,44 @@ function LeaveDialog({
           {ok && (
             <p className="text-xs text-slate-500 dark:text-slate-400">{C.leave.dayCount(days)}</p>
           )}
+
+          <Field label={C.leave.fieldDeputy}>
+            <div className="flex items-center gap-2">
+              {form.deputyId && (
+                <Avatar
+                  userId={form.deputyId}
+                  name={chosenDeputy?.displayName || form.deputyName || null}
+                  size="sm"
+                />
+              )}
+              <Select
+                className="w-full"
+                value={form.deputyId}
+                onChange={e => onChange({
+                  ...form,
+                  deputyId: e.target.value,
+                  deputyName:
+                    deputyChoices.find(u => u.id === e.target.value)?.displayName ?? '',
+                })}
+              >
+                <option value="">{C.leave.deputyNone}</option>
+                {/*
+                  原本指定的人已經不在名單上（離開工作區、或名單還沒載回來）時，
+                  仍然要有一個對應的選項 —— 沒有的話下拉會顯示成第一個選項，
+                  按下儲存就把代理人默默清掉了。
+                */}
+                {form.deputyId && !chosenDeputy && (
+                  <option value={form.deputyId}>{form.deputyName}</option>
+                )}
+                {deputyChoices.map(u => (
+                  <option key={u.id} value={u.id}>{u.displayName}</option>
+                ))}
+              </Select>
+            </div>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">
+              {C.leave.deputyHint}
+            </p>
+          </Field>
 
           <Field label={C.leave.fieldNote}>
             <Input

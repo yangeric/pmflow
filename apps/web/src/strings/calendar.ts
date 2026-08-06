@@ -4,11 +4,23 @@ export const calendar = {
   nextMonth: '下個月',
   today: '今天',
 
+  /**
+   * 星期與年月的說法。
+   *
+   * 這兩個本來寫死在 `lib/date.ts` 裡 —— 那是**會顯示在畫面上的字**
+   * （月曆表頭、週檢視標題），不是純計算，所以要跟其他文案住在一起。
+   * 星期從星期日起算，順序跟 `Date.getDay()` 對齊，**不要重新排**。
+   */
+  weekdays: ['日', '一', '二', '三', '四', '五', '六'] as const,
+  /** 語序綁著中文，不要在元件裡拼 —— 換語言時是 "August 2026" 這種完全不同的排法 */
+  monthLabel: (year: number, month1to12: number) => `${year} 年 ${month1to12} 月`,
+
   /** 工具列上的三個開關，數字接在後面 */
   filterTasks: '任務',
   filterInquiries: '期望回覆日',
   filterLeaves: '請假',
   dragHint: '任務與期望回覆日拖到哪一天，就從那天開始（長度不變）；請假要改期請點開來改',
+  dragHintLabel: 'ⓘ 操作說明',
 
   undated: (n: number) => `未排期 ${n}`,
   undatedMore: (n: number) => `還有 ${n} 張`,
@@ -47,10 +59,19 @@ export const calendar = {
 
     /** 長條上放得下的字：誰、請哪一種假 */
     bar: (name: string, type: string) => `${name}　${type}`,
+    /**
+     * 有指定代理人時的長條。代理人跟假別一樣寫在長條上，不藏在游標提示裡 ——
+     * 只知道「他不在」卻要停在上面才知道「該找誰」，等於只講了一半。
+     */
+    barWithDeputy: (name: string, type: string, deputy: string) =>
+      `${name}　${type}　代理：${deputy}`,
     /** 游標停著看的完整說明。備註只有本人與管理者拿得到，沒有就不接在後面 */
     tooltip: (name: string, type: string, start: string, end: string, days: number) =>
       `${name}｜${type}｜${start} – ${end}（共 ${days} 天）`,
     tooltipWithNote: (base: string, note: string) => `${base}｜備註：${note}`,
+    /** 代理人接在最前面：這是看的人下一步要找誰，比備註重要 */
+    tooltipWithDeputy: (base: string, deputy: string) =>
+      `${base}｜這幾天由 ${deputy} 代理`,
     /** 不能改的那幾筆，講清楚為什麼點了沒反應 */
     tooltipReadOnly: (base: string) => `${base}｜只有本人與工作區管理者可以修改`,
 
@@ -64,6 +85,16 @@ export const calendar = {
     fieldType: '假別',
     fieldStart: '開始日期',
     fieldEnd: '結束日期',
+    /**
+     * 代理人。這幾天他不在，事情由誰接手。
+     * 選填 —— 請一天假通常不必找人代，強迫指定只會逼人隨便填一個。
+     */
+    fieldDeputy: '代理人（選填）',
+    deputyNone: '不指定代理人',
+    deputyHint: '代理期間就是上面這段請假的起訖日。代理人在這幾天可以做請假的人做得到的事，時間到了就自動結束。',
+    /** 不能選自己：下拉裡本來就不會出現，這句是萬一有人繞過去時的說明 */
+    errorDeputySelf: '代理人不能是請假的人自己，請改選別人。',
+
     fieldNote: '備註（選填）',
     notePlaceholder: '例如：出國、家中有事，只有本人與工作區管理者看得到',
     /** 幫別人填是管理者的權力，不是管理者時只會看到自己 */

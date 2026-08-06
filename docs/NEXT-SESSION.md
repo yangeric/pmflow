@@ -31,6 +31,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 2026-08-06 做完的（都在畫面上驗過）
 
+- **行事曆操作說明**：長說明改為懸停圖示提示（`ⓘ 操作說明` + `title` tooltip），解決擠壓工具列與按鈕換行的問題。
 - **側欄新增子任務**：點擊 `＋` 按鈕自動展開父節點，就地輸入建立合法種類之子任務。
 - **關聯圖 SS/FF 繪製**：確認兩端有連接任務時畫圓點，無連接時退回直條連線（`hub === false`），防止空頭圓點。
 - **WEB 專案 AAA (WEB-1) 層級**：確認 WEB-1 在資料庫中已為 EPIC 大項目且位於最上層，通過 `fix-task-levels.bat` 驗證無違規。
