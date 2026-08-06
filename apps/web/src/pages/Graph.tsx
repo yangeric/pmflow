@@ -131,6 +131,13 @@ const NODE_H_FALLBACK = 76
 const JUNCTION_SIZE = 10
 /** 匯合點離任務節點多遠。剩下的欄距要放得下進來（或出去）的那條線的標籤 */
 const JUNCTION_GAP = 46
+/**
+ * 從任務的外緣算起，一個匯合點總共要吃掉多寬。
+ *
+ * 佈局要照這個寬度在框裡留白 —— 成員剛好排在框的最左（或最右）那一欄時，
+ * 圓點會掉到框外面去，看起來就像它不屬於任何一包。
+ */
+const JUNCTION_SPAN = JUNCTION_GAP + JUNCTION_SIZE
 
 type TaskNodeData = {
   ref: string
@@ -527,6 +534,12 @@ const BOX_HEADER = 52
 
 type Box = { w: number; h: number }
 
+/**
+ * 真的會畫成圓點的那幾群（見下面 simul 的說明）。
+ * 佈局只需要知道「誰是成員、往左還是往右伸出去」，好在框裡把位置讓出來。
+ */
+type Hub = { kind: 'fork' | 'join'; members: string[] }
+
 type LayoutResult = {
   /** 相對於「父框內容區」的位置。沒有父框的就是畫布座標 */
   rel: Map<string, { x: number; y: number }>
@@ -546,7 +559,8 @@ function layout(
   ids: string[],
   parentOf: Map<string, string | null>,
   refOf: Map<string, string>,
-  schedEdges: Array<{ sourceId: string; targetId: string; linkType: LinkType }>
+  schedEdges: Array<{ sourceId: string; targetId: string; linkType: LinkType }>,
+  hubs: Hub[]
 ): LayoutResult {
   const present = new Set(ids)
   const usable = schedEdges.filter(e => present.has(e.sourceId) && present.has(e.targetId))
@@ -696,37 +710,119 @@ function layout(
           : (sortKey.get(a) ?? '').localeCompare(sortKey.get(b) ?? '')
       })
 
-      // 這一層折成幾個子欄。框比一般任務高很多，所以按高度收，不是按張數
-      const columns: string[][] = [[]]
-      let used = 0
+      // 將 bucket 裡的節點照併欄 (find(id)) 分群
+      const groupsInLayer: string[][] = []
+      const groupMap = new Map<string, string[]>()
       for (const id of bucket) {
-        const h = measure(id).h
+        const root = find(id)
+        const g = groupMap.get(root)
+        if (g) g.push(id)
+        else {
+          const newG = [id]
+          groupMap.set(root, newG)
+          groupsInLayer.push(newG)
+        }
+      }
+
+      // 這一層折成幾個子欄。框比一般任務高很多，所以按高度收
+      const columns: string[][][] = [[]]
+      let used = 0
+      for (const grp of groupsInLayer) {
+        const totalH = grp.reduce((acc, id) => acc + measure(id).h + (ROW_GAP - LEAF_H), 0)
         const cur = columns[columns.length - 1]
-        if (cur.length >= MAX_PER_COL || (used > 0 && used + h > MAX_PER_COL * ROW_GAP)) {
+        if (cur.length >= MAX_PER_COL || (used > 0 && used + totalH > MAX_PER_COL * ROW_GAP)) {
           columns.push([])
           used = 0
         }
-        columns[columns.length - 1].push(id)
-        used += h + (ROW_GAP - LEAF_H)
+        columns[columns.length - 1].push(grp)
+        used += totalH
       }
 
       let widest = 0
       let colX = x
+
       for (const col of columns) {
-        let y = 0
-        for (const id of col) {
-          rel.set(id, { x: colX, y })
-          y += measure(id).h + (ROW_GAP - LEAF_H)
+        // 在這個 column 內擺放各個 group，優先對齊上游任務的 Y 座標（讓關聯鏈儘量平行向右延展）
+        const usedYInCol = new Set<number>()
+
+        for (const grp of col) {
+          let idealY: number | null = null
+          for (const id of grp) {
+            const upstreams = usable.filter(e => e.targetId === id && rel.has(e.sourceId))
+            if (upstreams.length > 0) {
+              const srcYs = upstreams.map(e => rel.get(e.sourceId)!.y)
+              const minSrcY = Math.min(...srcYs)
+              if (idealY === null || minSrcY < idealY) idealY = minSrcY
+            }
+          }
+
+          let startY = idealY ?? 0
+
+          const overlaps = (candidateY: number) => {
+            let yCursor = candidateY
+            for (const id of grp) {
+              const h = measure(id).h
+              for (let checkY = yCursor; checkY < yCursor + h; checkY += 24) {
+                if (usedYInCol.has(checkY)) return true
+              }
+              yCursor += h + (ROW_GAP - LEAF_H)
+            }
+            return false
+          }
+
+          while (overlaps(startY)) {
+            startY += ROW_GAP
+          }
+
+          let yCursor = startY
+          for (const id of grp) {
+            rel.set(id, { x: colX, y: yCursor })
+            const h = measure(id).h
+            for (let markY = yCursor; markY < yCursor + h; markY += 24) {
+              usedYInCol.add(markY)
+            }
+            yCursor += h + (ROW_GAP - LEAF_H)
+          }
+          maxBottom = Math.max(maxBottom, yCursor - (ROW_GAP - LEAF_H))
         }
-        maxBottom = Math.max(maxBottom, y - (ROW_GAP - LEAF_H))
-        const w = colWidth(col)
+
+        const w = colWidth(col.flat())
         widest = Math.max(widest, colX - x + w)
         colX += w + (COL_GAP - LEAF_W)
       }
+
       x += Math.max(widest, LEAF_W) + (COL_GAP - LEAF_W)
     }
 
-    return { w: Math.max(x - (COL_GAP - LEAF_W), 0), h: maxBottom }
+    /**
+     * 匯合點的留白。
+     *
+     * 圓點畫在成員的外側 —— 分岔在左、合流在右。成員之間本來就有欄距（84px）
+     * 放得下，但排在這一層最左邊（或最右邊）的那一欄沒有，圓點就會掉到
+     * 框外面去。這裡把那一段寬度讓出來，圓點才落得進它成員所屬的那個框裡。
+     *
+     * 只有真的會畫出來的那幾群要算（hubs）—— 退回成直線的那幾群沒有圓點，
+     * 留白只會讓框莫名其妙變寬。
+     */
+    let lead = 0
+    let tail = 0
+    for (const g of hubs) {
+      for (const m of g.members) {
+        const r = rel.get(m)
+        if (!inLevel.has(m) || !r) continue
+        if (g.kind === 'fork') lead = Math.max(lead, JUNCTION_SPAN - r.x)
+        else tail = Math.max(tail, r.x + measure(m).w + JUNCTION_SPAN)
+      }
+    }
+    if (lead > 0) {
+      for (const id of members) {
+        const r = rel.get(id)!
+        rel.set(id, { x: r.x + lead, y: r.y })
+      }
+      tail += lead
+    }
+
+    return { w: Math.max(x - (COL_GAP - LEAF_W) + lead, tail, 0), h: maxBottom }
   }
 
   place(kidsOf.get(null) ?? [])
@@ -897,9 +993,23 @@ function GraphCanvas({
    * 用同一種依賴串起來的任務算一群 —— A 同時開始 B、B 同時開始 C，那 A B C
    * 是同一個時間點的三路，只該有一根棒子而不是兩根。群內的方向性（誰等誰）
    * 留在聚焦面板的句子裡講，圖上不畫 —— 它們的日期本來就綁在一起。
+   *
+   * **但圓點的外側那一頭一定要接得到任務**（hub）：
+   *
+   *   分岔點（同時開始）左邊要有任務接進來 —— 那是這幾張共同在等的東西
+   *   合流點（同時完成）右邊要有任務接出去 —— 那是要等這幾張全部做完的東西
+   *
+   * 接不到就不畫圓點，退回成兩張任務之間直接一條線。圓點代表「這幾張在這裡
+   * 對齊」，它是路上的一個節點不是終點；一頭空著的話，看的人只看到線走到一個
+   * 點就沒了，不知道那個點在等誰、也不知道它之後接到哪。
+   *
+   * 群本身仍然全部留著（forkOf／joinOf）—— 節點上「同時開始 N」那個徽章、
+   * 聚焦面板的句子都靠它，跟畫不畫圓點是兩回事。
    */
   const simul = useMemo(() => {
-    const groups: Array<{ id: string; kind: 'fork' | 'join'; members: string[] }> = []
+    const groups: Array<{
+      id: string; kind: 'fork' | 'join'; members: string[]; hub: boolean
+    }> = []
     const forkOf = new Map<string, (typeof groups)[number]>()
     const joinOf = new Map<string, (typeof groups)[number]>()
 
@@ -929,14 +1039,20 @@ function GraphCanvas({
       }
       for (const [root, members] of bucket) {
         if (members.length < 2) continue
-        const g = { id: `${kind}:${root}`, kind, members }
+        const ms = new Set(members)
+        // 外側那一頭接不接得到任務。同時開始／同時完成的線兩端都在群裡，
+        // 所以剩下的一定是「完成後開始」這類真的有先後的依賴
+        const hub = schedEdges.some(e => kind === 'fork'
+          ? ms.has(e.targetId) && !ms.has(e.sourceId)
+          : ms.has(e.sourceId) && !ms.has(e.targetId))
+        const g = { id: `${kind}:${root}`, kind, members, hub }
         groups.push(g)
         for (const m of members) (kind === 'fork' ? forkOf : joinOf).set(m, g)
       }
     }
     build('fork', 'SS')
     build('join', 'FF')
-    return { groups, forkOf, joinOf }
+    return { groups, hubs: groups.filter(g => g.hub), forkOf, joinOf }
   }, [schedEdges])
 
   /**
@@ -947,11 +1063,11 @@ function GraphCanvas({
    * statuses 是 `project?.statuses ?? []`，每次 render 都是新陣列，放進相依
    * 等於「父層一 render 就把版面洗掉」。所以顏色改在 styledNodes 那邊算。
    */
-  const { baseNodes, layoutAbs } = useMemo(() => {
+  const { baseNodes, layoutAbs, layoutSize } = useMemo(() => {
     const present = new Set(shownNodes.map(n => n.id))
     const parentOf = new Map(shownNodes.map(n => [n.id, n.parentId]))
     const refOf = new Map(shownNodes.map(n => [n.id, n.ref]))
-    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges)
+    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges, simul.hubs)
 
     const nodes: TaskNode[] = shownNodes.map(n => {
       const isBox = L.boxes.has(n.id)
@@ -1004,8 +1120,8 @@ function GraphCanvas({
     }
     nodes.sort((a, b) => depth(a.id) - depth(b.id))
 
-    return { baseNodes: nodes, layoutAbs: L.abs }
-  }, [shownNodes, schedEdges])
+    return { baseNodes: nodes, layoutAbs: L.abs, layoutSize: L.size }
+  }, [shownNodes, schedEdges, simul])
 
   const nodeKey = useMemo(() => baseNodes.map(n => n.id).join(','), [baseNodes])
 
@@ -1366,15 +1482,23 @@ function GraphCanvas({
   /**
    * 匯合點的位置是算出來的，不進自動佈局。
    *
-   * 分岔點貼在該欄的左邊、合流點貼在右邊，高度撐滿群內第一張到最後一張任務的
-   * 中心線，看起來才像一根把它們串起來的棒子。因為它跟著任務走，使用者拖動
-   * 任務時棒子也會跟著移動 —— 所以這裡讀的是拖過之後的位置。
+   * **圓點貼著「最外側」的那一張成員任務**：分岔看最左邊那張、合流看最右邊那張，
+   * 而且住進那張任務所在的框（parentId），高度取同一欄成員的中線。
+   *
+   * 以前是拿整群的最小 x 配上整群的垂直中點，成員分散在兩個框裡時，
+   * 那個座標會落在框與框之間的空白、甚至壓在別人的標題列上 ——
+   * 使用者看到的就是那顆壓在方塊上的橘點。改成貼著錨點之後，圓點一定落在
+   * 佈局替它留出來的那段空白裡（見 place 裡的 JUNCTION_SPAN），
+   * 那段空白本來就沒有任何節點，壓不到東西。
+   *
+   * 因為它跟著任務走，使用者拖動任務時圓點也會跟著移動 ——
+   * 所以這裡讀的是拖過之後的位置。
    *
    * 尺寸是我們自己決定的，直接把 measured 填好交給 React Flow，
    * 省掉「先量再顯示」那一輪（見上面 measured 的說明）。
    */
   const junctionNodes = useMemo<JunctionNode[]>(() => {
-    // 匯合點沒有父框，用的是畫布座標；框裡的任務位置是相對的，要換算過。
+    // 先一律換算成畫布座標：框裡的任務位置是相對的，成員又可能分在不同的框裡。
     // 使用者拖過的位置同樣是相對的，所以只把差值疊上去。
     const pos = new Map(baseNodes.map(n => {
       const base = layoutAbs.get(n.id) ?? n.position
@@ -1383,24 +1507,45 @@ function GraphCanvas({
         ? { x: base.x + (d.x - n.position.x), y: base.y + (d.y - n.position.y) }
         : base]
     }))
-    const heightOf = (id: string) => measured[id]?.height ?? NODE_H_FALLBACK
+    const heightOf = (id: string) =>
+      measured[id]?.height ?? layoutSize.get(id)?.h ?? NODE_H_FALLBACK
+    const widthOf = (id: string) => layoutSize.get(id)?.w ?? NODE_W
+    const parentOf = new Map(shownNodes.map(n => [n.id, n.parentId]))
+    const present = new Set(shownNodes.map(n => n.id))
 
-    return simul.groups.flatMap(g => {
+    // 只畫外側接得到任務的那幾群，其餘退回成兩張任務之間直接一條線（見 simul）
+    return simul.hubs.flatMap(g => {
       const ms = g.members.filter(m => pos.has(m))
       if (ms.length < 2) return []
-      // 圓點對齊群組的垂直中點，兩邊的扇形才會對稱
-      const centres = ms.map(m => pos.get(m)!.y + heightOf(m) / 2)
+      // 錨點＝最外側那一張。圓點就貼在它旁邊，也跟著它住進同一個框
+      const outer = (a: string, b: string) => g.kind === 'fork'
+        ? pos.get(a)!.x < pos.get(b)!.x
+        : pos.get(a)!.x + widthOf(a) > pos.get(b)!.x + widthOf(b)
+      const anchor = ms.reduce((best, m) => (outer(m, best) ? m : best), ms[0])
+      // 只拿跟錨點同一欄的成員算高度：它們上下相鄰，中線落在兩張之間的空隙，
+      // 壓不到任何一張。別欄（別的框裡）的成員由扇形的線自己拉過去
+      const column = ms.filter(m => pos.get(m)!.x === pos.get(anchor)!.x)
+      const centres = column.map(m => pos.get(m)!.y + heightOf(m) / 2)
       const mid = (Math.min(...centres) + Math.max(...centres)) / 2
       const x = g.kind === 'fork'
-        ? Math.min(...ms.map(m => pos.get(m)!.x)) - JUNCTION_GAP - JUNCTION_SIZE
-        : Math.max(...ms.map(m => pos.get(m)!.x)) + NODE_W + JUNCTION_GAP
+        ? pos.get(anchor)!.x - JUNCTION_SPAN
+        : pos.get(anchor)!.x + widthOf(anchor) + JUNCTION_GAP
+
+      // 錨點在框裡的話，圓點就掛在同一個框底下 —— 不然它會飄在框外面。
+      // React Flow 的子節點座標是相對於父節點左上角的，換算回去。
+      const parent = parentOf.get(anchor)
+      const origin = parent && present.has(parent) ? layoutAbs.get(parent) : undefined
 
       return [{
         id: g.id,
         type: 'junction' as const,
+        ...(origin && parent ? { parentId: parent } : {}),
         // 圓點也可以自己拖，拖過的位置跟任務節點記在同一個地方（dragged），
         // 「重新排列」清掉之後就回到這裡算出來的位置
-        position: dragged[g.id] ?? { x, y: mid - JUNCTION_SIZE / 2 },
+        position: dragged[g.id] ?? {
+          x: x - (origin?.x ?? 0),
+          y: mid - JUNCTION_SIZE / 2 - (origin?.y ?? 0),
+        },
         measured: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
         style: { width: JUNCTION_SIZE, height: JUNCTION_SIZE },
         // 大項目的框是 1000。圓點要疊在框之上，不然框一蓋過來就抓不到它
@@ -1415,7 +1560,7 @@ function GraphCanvas({
         },
       }]
     })
-  }, [simul, baseNodes, layoutAbs, dragged, measured, neighbours])
+  }, [simul, baseNodes, layoutAbs, layoutSize, shownNodes, dragged, measured, neighbours])
 
   const allNodes = useMemo<FlowNode[]>(
     () => [...styledNodes, ...junctionNodes], [styledNodes, junctionNodes]
@@ -1431,7 +1576,8 @@ function GraphCanvas({
     // 一條「包含」虛線得先看懂圖例才知道是什麼，框不用。
 
     // ── 匯合點的扇形：分岔點射向群裡每一張，群裡每一張射進合流點 ──
-    for (const g of simul.groups) {
+    // 只有外側接得到任務的那幾群才有圓點（見 simul），其餘在下面畫成直線
+    for (const g of simul.hubs) {
       const color = SCHEDULING_COLOR[g.kind === 'fork' ? 'SS' : 'FF']
       const faded = !!neighbours && !g.members.some(m => neighbours.has(m))
       for (const m of g.members) {
@@ -1465,16 +1611,26 @@ function GraphCanvas({
       const type = e.linkType
       const scheduling = isScheduling(type)
       if (!scheduling && !showRelated) continue
-      // 同時開始／同時完成已經由匯合點畫掉了
-      if (type === 'SS' || type === 'FF') continue
+
+      /**
+       * 同時開始／同時完成：收成圓點的那幾群這裡不畫（扇形上面畫過了）；
+       * 圓點沒畫出來的那幾群 —— 外側接不到任何任務 —— 就退回成兩張任務之間
+       * 直接一條線，線上一樣掛「同時開始」「同時完成」那個短句。
+       */
+      const simultaneous = type === 'SS' || type === 'FF'
+      if (simultaneous) {
+        const g = type === 'SS' ? simul.forkOf.get(e.sourceId) : simul.joinOf.get(e.sourceId)
+        if (g?.hub) continue
+      }
 
       let source = e.sourceId
       let target = e.targetId
-      if (scheduling) {
+      // 退回成直線的那幾條不能被改道 —— 它講的就是這兩張任務之間的事
+      if (scheduling && !simultaneous) {
         const fg = simul.forkOf.get(target)
-        if (fg && !fg.members.includes(source)) target = fg.id
+        if (fg?.hub && !fg.members.includes(source)) target = fg.id
         const jg = simul.joinOf.get(source)
-        if (jg && !jg.members.includes(target)) source = jg.id
+        if (jg?.hub && !jg.members.includes(target)) source = jg.id
       }
       const dedup = `${source}>${target}:${type}`
       if (seen.has(dedup)) continue
@@ -1490,9 +1646,15 @@ function GraphCanvas({
         id: e.id,
         source,
         target,
-        // 排程有先後走左右；任務相關沒有先後，走上下才不會被讀成順序
-        sourceHandle: scheduling ? H_OUT : H_REL_OUT,
-        targetHandle: scheduling ? H_IN : H_REL_IN,
+        /*
+         * 排程有先後走左右；任務相關沒有先後，走上下才不會被讀成順序。
+         * 退回成直線的「同時開始／同時完成」也走上下：它們講的是兩張任務
+         * 貼在時間軸的同一個點，畫成左右會被讀成「先做這個再做那個」——
+         * 那正是當初把它們收成圓點要修掉的誤讀。而且併欄之後這兩張本來就
+         * 上下相鄰（見 layout），走上下就是一條乾淨的短線。
+         */
+        sourceHandle: scheduling && !simultaneous ? H_OUT : H_REL_OUT,
+        targetHandle: scheduling && !simultaneous ? H_IN : H_REL_IN,
         type: 'smoothstep',
         label: LINK_CHIP[e.linkType] + lag,
         labelShowBg: false,
