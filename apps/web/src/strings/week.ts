@@ -18,6 +18,10 @@ export const week = {
   currentBadge: '現在這一週',
   /** 工具列右側的總計 */
   summary: (n: number) => `這一週共有 ${n} 張任務在進行`,
+  singleDaySummary: (date: string, n: number) => `${date} 共有 ${n} 張任務在進行`,
+  filterSingleDay: (date: string) => `只看 ${date}`,
+  allWeek: '看整週',
+  dayTip: (date: string) => `點擊查看 ${date} 當天進行的任務`,
 
   /** 欄位標題 */
   colTask: '任務',
@@ -31,15 +35,25 @@ export const week = {
   /** 任務指到一個這個專案已經沒有的狀態／類型時，收在最後一組 */
   unknownStatus: '未對應的狀態',
   unknownType: '未對應的類型',
+  /** 依成員分組時，任務身上有負責人編號卻讀不到名字（人被移除了）的那一組 */
+  unknownAssignee: '未對應的負責人',
 
   /**
    * 分組方式。依狀態回答「這禮拜卡在哪一關」，
    * 依類型回答「這禮拜是在做事，還是在處理問題」—— 一週裡問題佔了半數的話，
    * 那件事光看狀態分組是看不出來的。
+   * 依成員回答「這禮拜誰身上壓了幾張」—— 前兩種都看不出負擔集中在誰身上。
    */
   groupByLabel: '分組方式',
   groupByStatus: '依狀態',
   groupByType: '依類型',
+  groupByMember: '依成員',
+
+  /**
+   * 依成員分組時，沒有人負責的那一組。固定排在最後，但一定要畫出來 ——
+   * 沒有人負責的任務正是最需要被看到的一種，藏起來等於沒有人會去認領。
+   */
+  groupUnassigned: '未指派負責人',
 
   /**
    * 分組收合。狀態一多，畫面就變成一長條要一直捲；

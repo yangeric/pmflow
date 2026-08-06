@@ -41,7 +41,10 @@ interface Row {
 interface Group {
   key: string
   name: string
-  color: string
+  /** 組標題左邊那顆色點。依成員分組時改畫頭像，這裡就是 null */
+  color: string | null
+  /** 依成員分組時的頭像。未指派那一組帶的是空值，畫出來是灰底的破折號 */
+  avatar?: { userId: string | null; name: string | null; hasAvatar: boolean }
   rows: Row[]
   /** 這一組裡逾期的張數。收起來的時候要留在標題上 */
   overdue: number
@@ -52,8 +55,19 @@ interface Group {
  *
  * 依狀態回答「這禮拜卡在哪一關」，依類型回答「這禮拜是在做事還是在滅火」——
  * 一週裡問題（BUG）佔了半數的話，那件事光看狀態分組是看不出來的。
+ * 依成員回答「這禮拜誰身上壓了幾張」—— 負擔集中在誰身上，前兩種都看不出來。
  */
-type GroupBy = 'status' | 'type'
+const GROUP_BY = ['status', 'type', 'member'] as const
+type GroupBy = typeof GROUP_BY[number]
+
+const GROUP_BY_LABEL: Record<GroupBy, string> = {
+  status: W.groupByStatus,
+  type: W.groupByType,
+  member: W.groupByMember,
+}
+
+/** 依成員分組時「沒有人負責」那一組的鍵。用不可能跟使用者編號撞到的寫法 */
+const NO_ASSIGNEE = '__unassigned__'
 
 export default function WeekView({
   projectId, tasks, statuses, types, onOpen,
@@ -69,6 +83,8 @@ export default function WeekView({
   const today = todayYmd()
   /** 目前看的是哪一週，存的是那一週的星期日 */
   const [weekStart, setWeekStart] = useState(() => startOfWeek(today))
+  /** 目前選取的單一日，null＝看整週 7 天 */
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
 
   /*
    * 收起來的是哪幾組。存的是「收合」而不是「展開」的清單：
@@ -85,7 +101,14 @@ export default function WeekView({
    * 收合的鍵在兩種分組底下是不同的一組值（狀態鍵 vs 類型鍵），
    * 所以偏好要分開存 —— 共用一份的話，換個分組方式會收起一堆莫名其妙的組。
    */
-  const [groupBy, setGroupBy] = useRemembered<GroupBy>(`week.groupBy.${projectId}`, 'status')
+  /*
+   * 存進去的是純字串而不是 `GroupBy`：這個鍵在「依成員」還不存在的時候就在用了，
+   * 而且瀏覽器裡的舊值改不動也刪不掉。讀到不認得的字（將來又拿掉某一種分組時
+   * 也會發生）就退回預設的依狀態，不要讓一個舊偏好把整頁弄到畫不出來。
+   */
+  const [savedGroupBy, setGroupBy] = useRemembered<string>(`week.groupBy.${projectId}`, 'status')
+  const groupBy: GroupBy =
+    (GROUP_BY as readonly string[]).includes(savedGroupBy) ? savedGroupBy as GroupBy : 'status'
   const collapseKey = `${groupBy}:`
   const isCollapsed = (key: string) => collapsed.includes(collapseKey + key)
   const toggleGroup = (key: string) =>
@@ -105,7 +128,7 @@ export default function WeekView({
     [statuses]
   )
 
-  // ── 把任務分成「這一週有在跑的」與「根本沒排期的」 ──────
+  // ── 把任務分成「這一週或選定單日有在跑的」與「根本沒排期的」 ──────
   const { rows, undatedCount } = useMemo(() => {
     const out: Row[] = []
     let undated = 0
@@ -120,8 +143,14 @@ export default function WeekView({
       // 資料若反過來（結束早於開始）就把兩端對調，不然重疊判斷會整段落空
       const lo = a <= b ? a : b
       const hi = a <= b ? b : a
-      // 跟行事曆同一套：只要沒有「整段在這週之前」或「整段在這週之後」就是有重疊
-      if (hi < weekStart || lo > weekEnd) continue
+
+      // 看單日 vs 看整週
+      if (selectedDay) {
+        if (lo > selectedDay || hi < selectedDay) continue
+      } else {
+        if (hi < weekStart || lo > weekEnd) continue
+      }
+
       out.push({
         task: t,
         start: lo,
@@ -132,26 +161,10 @@ export default function WeekView({
       })
     }
     return { rows: out, undatedCount: undated }
-  }, [tasks, weekStart, weekEnd, doneKeys, today])
+  }, [tasks, weekStart, weekEnd, selectedDay, doneKeys, today])
 
   // ── 分組。組的順序照系統參數的順序，不自己排 ──────────────
   const groups = useMemo(() => {
-    /*
-     * 兩種分組共用同一段程式：差別只有「一張任務歸到哪個鍵」與
-     * 「組要照哪一份清單排」。分成兩份的話，排序、逾期計數、
-     * 找不到對應值的那一組，三件事都要各維護一次。
-     */
-    const keyOf = (r: Row) => groupBy === 'type' ? r.task.type : r.task.statusKey
-    const order: Array<{ key: string; name: string; color: string }> =
-      groupBy === 'type' ? types : statuses
-
-    const byKey = new Map<string, Row[]>()
-    for (const r of rows) {
-      const list = byKey.get(keyOf(r))
-      if (list) list.push(r)
-      else byKey.set(keyOf(r), [r])
-    }
-
     /*
      * 組內的順序：先開始的排前面，同一天開始的先排先結束的（短的先做完），
      * 最後拿任務編號當定序 —— 沒有這一層的話，同日同長度的兩張任務
@@ -165,6 +178,71 @@ export default function WeekView({
       )
 
     const countOverdue = (list: Row[]) => list.filter(r => r.overdue).length
+
+    /*
+     * 依成員：組不是照系統參數的清單排，而是照這一週實際有任務的人 ——
+     * 專案成員可能有二十個，這一週動到的只有三個，把沒有任務的人也列出來
+     * 只會逼人一直往下捲。所以這裡不吃 `statuses` / `types` 那條路，
+     * 直接從任務身上的負責人收出來，照顯示名稱排，未指派固定收在最後。
+     */
+    if (groupBy === 'member') {
+      const byMember = new Map<string, { name: string | null; hasAvatar: boolean; rows: Row[] }>()
+      for (const r of rows) {
+        const id = r.task.assigneeId ?? NO_ASSIGNEE
+        const g = byMember.get(id)
+        if (g) g.rows.push(r)
+        else byMember.set(id, {
+          name: r.task.assigneeName, hasAvatar: r.task.assigneeHasAvatar, rows: [r],
+        })
+      }
+
+      const named: Group[] = []
+      for (const [id, g] of byMember) {
+        if (id === NO_ASSIGNEE) continue
+        named.push({
+          key: id,
+          // 有編號卻讀不到名字（人被移出專案了）也要看得到，不能讓那幾張任務消失
+          name: g.name ?? W.unknownAssignee,
+          color: null,
+          avatar: { userId: id, name: g.name, hasAvatar: g.hasAvatar },
+          rows: sortRows(g.rows),
+          overdue: countOverdue(g.rows),
+        })
+      }
+      named.sort((a, b) => a.name.localeCompare(b.name) || a.key.localeCompare(b.key))
+
+      /*
+       * 沒有人負責的那一組一定要畫，而且排在最後：
+       * 它不屬於任何人，夾在人與人中間會被當成某個人的組；
+       * 但它也最需要被看到 —— 藏起來就沒有人會去認領。
+       */
+      const none = byMember.get(NO_ASSIGNEE)
+      if (none) named.push({
+        key: NO_ASSIGNEE,
+        name: W.groupUnassigned,
+        color: null,
+        avatar: { userId: null, name: null, hasAvatar: false },
+        rows: sortRows(none.rows),
+        overdue: countOverdue(none.rows),
+      })
+      return named
+    }
+
+    /*
+     * 依狀態與依類型共用同一段程式：差別只有「一張任務歸到哪個鍵」與
+     * 「組要照哪一份清單排」。分成兩份的話，排序、逾期計數、
+     * 找不到對應值的那一組，三件事都要各維護一次。
+     */
+    const keyOf = (r: Row) => groupBy === 'type' ? r.task.type : r.task.statusKey
+    const order: Array<{ key: string; name: string; color: string }> =
+      groupBy === 'type' ? types : statuses
+
+    const byKey = new Map<string, Row[]>()
+    for (const r of rows) {
+      const list = byKey.get(keyOf(r))
+      if (list) list.push(r)
+      else byKey.set(keyOf(r), [r])
+    }
 
     const out: Group[] = []
     for (const s of order) {
@@ -204,7 +282,7 @@ export default function WeekView({
       {/* ── 工具列 ── */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-2
                       dark:border-slate-700 dark:bg-slate-900">
-        <Button variant="ghost" onClick={() => go(-1)} aria-label={W.prevWeek}>‹</Button>
+        <Button variant="ghost" onClick={() => { setSelectedDay(null); go(-1) }} aria-label={W.prevWeek}>‹</Button>
         <div className="min-w-[8rem] text-center">
           <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
             {W.rangeLabel(shortDate(weekStart), shortDate(weekEnd))}
@@ -213,10 +291,10 @@ export default function WeekView({
             {fromYear === toYear ? W.yearLabel(fromYear) : W.yearSpanLabel(fromYear, toYear)}
           </div>
         </div>
-        <Button variant="ghost" onClick={() => go(1)} aria-label={W.nextWeek}>›</Button>
-        <Button onClick={() => setWeekStart(thisWeekStart)}>{W.thisWeek}</Button>
+        <Button variant="ghost" onClick={() => { setSelectedDay(null); go(1) }} aria-label={W.nextWeek}>›</Button>
+        <Button onClick={() => { setSelectedDay(null); setWeekStart(thisWeekStart) }}>{W.thisWeek}</Button>
 
-        {weekStart === thisWeekStart && (
+        {weekStart === thisWeekStart && !selectedDay && (
           <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-medium text-blue-700
                            ring-1 ring-inset ring-blue-600/20
                            dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30">
@@ -224,11 +302,23 @@ export default function WeekView({
           </span>
         )}
 
+        {selectedDay && (
+          <div className="flex items-center gap-1">
+            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800
+                             dark:bg-blue-500/20 dark:text-blue-200">
+              {W.filterSingleDay(shortDate(selectedDay))}
+            </span>
+            <Button variant="ghost" className="text-xs" onClick={() => setSelectedDay(null)}>
+              {W.allWeek}
+            </Button>
+          </div>
+        )}
+
         {/* 分組方式。放在工具列右半邊，跟左邊「看哪一週」分開 ——
             一個是換時間，一個是換排法，混在一起按錯的機會很高 */}
         <div className="ml-auto flex items-center gap-1">
           <span className="text-xs text-slate-500 dark:text-slate-400">{W.groupByLabel}</span>
-          {(['status', 'type'] as const).map(g => (
+          {GROUP_BY.map(g => (
             <button key={g} type="button" onClick={() => setGroupBy(g)}
                     aria-pressed={groupBy === g}
                     className={cx(
@@ -238,7 +328,7 @@ export default function WeekView({
                           'dark:bg-blue-500/15 dark:text-blue-300 dark:ring-blue-400/30'
                         : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                     )}>
-              {g === 'status' ? W.groupByStatus : W.groupByType}
+              {GROUP_BY_LABEL[g]}
             </button>
           ))}
         </div>
@@ -246,38 +336,51 @@ export default function WeekView({
         {/* 一組都沒有的時候不畫這顆 —— 按了不會有任何事情發生的按鈕不要出現 */}
         {groups.length > 0 && (
           <Button variant="ghost"
-                  onClick={() => setCollapsed(allCollapsed ? [] : groups.map(g => g.key))}>
+                  onClick={() => setCollapsed(allCollapsed
+                    ? collapsed.filter(k => !k.startsWith(collapseKey))
+                    : [
+                      ...collapsed.filter(k => !k.startsWith(collapseKey)),
+                      ...groups.map(g => collapseKey + g.key),
+                    ])}>
             {allCollapsed ? W.expandAll : W.collapseAll}
           </Button>
         )}
 
         <span className="text-xs text-slate-500 dark:text-slate-400">
-          {W.summary(rows.length)}
+          {selectedDay ? W.singleDaySummary(shortDate(selectedDay), rows.length) : W.summary(rows.length)}
         </span>
       </div>
 
-      {/* ── 這一週的七天，讓標題那段日期對得上星期幾 ── */}
+      {/* ── 這一週的七天，讓標題那段日期對得上星期幾（可點選切換單日視角） ── */}
       <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50
                       dark:border-slate-700 dark:bg-slate-900">
         {WEEKDAY_LABELS.map((label, i) => {
           const day = shiftYmd(weekStart, i)
           const isToday = day === today
+          const isSelected = day === selectedDay
           return (
-            <div key={label}
+            <button key={label}
+                 type="button"
+                 title={W.dayTip(shortDate(day))}
+                 onClick={() => setSelectedDay(prev => prev === day ? null : day)}
                  className={cx(
-                   'flex items-center justify-center gap-1 py-1.5 text-xs',
-                   i === 0 || i === 6
+                   'flex items-center justify-center gap-1 py-1.5 text-xs transition-colors cursor-pointer',
+                   isSelected
+                     ? 'bg-blue-100/80 font-semibold text-blue-800 border-b-2 border-blue-600 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-400'
+                     : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+                   !isSelected && (i === 0 || i === 6
                      ? 'text-slate-400 dark:text-slate-400'
-                     : 'text-slate-500 dark:text-slate-400'
+                     : 'text-slate-500 dark:text-slate-400')
                  )}>
               <span className="font-medium">{label}</span>
               <span className={cx(
                 'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums',
-                isToday && 'bg-blue-600 font-semibold text-white dark:bg-blue-500'
+                isToday && !isSelected && 'bg-blue-600 font-semibold text-white dark:bg-blue-500',
+                isSelected && 'bg-blue-600 font-bold text-white dark:bg-blue-500'
               )}>
                 {parseYmd(day).getDate()}
               </span>
-            </div>
+            </button>
           )
         })}
       </div>
@@ -320,8 +423,15 @@ export default function WeekView({
                                         'dark:text-slate-400', off && '-rotate-90')}>
                       ▼
                     </span>
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ background: g.color }} />
+                    {/* 依成員分組時左邊那格改畫頭像 —— 顏色點代表的是「狀態／類型」，
+                        人要用臉來認才快 */}
+                    {g.avatar ? (
+                      <Avatar userId={g.avatar.userId} name={g.avatar.name}
+                              hasAvatar={g.avatar.hasAvatar} />
+                    ) : (
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ background: g.color ?? undefined }} />
+                    )}
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                       {g.name}
                     </span>
