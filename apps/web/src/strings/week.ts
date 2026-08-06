@@ -20,7 +20,7 @@ export const week = {
   summary: (n: number) => `這一週共有 ${n} 張任務在進行`,
   singleDaySummary: (date: string, n: number) => `${date} 共有 ${n} 張任務在進行`,
   filterSingleDay: (date: string) => `只看 ${date}`,
-  allWeek: '看整週',
+  clearSingleDayTip: '點擊切回全週視角',
   dayTip: (date: string) => `點擊查看 ${date} 當天進行的任務`,
 
   /** 欄位標題 */

@@ -303,15 +303,15 @@ export default function WeekView({
         )}
 
         {selectedDay && (
-          <div className="flex items-center gap-1">
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-800
-                             dark:bg-blue-500/20 dark:text-blue-200">
-              {W.filterSingleDay(shortDate(selectedDay))}
-            </span>
-            <Button variant="ghost" className="text-xs" onClick={() => setSelectedDay(null)}>
-              {W.allWeek}
-            </Button>
-          </div>
+          <button type="button" onClick={() => setSelectedDay(null)}
+                  title={W.clearSingleDayTip}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5
+                             text-xs font-medium text-blue-800 hover:bg-blue-200
+                             dark:bg-blue-500/20 dark:text-blue-200 dark:hover:bg-blue-500/30
+                             transition-colors cursor-pointer">
+            <span>{W.filterSingleDay(shortDate(selectedDay))}</span>
+            <span className="text-blue-600 dark:text-blue-300 font-bold text-xs ml-0.5">✕</span>
+          </button>
         )}
 
         {/* 分組方式。放在工具列右半邊，跟左邊「看哪一週」分開 ——
