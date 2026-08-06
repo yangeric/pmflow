@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext, DragOverlay, PointerSensor, useDraggable, useDroppable,
   useSensor, useSensors, type DragEndEvent, type DragStartEvent,
@@ -583,17 +584,20 @@ export default function CalendarView({
         )}
       </div>
 
-      <DragOverlay dropAnimation={null}>
-        {/* 請假不會被拖起來，所以這裡只有兩種 */}
-        {dragging && dragging.kind !== 'leave' && (
-          <div className="rounded bg-slate-800 px-2 py-1 text-xs font-medium text-white shadow-lg
-                          dark:bg-slate-700">
-            {dragging.kind === 'task'
-              ? C.dragTask(dragging.title, dragging.days)
-              : C.dragInquiry(dragging.unit, dragging.title)}
-          </div>
-        )}
-      </DragOverlay>
+      {createPortal(
+        <DragOverlay dropAnimation={null}>
+          {/* 請假不會被拖起來，所以這裡只有兩種 */}
+          {dragging && dragging.kind !== 'leave' && (
+            <div className="pointer-events-none rounded bg-slate-800 px-2.5 py-1 text-xs font-medium
+                            text-white shadow-xl dark:bg-slate-700">
+              {dragging.kind === 'task'
+                ? C.dragTask(dragging.title, dragging.days)
+                : C.dragInquiry(dragging.unit, dragging.title)}
+            </div>
+          )}
+        </DragOverlay>,
+        document.body
+      )}
 
       {leaveForm && (
         <LeaveDialog

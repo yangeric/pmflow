@@ -31,6 +31,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 2026-08-06 做完的（都在畫面上驗過）
 
+- **行事曆拖曳位移修正**：將 `DragOverlay` 改用 `createPortal` 掛載至 `document.body`，解決容器滾動與下方任務拖曳時預覽框錯位問題。
 - **關聯圖點對點平行直線**：排程依賴與匯合點 Edge type 改為 `straight` 模式，點對點水平對齊時呈 100% 直通直線平行向右穿越。
 - **週檢視單日標籤優化**：移除重複的「看整週」按鈕，將「只看 M/D」改為附帶 `✕` 的點擊式徽章標籤，點擊直接復位全週。
 - **關聯圖齊平對齊**：關聯鏈分群依 `upstreamY` 升序對齊，強制相連的點跟點完全置於相同 Y 軸高度，向右延伸呈整齊水平線。
