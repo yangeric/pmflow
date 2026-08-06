@@ -8,6 +8,7 @@
 
 | 日期 | 主題 | 主要檔案 | 狀態 |
 |---|---|---|---|
+| 2026-08-06 | [工作規矩：加入使用者授權核准所有操作之規範](#2026-08-06--工作規矩加入使用者授權核准所有操作之規範) | `D:\NewProject\AGENTS.md` | 已驗證 |
 | 2026-08-06 | [任務詳情改成按「保存」才送出，加上刪除](#2026-08-06--任務詳情改成按保存才送出加上刪除) | `components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
 | 2026-08-06 | [標題點了才改、層級搬正、完成那幾個狀態灰掉](#2026-08-06--標題點了才改層級搬正完成那幾個狀態灰掉) | `components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/hierarchy.ts`（前後端）、`fix-task-levels.bat`（新） | 已驗證 |
 | 2026-08-06 | [側欄變成真的樹；錯／外／逾三顆徽章；沒回完不能結案](#2026-08-06--側欄變成真的樹錯外逾三顆徽章沒回完不能結案) | `components/EpicSidebar.tsx`、`components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/inquiry.ts`、`routes/tasks.ts`、`lib/hierarchy.ts`（前後端）、`migrations/0014_rename_bug_to_error.sql`（新）、`strings/*` | 已驗證 |
@@ -76,6 +77,11 @@
 ---
 
 ## 詳細條目
+
+### 2026-08-06 — 工作規矩：加入使用者授權核准所有操作之規範
+
+使用者交代授權核准所有操作，當場寫入 `D:\NewProject\AGENTS.md` 的「## 怎麼跟他一起工作」段落。
+授權所有檔案修改、子代理指派、指令執行、型別檢查與 commit/push 自動推進完成，無需每一步重複詢問。
 
 ### 2026-08-06 — 任務詳情改成按「保存」才送出，加上刪除
 
