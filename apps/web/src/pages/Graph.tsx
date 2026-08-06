@@ -699,21 +699,18 @@ function layout(
     let x = 0
     let maxBottom = 0
     for (const l of [...byLayer.keys()].sort((a, b) => a - b)) {
-      const bucket = byLayer.get(l)!.sort((a, b) => {
-        const la = connected.has(a) ? 0 : 1
-        const lb = connected.has(b) ? 0 : 1
-        if (la !== lb) return la - lb
-        const ca = colKey.get(find(a)) ?? ''
-        const cb = colKey.get(find(b)) ?? ''
-        return ca !== cb
-          ? ca.localeCompare(cb)
-          : (sortKey.get(a) ?? '').localeCompare(sortKey.get(b) ?? '')
-      })
+      // 算出每一個節點的上游首選 Y 座標 (計算點對點水平齊平對齊依據)
+      const getUpstreamY = (id: string): number | null => {
+        const upstreams = usable.filter(e => e.targetId === id && rel.has(e.sourceId))
+        if (upstreams.length === 0) return null
+        const srcYs = upstreams.map(e => rel.get(e.sourceId)!.y)
+        return Math.min(...srcYs)
+      }
 
       // 將 bucket 裡的節點照併欄 (find(id)) 分群
       const groupsInLayer: string[][] = []
       const groupMap = new Map<string, string[]>()
-      for (const id of bucket) {
+      for (const id of byLayer.get(l)!) {
         const root = find(id)
         const g = groupMap.get(root)
         if (g) g.push(id)
@@ -723,6 +720,31 @@ function layout(
           groupsInLayer.push(newG)
         }
       }
+
+      // 排序分群：優先依照上游 Y 座標（upstreamY）升序對齊，確保關聯鏈點跟點 100% 平行對齊
+      groupsInLayer.sort((grpA, grpB) => {
+        let minYA: number | null = null
+        for (const id of grpA) {
+          const uy = getUpstreamY(id)
+          if (uy !== null && (minYA === null || uy < minYA)) minYA = uy
+        }
+
+        let minYB: number | null = null
+        for (const id of grpB) {
+          const uy = getUpstreamY(id)
+          if (uy !== null && (minYB === null || uy < minYB)) minYB = uy
+        }
+
+        if (minYA !== null && minYB !== null) return minYA - minYB
+        if (minYA !== null) return -1
+        if (minYB !== null) return 1
+
+        const ca = colKey.get(find(grpA[0])) ?? ''
+        const cb = colKey.get(find(grpB[0])) ?? ''
+        return ca !== cb
+          ? ca.localeCompare(cb)
+          : (sortKey.get(grpA[0]) ?? '').localeCompare(sortKey.get(grpB[0]) ?? '')
+      })
 
       // 這一層折成幾個子欄。框比一般任務高很多，所以按高度收
       const columns: string[][][] = [[]]
@@ -742,18 +764,14 @@ function layout(
       let colX = x
 
       for (const col of columns) {
-        // 在這個 column 內擺放各個 group，優先對齊上游任務的 Y 座標（讓關聯鏈儘量平行向右延展）
+        // 在這個 column 內擺放各個 group，點對點完全水平對齊上游任務的 Y 座標
         const usedYInCol = new Set<number>()
 
         for (const grp of col) {
           let idealY: number | null = null
           for (const id of grp) {
-            const upstreams = usable.filter(e => e.targetId === id && rel.has(e.sourceId))
-            if (upstreams.length > 0) {
-              const srcYs = upstreams.map(e => rel.get(e.sourceId)!.y)
-              const minSrcY = Math.min(...srcYs)
-              if (idealY === null || minSrcY < idealY) idealY = minSrcY
-            }
+            const uy = getUpstreamY(id)
+            if (uy !== null && (idealY === null || uy < idealY)) idealY = uy
           }
 
           let startY = idealY ?? 0
