@@ -375,9 +375,10 @@ export default function WeekView({
               <span className="font-medium">{label}</span>
               <span className={cx(
                 'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 tabular-nums',
-                isToday && !isSelected && 'bg-blue-600 font-semibold text-white dark:bg-blue-500',
-                isSelected && 'bg-blue-600 font-bold text-white dark:bg-blue-500'
-              )}>
+                isToday ? 'bg-red-600 font-bold text-white shadow-sm dark:bg-red-500'
+                        : isSelected ? 'bg-blue-600 font-bold text-white dark:bg-blue-400'
+                                     : ''
+              )} title={isToday ? '今天' : undefined}>
                 {parseYmd(day).getDate()}
               </span>
             </button>

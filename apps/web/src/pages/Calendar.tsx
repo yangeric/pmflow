@@ -645,11 +645,11 @@ function DayCell({
       <div className="flex items-center justify-between px-1.5 pt-1"
            style={{ height: DATE_ROW_H }}>
         <span className={cx(
-          'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs',
-          isToday ? 'bg-blue-600 font-semibold text-white dark:bg-blue-500'
+          'inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-xs tabular-nums',
+          isToday ? 'bg-red-600 font-bold text-white shadow-sm dark:bg-red-500'
                   : inMonth ? 'text-slate-600 dark:text-slate-300'
                             : 'text-slate-300 dark:text-slate-500'
-        )}>{n}</span>
+        )} title={isToday ? C.today : undefined}>{n}</span>
         {hidden > 0 && (
           <span className="text-[10px] text-slate-400 dark:text-slate-400">
             {C.hiddenCount(hidden)}
