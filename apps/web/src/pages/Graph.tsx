@@ -1606,7 +1606,7 @@ function GraphCanvas({
           target: g.kind === 'fork' ? m : g.id,
           sourceHandle: H_OUT,
           targetHandle: H_IN,
-          type: 'smoothstep',
+          type: 'straight',
           selectable: false,
           // 這幾支箭頭不掛字：字寫在棒子上，一群有幾張就重複幾次會太吵
           style: { stroke: color, strokeWidth: 1.8, opacity: faded ? 0.15 : 1 },
@@ -1673,7 +1673,7 @@ function GraphCanvas({
          */
         sourceHandle: scheduling && !simultaneous ? H_OUT : H_REL_OUT,
         targetHandle: scheduling && !simultaneous ? H_IN : H_REL_IN,
-        type: 'smoothstep',
+        type: scheduling && !simultaneous ? 'straight' : 'smoothstep',
         label: LINK_CHIP[e.linkType] + lag,
         labelShowBg: false,
         labelStyle: labelText(color, faded),
