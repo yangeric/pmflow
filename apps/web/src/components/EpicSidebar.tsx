@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Project, type ProjectParam, type Task } from '../lib/api'
+import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
 import { rollup } from '../lib/rollup'
 import { T } from '../strings'
 import { Button, Input, cx } from './ui'
@@ -183,6 +184,16 @@ export function EpicSidebar({
     })
   }
 
+  /**
+   * 只展開、不收合。
+   *
+   * 在某一列底下新增子任務之後一定要展開那一列 —— 收著的話，
+   * 建立完什麼都沒有變，看的人不知道剛剛那張跑去哪了。
+   */
+  function expand(id: string) {
+    setExpanded(prev => (prev.has(id) ? prev : new Set(prev).add(id)))
+  }
+
   function setCollapse(v: boolean) {
     setCollapsed(v)
     rememberCollapsed(v)
@@ -288,6 +299,7 @@ export function EpicSidebar({
             key={epic.id}
             task={epic}
             depth={0}
+            projectId={project?.id}
             childrenOf={childrenOf}
             stat={stat.get(epic.id)}
             bugsUnder={bugsUnder}
@@ -297,6 +309,7 @@ export function EpicSidebar({
             expanded={expanded}
             autoOpen={autoOpen}
             toggle={toggle}
+            expand={expand}
             selectedEpicId={selectedEpicId}
             selectedTaskId={selectedTaskId}
             onSelectEpic={onSelectEpic}
@@ -352,11 +365,13 @@ export function EpicSidebar({
  * 底下每一層都是同一種緊湊的樣子，再深也不會多出新花樣。
  */
 function TreeNode({
-  task, depth, childrenOf, stat, bugsUnder, overdueIn, inquiriesIn, types,
-  expanded, autoOpen, toggle, selectedEpicId, selectedTaskId, onSelectEpic, onOpenTask,
+  task, depth, projectId, childrenOf, stat, bugsUnder, overdueIn, inquiriesIn, types,
+  expanded, autoOpen, toggle, expand, selectedEpicId, selectedTaskId, onSelectEpic, onOpenTask,
 }: {
   task: Task
   depth: number
+  /** 沒有專案就畫不出「＋」（建立要它） */
+  projectId?: string
   types: ProjectParam[]
   childrenOf: Map<string, Task[]>
   /** 只有最上層那一列有：進度與 x/y 個已完成 */
@@ -367,11 +382,16 @@ function TreeNode({
   expanded: Set<string>
   autoOpen: string | null
   toggle: (id: string) => void
+  /** 新增完子任務要把這一列展開，不然看不到剛剛建的那張 */
+  expand: (id: string) => void
   selectedEpicId: string | null
   selectedTaskId: string | null
   onSelectEpic: (id: string) => void
   onOpenTask: (id: string) => void
 }) {
+  const qc = useQueryClient()
+  const [addingChild, setAddingChild] = useState(false)
+  const [childTitle, setChildTitle] = useState('')
   const kids = childrenOf.get(task.id) ?? []
   const open = expanded.has(task.id) || autoOpen === task.id
   const kind = types.find(t => t.key === task.type)
@@ -399,9 +419,38 @@ function TreeNode({
     ? (task.inquiryState === 'AWAITING' || task.inquiryState === 'PARTIAL' ? 1 : 0)
     : inquiriesIn(task.id)
 
+  /*
+   * 「＋」要建的種類 —— 合不合法一律問 `lib/hierarchy.ts`，不要在這裡自己再寫一套
+   * （後端 `apps/api/src/lib/hierarchy.ts` 才是守門員，兩邊的判斷要對得起來，
+   * 不然這顆按鈕按下去只會拿到 400）。
+   *
+   * 優先挑「任務」：掛在大項目底下就是任務，掛在任務底下就是子任務，
+   * 兩種都是這顆按鈕最常見的用途。任務不合法時退而求其次挑第一個合法的種類；
+   * 一種都不合法就整顆不畫 —— 畫一顆按下去必定被拒絕的按鈕比沒有更糟。
+   */
+  const addType = useMemo(() => {
+    const allowed = typesAllowedUnder(types, task.type)
+    const pick = allowed.find(t => t.key === 'TASK') ?? allowed[0]
+    if (pick) return pick.key
+    // 種類清單還沒載進來（types 是選填的）：直接問規則本身，別讓按鈕整個消失
+    return types.length === 0 && canBeUnder('TASK', task.type) ? 'TASK' : null
+  }, [types, task.type])
+
+  const createChild = useMutation({
+    mutationFn: (t: string) =>
+      Api.createTask(projectId!, { title: t, type: addType!, parentId: task.id }),
+    onSuccess: () => {
+      setChildTitle(''); setAddingChild(false)
+      expand(task.id)
+      qc.invalidateQueries({ queryKey: ['tasks', projectId!] })
+    },
+  })
+
+  function cancelAdd() { setAddingChild(false); setChildTitle('') }
+
   return (
     <div className={isRoot ? 'mb-0.5' : undefined}>
-      <div className={cx('flex items-start rounded-md',
+      <div className={cx('group/row flex items-start rounded-md',
         active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}>
 
         {/* 沒有子項的列一樣佔一格箭頭的寬度，不然同一層的文字會左右參差 */}
@@ -508,13 +557,58 @@ function TreeNode({
             </div>
           )}
         </button>
+
+        {/*
+          * 滑鼠移到這一列才冒出來的「＋」。
+          *
+          * 一直畫出來的話整排右邊會變成一面按鈕牆，把標題與錯／外／逾三顆徽章擠掉。
+          * 但**位子一直留著**（用 opacity 不用條件渲染）—— 進出滑鼠就重排一次的話，
+          * 標題會跟著抽動，比按鈕牆更難看。
+          *
+          * `focus:opacity-100` 不能省：只認 hover 的話，用鍵盤 Tab 過來的人
+          * 會停在一顆看不見的按鈕上，永遠不知道它在那裡。
+          */}
+        {addType && projectId && !addingChild && (
+          <button
+            onClick={e => { e.stopPropagation(); expand(task.id); setAddingChild(true) }}
+            title={T.nav.sidebar.addSubtaskUnder(task.title)}
+            aria-label={T.nav.sidebar.addSubtaskUnder(task.title)}
+            className={cx('w-6 shrink-0 rounded text-xs opacity-0 transition-opacity',
+              'group-hover/row:opacity-100 focus:opacity-100',
+              isRoot ? 'py-2.5' : 'py-1.5',
+              'text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300')}>
+            ＋
+          </button>
+        )}
       </div>
+
+      {/* 就地展開的輸入框，縮排到子項那一層 —— 它建出來的東西會落在那裡 */}
+      {addingChild && (
+        <div className="my-1 space-y-1.5 rounded-md bg-slate-50 p-2 dark:bg-slate-800"
+             style={{ marginLeft: (depth + 1) * 12 + 24 }}>
+          <Input value={childTitle} onChange={e => setChildTitle(e.target.value)}
+                 placeholder={T.nav.sidebar.subtaskNamePlaceholder} autoFocus
+                 onKeyDown={e => {
+                   if (e.key === 'Enter' && childTitle.trim()) createChild.mutate(childTitle.trim())
+                   if (e.key === 'Escape') cancelAdd()
+                 }} />
+          <div className="flex gap-1">
+            <Button variant="primary" className="flex-1 justify-center text-xs"
+                    disabled={!childTitle.trim() || createChild.isPending}
+                    onClick={() => createChild.mutate(childTitle.trim())}>
+              {T.common.create}
+            </Button>
+            <Button className="text-xs" onClick={cancelAdd}>{T.common.cancel}</Button>
+          </div>
+        </div>
+      )}
 
       {open && kids.map(kid => (
         <TreeNode
           key={kid.id}
           task={kid}
           depth={depth + 1}
+          projectId={projectId}
           childrenOf={childrenOf}
           bugsUnder={bugsUnder}
           overdueIn={overdueIn}
@@ -523,6 +617,7 @@ function TreeNode({
           expanded={expanded}
           autoOpen={autoOpen}
           toggle={toggle}
+          expand={expand}
           selectedEpicId={selectedEpicId}
           selectedTaskId={selectedTaskId}
           onSelectEpic={onSelectEpic}
