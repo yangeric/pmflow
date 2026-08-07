@@ -27,6 +27,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 - 目前無待辦事項，上三項已全數確認與完成。
 
+- **全權授權核准（長期規則）**：更新 `AGENTS.md` 規範，確認全權授權自動推進與執行所有檔案修改、指令與 commit/push。
 - **查索引與行數/字數限制（長期規則）**：寫入「查 CODEMAP 動局部、對話回覆 100 字內、代碼修改單次 100 行內」規範至 `AGENTS.md`。
 - **異動索引編號與註解規範（長期規則）**：`CHANGELOG.md` 索引與條目全數改用 `CR-001` ~ `CR-033` 編號，程式碼內清理長註解改留 `Ref: CR-xxx` 引用，並已寫入 `AGENTS.md`。
 - **頁面功能對應索引（長期規則）**：已在 `docs/CODEMAP.md` 新增完整「頁面與功能對應清單」索引表格，並依使用者交代將「接手任務先查 CODEMAP 確定對應頁面」寫入 `D:\NewProject\AGENTS.md` 長期規則中。
