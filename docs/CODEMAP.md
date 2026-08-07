@@ -15,6 +15,25 @@
 
 沒有 Redis／Valkey、沒有 WebSocket、沒有寄信、沒有背景排程器 —— 設計稿寫的那些都還沒做。
 
+## 頁面與功能對應清單（接手任務先查這裡）
+
+| 畫面 / 功能 | 檔案位置 (File Path) | 具體功能內容 |
+|---|---|---|
+| **登入 / 註冊** | `apps/web/src/pages/Login.tsx` | 帳號登入、註冊與第三方帳號綁定 (Google/Apple OAuth 入口) |
+| **專案選擇** | `apps/web/src/pages/ProjectPicker.tsx` | 個人專案列表、建立新專案、搜尋與申請加入公開專案 |
+| **清單視角** | `apps/web/src/pages/List.tsx` | 樹狀任務層級清單、依狀態/類型篩選與收折、大項目展開 |
+| **看板視角** | `apps/web/src/pages/Board.tsx` | 依任務狀態分欄，可直接拖拉卡片切換狀態 |
+| **週檢視** | `apps/web/src/pages/Week.tsx` | 檢視當週執行任務、單日視角切換過濾、依類型/狀態分組收合 |
+| **行事曆** | `apps/web/src/pages/Calendar.tsx` | 月曆格與跨日長條、拖拉任務改期、登記與管理請假與代理人 |
+| **甘特圖** | `apps/web/src/pages/Gantt.tsx` | 時間軸甘特圖、排程依賴箭頭、顯示關鍵路徑與時間連動 |
+| **關聯圖** | `apps/web/src/pages/Graph.tsx` | 拓撲關聯圖、卡住源頭追蹤、直線平行向右連線與併欄 |
+| **對外詢問看板** | `apps/web/src/pages/InquiryBoard.tsx` | 追蹤專案內對外詢問單（待回覆、逾期統計與回覆紀錄） |
+| **儀表板** | `apps/web/src/pages/Dashboard.tsx` | 數據中心：手刻 SVG 燃盡圖 (Burndown) 與負載熱圖 (Workload) |
+| **專案側欄** | `apps/web/src/components/EpicSidebar.tsx` | 左側樹狀結構（大項目→任務→錯誤），可點擊 `＋` 建立合法子任務 |
+| **任務詳情抽屜** | `apps/web/src/components/TaskDrawer.tsx` | 右側任務詳情面板（修改內容、登錄對外詢問、卡住原因、刪除） |
+| **成員頁面板** | `apps/web/src/components/MembersPanel.tsx` | 專案成員列表、邀請成員、審核申請、檢視成員經手任務紀錄 |
+| **路由與頁籤中樞** | `apps/web/src/App.tsx` | 前端路由主導、頂部頁籤順序（dnd-kit 拖曳排序與隱藏偏好） |
+
 ---
 
 ## 一句話決定改哪裡

@@ -27,8 +27,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 - 目前無待辦事項，上三項已全數確認與完成。
 
-## 2026-08-06 做完的（都在畫面上驗過）
-
+- **頁面功能對應索引（長期規則）**：已在 `docs/CODEMAP.md` 新增完整「頁面與功能對應清單」索引表格，並依使用者交代將「接手任務先查 CODEMAP 確定對應頁面」寫入 `D:\NewProject\AGENTS.md` 長期規則中。
 - **今天與選中天視覺區分**：將「今天」改為專屬鮮紅圓章（`bg-red-600`），與藍色選中日期／拖曳目標形成強烈對比，一眼即可辨識。
 - **行事曆拖曳位移修正**：將 `DragOverlay` 改用 `createPortal` 掛載至 `document.body`，解決容器滾動與下方任務拖曳時預覽框錯位問題。
 - **關聯圖點對點平行直線**：排程依賴與匯合點 Edge type 改為 `straight` 模式，點對點水平對齊時呈 100% 直通直線平行向右穿越。
