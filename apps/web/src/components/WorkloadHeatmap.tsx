@@ -202,7 +202,7 @@ function Grid({ data, metric, hatchId }: {
   const svgW = NAME_W + gridW + SUM_W + PEAK_W
   const svgH = HEAD_H + rows.length * ROW_H + 2
 
-  const colX = (i: number) => NAME_W + i * cell
+  const colX = (i: number) => i * cell
   const rowY = (r: number) => HEAD_H + r * ROW_H
   const todayIndex = days.findIndex(d => d.isToday)
 
@@ -224,18 +224,30 @@ function Grid({ data, metric, hatchId }: {
      * 放外面就要自己扣掉橫捲的位移，那是 scrollLeft 的用途。
      */
     <div className="relative">
-    <div className="overflow-x-auto" ref={boxRef}
-         onScroll={e => setScrollLeft((e.target as HTMLDivElement).scrollLeft)}>
-      <div style={{ width: svgW }}>
-        <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}
+      <div className="flex overflow-x-auto" ref={boxRef}
+           onScroll={e => setScrollLeft((e.target as HTMLDivElement).scrollLeft)}>
+        {/* 左側人名欄改為橫向滾動固定 (Ref: CR-045) */}
+        <div className="sticky left-0 z-10 shrink-0 bg-white border-r border-slate-200/80 dark:bg-slate-900 dark:border-slate-800"
+             style={{ width: NAME_W }}>
+          <div className="flex h-[50px] items-end pb-2.5 px-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+            {T.dashboard.tableView.person}
+          </div>
+          {rows.map((row) => (
+            <div key={row.userId ?? '__unassigned__'}
+                 style={{ height: ROW_H }}
+                 className={cx('flex items-center px-2 text-[12px] truncate', row.userId === null
+                   ? 'text-slate-500 italic dark:text-slate-400'
+                   : 'text-slate-700 font-medium dark:text-slate-200')}>
+              {rowLabel(row)}
+            </div>
+          ))}
+        </div>
+
+        <svg width={gridW + SUM_W + PEAK_W} height={svgH} viewBox={`0 0 ${gridW + SUM_W + PEAK_W} ${svgH}`}
              role="img" aria-label={T.dashboard.workload.title}
              className="block select-none">
           <defs>
             <LeaveHatch id={hatchId} />
-            {/* 名字太長就切掉，不要讓它壓到第一欄格子 */}
-            <clipPath id={clipId}>
-              <rect x={0} y={0} width={NAME_W - 10} height={svgH} />
-            </clipPath>
           </defs>
 
           {/* ── 欄標題：換月的日期 / 星期 / 幾號 ── */}
@@ -265,11 +277,11 @@ function Grid({ data, metric, hatchId }: {
           ))}
 
           {/* 合計與最高一天的欄標題 */}
-          <text x={NAME_W + gridW + SUM_W - 10} y={44} textAnchor="end"
+          <text x={gridW + SUM_W - 10} y={44} textAnchor="end"
                 className="fill-slate-500 text-[11px] dark:fill-slate-400">
             {T.dashboard.workload.rowTotal}
           </text>
-          <text x={NAME_W + gridW + SUM_W + PEAK_W - 10} y={44} textAnchor="end"
+          <text x={gridW + SUM_W + PEAK_W - 10} y={44} textAnchor="end"
                 className="fill-slate-500 text-[11px] dark:fill-slate-400">
             {T.dashboard.workload.peak}
           </text>
@@ -288,24 +300,17 @@ function Grid({ data, metric, hatchId }: {
           >
             {rows.map((row, r) => (
               <g key={row.userId ?? '__unassigned__'}>
-                <text x={2} y={rowY(r) + ROW_H / 2 + 4} clipPath={`url(#${clipId})`}
-                      className={cx('text-[12px]', row.userId === null
-                        ? 'fill-slate-500 italic dark:fill-slate-400'
-                        : 'fill-slate-700 dark:fill-slate-200')}>
-                  {rowLabel(row)}
-                </text>
-
                 {row.cells.map((c, i) => (
                   <Cell key={c.date} cell={c} cw={cell} x={colX(i)} y={rowY(r)}
                         r={r} i={i} capacity={capacity} max={max}
                         weekend={days[i]?.isWeekend ?? false} hatchId={hatchId} />
                 ))}
 
-                <text x={NAME_W + gridW + SUM_W - 10} y={rowY(r) + ROW_H / 2 + 4} textAnchor="end"
+                <text x={gridW + SUM_W - 10} y={rowY(r) + ROW_H / 2 + 4} textAnchor="end"
                       className="fill-slate-600 text-[11px] tabular-nums dark:fill-slate-300">
                   {fmt(row.total, metric)}
                 </text>
-                <text x={NAME_W + gridW + SUM_W + PEAK_W - 10} y={rowY(r) + ROW_H / 2 + 4}
+                <text x={gridW + SUM_W + PEAK_W - 10} y={rowY(r) + ROW_H / 2 + 4}
                       textAnchor="end"
                       className={cx('text-[11px] tabular-nums', capacity > 0 && row.peak > capacity
                         ? 'fill-red-600 font-semibold dark:fill-red-400'
@@ -316,7 +321,7 @@ function Grid({ data, metric, hatchId }: {
             ))}
           </g>
 
-          {/* 今天：整欄框起來（含標題），比只把格子換色好認 */}
+          {/* 今天：整欄框起來（含標題） */}
           {todayIndex >= 0 && (
             <rect x={colX(todayIndex)} y={2} width={cell} height={svgH - 4} rx={3}
                   fill="none" strokeWidth={1.5} pointerEvents="none"
@@ -324,12 +329,11 @@ function Grid({ data, metric, hatchId }: {
           )}
         </svg>
       </div>
-    </div>
 
       {hover && hoverCell && (
         <CellTooltip
           row={rows[hover.r]} cell={hoverCell} metric={metric} capacity={data.capacity}
-          x={colX(hover.i) + cell / 2 - scrollLeft} y={rowY(hover.r) + ROW_H}
+          x={NAME_W + colX(hover.i) + cell / 2 - scrollLeft} y={rowY(hover.r) + ROW_H}
           boxWidth={boxW || svgW}
         />
       )}
