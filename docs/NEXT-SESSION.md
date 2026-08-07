@@ -25,6 +25,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 還沒動工（他交代過、還沒做）
 
+- **事前分析檔名經同意才動手 (`CR-038`)**：將「先查 CODEMAP 分析改動檔案，列出清單等使用者同意才動手」寫入 `AGENTS.md`。
 - **已完成任務鎖定僅管理者可改 (`CR-037`)**：將「已完成任務僅專案建立者(管理者)可修改」之正式條文寫入 `AGENTS.md`。
 - **清單視角功能規範 (`CR-036`)**：將 `List.tsx` 完整功能與規則寫入 `D:\NewProject\AGENTS.md` 長期規則與 `CODEMAP.md` 中。
 - **已完成任務鎖定與權限限制 (`CR-035`)**：完成已完成任務鎖定（僅管理者可改）與開單人/負責人/代理人編輯權限後前端連動控管。
