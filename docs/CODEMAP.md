@@ -21,7 +21,7 @@
 |---|---|---|
 | **登入 / 註冊** | `apps/web/src/pages/Login.tsx` | 帳號登入、註冊與第三方帳號綁定 (Google/Apple OAuth 入口) |
 | **專案選擇** | `apps/web/src/pages/ProjectPicker.tsx` | 個人專案列表、建立新專案、搜尋與申請加入公開專案 |
-| **清單視角** | `apps/web/src/pages/List.tsx` | 樹狀任務層級清單、依狀態/類型篩選與收折、大項目展開 |
+| **清單視角** | `apps/web/src/pages/List.tsx` | 樹狀任務層級清單（大項目→任務→錯誤/里程碑）、依狀態/類型分組與收合、大項目層級展開、完成狀態灰階與劃線 |
 | **看板視角** | `apps/web/src/pages/Board.tsx` | 依任務狀態分欄，可直接拖拉卡片切換狀態 |
 | **週檢視** | `apps/web/src/pages/Week.tsx` | 檢視當週執行任務、單日視角切換過濾、依類型/狀態分組收合 |
 | **行事曆** | `apps/web/src/pages/Calendar.tsx` | 月曆格與跨日長條、拖拉任務改期、登記與管理請假與代理人 |
