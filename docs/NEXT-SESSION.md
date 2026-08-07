@@ -27,7 +27,8 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 - 目前無待辦事項，上三項已全數確認與完成。
 
-- **異動索引編號與註解規範（長期規則）**：`CHANGELOG.md` 索引與條目全數改用 `CR-001` ~ `CR-032` 編號，程式碼內清理長註解改留 `Ref: CR-xxx` 引用，並已寫入 `AGENTS.md`。
+- **查索引與行數/字數限制（長期規則）**：寫入「查 CODEMAP 動局部、對話回覆 100 字內、代碼修改單次 100 行內」規範至 `AGENTS.md`。
+- **異動索引編號與註解規範（長期規則）**：`CHANGELOG.md` 索引與條目全數改用 `CR-001` ~ `CR-033` 編號，程式碼內清理長註解改留 `Ref: CR-xxx` 引用，並已寫入 `AGENTS.md`。
 - **頁面功能對應索引（長期規則）**：已在 `docs/CODEMAP.md` 新增完整「頁面與功能對應清單」索引表格，並依使用者交代將「接手任務先查 CODEMAP 確定對應頁面」寫入 `D:\NewProject\AGENTS.md` 長期規則中。
 - **今天與選中天視覺區分**：將「今天」改為專屬鮮紅圓章（`bg-red-600`），與藍色選中日期／拖曳目標形成強烈對比，一眼即可辨識。
 - **行事曆拖曳位移修正**：將 `DragOverlay` 改用 `createPortal` 掛載至 `document.body`，解決容器滾動與下方任務拖曳時預覽框錯位問題。
