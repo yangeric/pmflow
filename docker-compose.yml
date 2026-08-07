@@ -55,6 +55,16 @@ services:
       PMFLOW_ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       PMFLOW_SEED_DEMO: ${SEED_DEMO:-false}
       PMFLOW_INQUIRY_DEFAULT_DUE_DAYS: ${INQUIRY_DEFAULT_DUE_DAYS:-7}
+      # ── 用 Google／Apple 的帳號登入（全部留空 = 不啟用，登入頁不會畫按鈕）──
+      # 設定步驟見 README「用 Google／Apple 的帳號登入」。
+      # PUBLIC_URL 是這個站從外面看的網址，callback 網址是拿它拼出來的。
+      PMFLOW_PUBLIC_URL: ${PUBLIC_URL:-}
+      PMFLOW_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      PMFLOW_GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PMFLOW_APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-}
+      PMFLOW_APPLE_TEAM_ID: ${APPLE_TEAM_ID:-}
+      PMFLOW_APPLE_KEY_ID: ${APPLE_KEY_ID:-}
+      PMFLOW_APPLE_PRIVATE_KEY: ${APPLE_PRIVATE_KEY:-}
     volumes:
       - attachments:/data/attachments
     depends_on:

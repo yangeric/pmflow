@@ -1,4 +1,4 @@
-import type { AdminUser, ProjectRole, WorkspaceRole } from '../lib/api'
+import type { AdminUser, OauthProviderId, ProjectRole, WorkspaceRole } from '../lib/api'
 
 /** 帳號設定、系統管理、成員 用到的文字。寫法見 strings/index.ts */
 
@@ -55,6 +55,8 @@ export const account = {
     working: '處理中…',
     hint: '支援 PNG、JPEG、WebP。圖會自動取中間的正方形、縮成 256 見方再上傳。'
         + '沒有頭像時顯示名字算出來的色塊。',
+    /** 抓不到圖片時丟出來的訊息（頭像要帶授權標頭，所以是 fetch 拿 blob，不是 <img src>） */
+    loadFailed: '讀不到頭像',
   },
 
   profile: {
@@ -72,6 +74,53 @@ export const account = {
     mismatch: '兩次輸入的新密碼不一樣。',
     hint: '改完密碼所有裝置都要重新登入，包含現在這一台。',
     submit: '變更密碼並重新登入',
+  },
+
+  /**
+   * 已綁定的登入方式。
+   *
+   * 這一區回答兩個問題：「我現在有幾種方式進得來」與「能不能少一種」。
+   * 所以密碼也列在這裡 —— 它是其中一種登入方式，不是另一件事；
+   * 只看綁定清單的話，沒有密碼的人不會發現自己只剩一條路。
+   */
+  identity: {
+    /**
+     * 兩家的名字。掛 Record<OauthProviderId, string> 是為了「後端多支援一家時
+     * 這裡會直接編譯不過」，而不是在畫面上默默印出 GOOGLE 這種給程式看的字。
+     * 商標名不翻譯 —— 使用者要在自己的帳號設定裡認出是同一家。
+     */
+    label: { GOOGLE: 'Google', APPLE: 'Apple' } as Record<OauthProviderId, string>,
+
+    title: '登入方式',
+    hint: '除了 email 與密碼，也可以綁定 Google 或 Apple 的帳號，'
+        + '之後用哪一種進來都是同一個 PMFlow 帳號。',
+    loading: '載入登入方式…',
+    /** 站台沒有設定任何一家時，整區只留這句話 —— 不要留一片空白 */
+    unavailable: '這個站沒有開放用 Google 或 Apple 的帳號登入。'
+               + '要開放的話，請站台管理者參考 README 的設定步驟。',
+
+    password: 'email 與密碼',
+    passwordOn: '已設定',
+    passwordOff: '還沒有設定密碼',
+    passwordOffHint: '你目前只能用下面綁定的帳號登入。到上面的「變更密碼」設一組密碼，'
+                   + '就多一條回得來的路。',
+
+    bind: (name: string) => `綁定 ${name}`,
+    binding: '請在新開的視窗完成授權…',
+    boundAt: (at: string) => `綁定於 ${at}`,
+    lastLoginAt: (at: string) => `最後一次用它登入 ${at}`,
+    neverUsed: '還沒用它登入過',
+    unbind: '解除綁定',
+    confirmUnbind: (name: string) =>
+      `要解除與 ${name} 的綁定嗎？解除後就不能再用它登入這個帳號。`,
+    /**
+     * 只剩一種登入方式時，解除鈕會收起來 ——
+     * 但一定要寫出為什麼。按鈕無故消失比按下去被拒絕更難懂。
+     */
+    lastMethod: '這是你目前唯一的登入方式，解除之後就再也進不來了。'
+              + '請先設一組密碼，或再綁定另一種登入方式。',
+    /** 瀏覽器擋掉小視窗時，畫面上什麼都不會發生，一定要講 */
+    popupBlocked: '瀏覽器擋掉了授權視窗。請允許這個網站開啟彈出視窗後再試一次。',
   },
 
   token: {

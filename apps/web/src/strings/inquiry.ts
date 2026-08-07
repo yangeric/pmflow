@@ -43,8 +43,8 @@ export const inquiry = {
     /** 新增時提問日一律是今天，所以顯示字而不是日期 */
     askedToday: '今天',
     status: {
-      replied: '已回',
-      /** 接在「已回」後面的括號，語序跟中文綁著，不要在元件裡拼 */
+      replied: '已回覆',
+      /** 接在「已回覆」後面的括號，語序跟中文綁著，不要在元件裡拼 */
       repliedDays: (n: number) => `（${n} 天）`,
     },
     placeholder: {

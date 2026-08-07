@@ -175,6 +175,78 @@ docker compose pull && docker compose up -d
 
 ---
 
+## 用 Google／Apple 的帳號登入
+
+**這是綁定，不是取代。** email + 密碼那條路一直都在，一個帳號可以同時綁 Google 與 Apple、也可以一個都不綁。
+
+**整段不設定就是不啟用** —— 登入頁不會畫那兩顆按鈕，其他功能完全不受影響。畫一顆按下去一定壞的按鈕，比沒有那個功能還糟。
+
+### 先看兩個改不了的外部條件
+
+| | Google | Apple |
+|---|---|---|
+| 要不要付費 | 不用 | **要**，Apple Developer Program，一年 US$99 |
+| callback 收不收 `localhost` | 收（測試用途） | **不收**，一定要對外可達的 https 網址 |
+
+所以**在本機 `http://localhost:8480` 上只驗得到「按鈕有沒有正確導去對方的授權頁」**，走不完整個登入流程 —— 對方要連得回你的 callback，而 localhost 從外面連不到。
+
+### 要填哪些變數
+
+全部寫在 `.env`（正式部署）或外層 shell 的環境變數（`docker-compose.dev.yml`）。
+
+```
+PUBLIC_URL=https://pm.example.com     # 這個站從外面看的網址，結尾不要斜線
+
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+
+APPLE_CLIENT_ID=com.example.pmflow.web    # Services ID，不是 App ID
+APPLE_TEAM_ID=ABCDE12345
+APPLE_KEY_ID=XYZ9876543
+APPLE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIGT...\n-----END PRIVATE KEY-----
+```
+
+`PUBLIC_URL` 是必填的：callback 網址是拿它拼出來的，後端看不到使用者是從哪個網址進來的（前面還有反向代理），猜一個出來只會換到 `redirect_uri_mismatch`。填了 Google 那兩個就只開 Google，填了 Apple 那四個就只開 Apple，兩邊互不影響。
+
+### callback 網址長什麼樣
+
+申請時要登記的網址**必須一字不差**：
+
+```
+<PUBLIC_URL>/api/v1/auth/oauth/google/callback
+<PUBLIC_URL>/api/v1/auth/oauth/apple/callback
+```
+
+### 怎麼申請
+
+**Google**（免費）
+1. [Google Cloud Console](https://console.cloud.google.com/) → 建一個專案
+2. 「API 和服務」→「OAuth 同意畫面」→ 填應用程式名稱與支援信箱
+3. 「憑證」→「建立憑證」→「OAuth 用戶端 ID」→ 類型選**網路應用程式**
+4. 「已授權的重新導向 URI」填上面那個 `.../google/callback`
+5. 拿到的用戶端 ID 與密鑰填進 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`
+
+**Apple**（要付費帳號）
+1. [Apple Developer](https://developer.apple.com/account) → Certificates, Identifiers & Profiles
+2. Identifiers → 新增一個 **App ID**，勾選 Sign in with Apple
+3. Identifiers → 再新增一個 **Services ID**（這個才是 `APPLE_CLIENT_ID`），
+   設定它的 Sign in with Apple：Domain 填你的網域、Return URL 填上面那個 `.../apple/callback`
+4. Keys → 新增一把 key，勾 Sign in with Apple，**下載 `.p8`（只能下載一次）**
+5. `APPLE_TEAM_ID` 在右上角、`APPLE_KEY_ID` 是那把 key 的編號、
+   `APPLE_PRIVATE_KEY` 是 `.p8` 的內容（換行寫成 `\n`，或整份 base64 之後貼上）
+
+> **金鑰只走環境變數，不要 commit 進 repo。** Apple 的 client secret 是後端拿 `.p8`
+> **當場簽出來的 JWT**（規格允許最長 6 個月，這裡只給 5 分鐘），沒有任何長期密鑰要存。
+
+### 登入之後會發生什麼
+
+- **這個外部帳號綁過了** → 直接登入那個帳號（認的是對方給的使用者 id，不是 email —— email 會被改，Apple 還會給轉寄用的假地址）
+- **email 還沒有帳號** → 直接開一個（登入頁本來就開放註冊，這條路不該更嚴；`ALLOW_SELF_REGISTRATION=false` 時一樣擋）
+- **email 已經有帳號** → **只有對方明講「這個 email 已驗證」才自動綁上去**；沒驗證就請他先用密碼登入，再到「帳號設定 → 登入方式」自己綁。少了這道關卡，任何人只要在別處註冊一個同名信箱就能接管別人的帳號
+- **已經綁好的想解除** → 帳號設定裡解；但**不能解除最後一個登入方式** —— 沒有密碼又解掉唯一的綁定，那個人就再也進不來了（這個站沒有寄信能力，沒有「忘記密碼」可以救）
+
+---
+
 ## 發版
 
 你要準備的東西：**一個 GitHub repo**。就這樣。

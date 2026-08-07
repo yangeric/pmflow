@@ -24,6 +24,20 @@ import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js'
 
 const ROLES = ['MANAGER', 'EDITOR', 'COMMENTER', 'VIEWER'] as const
 
+/**
+ * 成員頁那兩份清單要的欄位。刻意比 tasks.ts 的 TASK_COLUMNS 少 ——
+ * 那邊是任務本身的畫面，需要描述、工時、排程模式；這裡只是「他手上有哪些事」，
+ * 一列看得到編號、標題、狀態、到期日、進度、對外詢問就夠了。
+ * 少回的欄位不是省流量，是不要讓這個端點變成第二個任務查詢入口。
+ */
+const TASK_BRIEF = sql`
+  t.id, p.key || '-' || t.number AS "ref", t.title, t.type,
+  t.status_key AS "statusKey", t.progress,
+  t.start_date AS "startDate", t.due_date AS "dueDate",
+  t.inquiry_state AS "inquiryState",
+  t.assignee_id AS "assigneeId", u.display_name AS "assigneeName",
+  (u.avatar_file IS NOT NULL) AS "assigneeHasAvatar"`
+
 const addMemberBody = z.object({
   userId: z.string().uuid(),
   role: z.enum(ROLES).default('EDITOR'),
@@ -178,6 +192,63 @@ export default async function memberRoutes(app: FastifyInstance) {
       canManage: role === 'MANAGER',
     }
   })
+
+  // ── 某個成員的任務：現在手上的、以及從他手上轉出去的 ──────
+  /**
+   * 成員頁右邊那兩區。**同專案的人都看得到**，不要求管理者 ——
+   * 這是「誰在做什麼」，卡權限只會讓大家各自去問人。
+   *
+   * `current`：現在指派給他的全部，**不分狀態、含已完成** ——
+   * 濾掉做完的會讓「他做過什麼」憑空少一半。
+   *
+   * `past`：**經手過、現在已經不在他身上**的。來源是轉派寫下的活動紀錄
+   * （`POST /tasks/:id/reassign`，body 帶 `previousAssigneeId`），
+   * 不是「已完成的任務」—— 做完的在清單頁篩狀態就看得到，
+   * 「這張以前是誰在做」才是別的地方查不到的東西。
+   *
+   * 同一張任務可能轉來轉去好幾次，只取**最後一筆**（LATERAL + LIMIT 1）：
+   * 那才是「他什麼時候把這件事交出去的」，中間那幾筆是別人之間的交接。
+   * 「現在是誰負責」一律讀任務當下的負責人，不是活動紀錄裡的名字 ——
+   * 他交出去之後可能又換過手，紀錄裡那個名字早就不是現在要找的人。
+   */
+  app.get<{ Params: { id: string; userId: string } }>(
+    '/projects/:id/members/:userId/tasks', async req => {
+      const user = await authenticate(req)
+      await requireProjectRole(user.id, req.params.id, 'VIEWER')
+
+      const current = await sql`
+        SELECT ${TASK_BRIEF}
+        FROM task t
+        JOIN project p ON p.id = t.project_id
+        LEFT JOIN app_user u ON u.id = t.assignee_id
+        WHERE t.project_id = ${req.params.id} AND t.deleted_at IS NULL
+          AND t.assignee_id = ${req.params.userId}
+        ORDER BY t.rank, t.number`
+
+      const past = await sql`
+        SELECT ${TASK_BRIEF},
+               -- 轉出的日子。時間戳在這裡沒有意義，也不該讓前端再轉一次時區，
+               -- 直接照資料庫的時區格成 YYYY-MM-DD 字串交出去
+               to_char(a.created_at, 'YYYY-MM-DD') AS "handedOverOn",
+               a.body->>'note' AS "handoverNote"
+        FROM task t
+        JOIN project p ON p.id = t.project_id
+        LEFT JOIN app_user u ON u.id = t.assignee_id
+        JOIN LATERAL (
+          SELECT ac.created_at, ac.body
+          FROM activity ac
+          WHERE ac.task_id = t.id
+            AND ac.body->>'previousAssigneeId' = ${req.params.userId}
+          ORDER BY ac.created_at DESC
+          LIMIT 1
+        ) a ON true
+        WHERE t.project_id = ${req.params.id} AND t.deleted_at IS NULL
+          -- 又轉回他身上的不算「曾經」，那張現在就在他手上，會出現在上面那一區
+          AND t.assignee_id IS DISTINCT FROM ${req.params.userId}
+        ORDER BY a.created_at DESC`
+
+      return { current, past }
+    })
 
   /** 管理者直接把某個帳號放進來，不必等對方申請 */
   app.post<{ Params: { id: string } }>('/projects/:id/members', async (req, reply) => {

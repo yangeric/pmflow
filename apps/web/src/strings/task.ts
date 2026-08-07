@@ -186,7 +186,14 @@ export const task = {
     colStart: '開始',
     colDue: '結束',
     colProgress: '進度',
-    addChild: '＋ 子任務',
+    /**
+     * 清單上每一列的新增鈕**只放一個「＋」**（2026-08-06 改，原本是「＋ 子任務」）。
+     *
+     * 一整排列的右邊都掛著三個字，掃下來全是同一句話，真正在變的
+     * （標題、狀態、對外詢問）反而被擠掉。要做什麼交給游標停著時的提示講 ——
+     * 那句話還是完整的「在『某某』底下新增子任務」，不是把說明拿掉。
+     */
+    addChild: '＋',
     addChildTip: (title: string) => `在「${title}」底下新增子任務`,
     addChildPlaceholder: (title: string) => `在「${title}」底下新增子任務`,
     addTask: '＋ 新增任務',

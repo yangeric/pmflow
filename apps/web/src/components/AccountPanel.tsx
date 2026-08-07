@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Api, ApiError, type ApiToken } from '../lib/api'
+import {
+  Api, ApiError, type ApiToken, type OauthIdentity, type OauthProviderId,
+} from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { todayYmd } from '../lib/date'
 import { T } from '../strings'
 import { Button, Field, Input, Spinner } from './ui'
 import { Avatar, AvatarPicker } from './Avatar'
+import { ProviderIcon } from './ProviderIcon'
 
 /**
  * 自己的帳號設定。
  *
- * 只做五件事：換頭像、改顯示名稱、改 email、改密碼、管理 API 權杖。
+ * 只做六件事：換頭像、改顯示名稱、改 email、改密碼、管理登入方式、管理 API 權杖。
  * 刻意不做通知偏好、兩階段驗證 —— 這個站沒有寄信的能力，做了也走不完流程。
  *
  * 改密碼會把**所有裝置**的登入作廢，包含現在這一台（後端會把 refresh token
@@ -229,6 +232,9 @@ export default function AccountPanel() {
           </div>
         </section>
 
+        {/* ── 登入方式（密碼 + Google／Apple 綁定）── */}
+        <IdentitySection />
+
         {/* ── API 權杖 ── */}
         <ApiTokenSection />
 
@@ -265,6 +271,190 @@ function stamp(s: string | null): string {
   const d = new Date(s)
   const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** 綁定用小視窗回報結果時用的訊息型別，跟 api/src/routes/oauth.ts 對著同一個字串 */
+const LINK_MESSAGE = 'pmflow:oauth-link'
+
+/**
+ * 登入方式：email + 密碼，加上綁定的 Google／Apple 帳號。
+ *
+ * **密碼也列在這一區**，因為這裡回答的問題是「我有幾種方式進得來」——
+ * 只列綁定的話，沒有設密碼的人不會發現自己只剩一條路，
+ * 而解除最後一條路等於把自己鎖在門外（這個站沒有寄信能力，沒有忘記密碼可以救）。
+ * 所以只剩一種時，解除鈕會**收起來並寫出原因** —— 選項無故消失比被拒絕更難懂。
+ *
+ * 綁定走**小視窗**不走整頁跳轉：整頁跳出去再回來，使用者會落在首頁，
+ * 還要自己走回帳號設定才看得到結果。小視窗完成後用 postMessage 通知這一頁、
+ * 自己關掉，畫面停在原處。
+ */
+function IdentitySection() {
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['myIdentities'], queryFn: () => Api.oauthIdentities(),
+  })
+
+  const [err, setErr] = useState<string | null>(null)
+  const [pending, setPending] = useState<OauthProviderId | null>(null)
+
+  /**
+   * 小視窗回報。**一定要比對 origin** —— 不比的話，任何一個被使用者開著的
+   * 網站都能送一則訊息進來，讓這一頁以為綁定成功。
+   */
+  useEffect(() => {
+    function onMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return
+      const msg = e.data as { type?: string; ok?: boolean; message?: string } | null
+      if (!msg || msg.type !== LINK_MESSAGE) return
+      setPending(null)
+      if (msg.ok) { setErr(null); void refetch() }
+      else setErr(msg.message || T.common.failed)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [refetch])
+
+  async function startLink(provider: OauthProviderId) {
+    setErr(null)
+    try {
+      // 整頁跳轉帶不了 Authorization 標頭，所以先換一張只活 60 秒的入場券
+      const { ticket } = await Api.oauthLinkTicket()
+      const win = window.open(
+        Api.oauthStartUrl(provider, ticket), 'pmflow-oauth-link',
+        'width=520,height=680,menubar=no,toolbar=no')
+      if (!win) { setErr(T.account.identity.popupBlocked); return }
+      setPending(provider)
+    } catch (e) { setErr(errText(e)) }
+  }
+
+  const unlink = useMutation({
+    mutationFn: (id: string) => Api.unlinkOauthIdentity(id),
+    onSuccess: async () => { setErr(null); await refetch() },
+    onError: e => setErr(errText(e)),
+  })
+
+  return (
+    <section className="mt-6 rounded-xl bg-white p-5 ring-1 ring-slate-200
+                        dark:bg-slate-900 dark:ring-slate-700">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+        {T.account.identity.title}
+      </h2>
+      <p className="mb-4 text-xs text-slate-400 dark:text-slate-400">
+        {T.account.identity.hint}
+      </p>
+
+      {isLoading || !data ? (
+        <Spinner label={T.account.identity.loading} />
+      ) : (
+        <>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {/* 密碼：它也是一種登入方式，不是另一件事 */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-slate-700 dark:text-slate-300">
+                  {T.account.identity.password}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-400">
+                  {data.hasPassword
+                    ? T.account.identity.passwordOn
+                    : T.account.identity.passwordOff}
+                </div>
+              </div>
+            </div>
+
+            {data.identities.map(item => (
+              <IdentityRow key={item.id} item={item} canUnlink={data.canUnlink}
+                           busy={unlink.isPending}
+                           onUnlink={() => {
+                             const name = T.account.identity.label[item.provider]
+                             if (confirm(T.account.identity.confirmUnbind(name))) {
+                               unlink.mutate(item.id)
+                             }
+                           }} />
+            ))}
+          </div>
+
+          {!data.hasPassword && (
+            <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed
+                          text-amber-900 ring-1 ring-amber-200
+                          dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30">
+              {T.account.identity.passwordOffHint}
+            </p>
+          )}
+
+          {err && (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700
+                            dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
+              {err}
+            </div>
+          )}
+
+          {/* 還沒綁的那幾家。站台沒設定的不會出現在 available 裡 */}
+          {data.available.length > 0 ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {data.available.map(p => (
+                <Button key={p} disabled={pending !== null} onClick={() => startLink(p)}>
+                  <ProviderIcon provider={p} />
+                  {T.account.identity.bind(T.account.identity.label[p])}
+                </Button>
+              ))}
+              {pending && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {T.account.identity.binding}
+                </span>
+              )}
+            </div>
+          ) : data.identities.length === 0 && (
+            <p className="mt-4 text-xs leading-relaxed text-slate-400 dark:text-slate-400">
+              {T.account.identity.unavailable}
+            </p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+function IdentityRow({ item, canUnlink, busy, onUnlink }: {
+  item: OauthIdentity; canUnlink: boolean; busy: boolean; onUnlink: () => void
+}) {
+  const name = T.account.identity.label[item.provider]
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+          <ProviderIcon provider={item.provider} />
+          <span className="truncate">{name}</span>
+          {item.email && (
+            <span className="truncate text-xs text-slate-500 dark:text-slate-400">
+              {item.email}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 text-xs text-slate-400 dark:text-slate-400">
+          {T.account.identity.boundAt(stamp(item.createdAt))}
+          <span className="mx-2">·</span>
+          {item.lastLoginAt
+            ? T.account.identity.lastLoginAt(stamp(item.lastLoginAt))
+            : T.account.identity.neverUsed}
+        </div>
+      </div>
+
+      {/*
+        解除鈕只在「還有別條路進得來」時才畫，而且不畫的時候要寫出原因 ——
+        規則本身擋在後端（見 api/src/routes/oauth.ts），這裡只是不要把
+        按下去一定被拒絕的按鈕擺出來。
+      */}
+      {canUnlink ? (
+        <Button variant="danger" disabled={busy} onClick={onUnlink}>
+          {T.account.identity.unbind}
+        </Button>
+      ) : (
+        <span className="max-w-xs text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+          {T.account.identity.lastMethod}
+        </span>
+      )}
+    </div>
+  )
 }
 
 /**

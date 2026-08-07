@@ -7,6 +7,7 @@ import { registerErrorHandler } from './lib/errors.js'
 import { sweepOverdue } from './lib/inquiry.js'
 import { sweepPasswordResets, RESET_SWEEP_MS } from './lib/breakglass.js'
 import authRoutes from './routes/auth.js'
+import oauthRoutes from './routes/oauth.js'
 import projectRoutes from './routes/projects.js'
 import parameterRoutes from './routes/parameters.js'
 import memberRoutes from './routes/members.js'
@@ -40,6 +41,7 @@ app.get('/health', async () => {
 
 await app.register(async api => {
   await api.register(authRoutes)
+  await api.register(oauthRoutes)
   await api.register(projectRoutes)
   await api.register(parameterRoutes)
   await api.register(memberRoutes)

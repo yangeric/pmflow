@@ -1,4 +1,6 @@
-import type { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react'
+import type {
+  ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes, OptionHTMLAttributes,
+} from 'react'
 import type { InquiryState } from '../lib/api'
 import { T } from '../strings'
 
@@ -60,6 +62,59 @@ export function Select({ className, ...p }: SelectHTMLAttributes<HTMLSelectEleme
         'dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100', className
       )}
     />
+  )
+}
+
+/**
+ * 把使用者挑的顏色調到**在目前底色上讀得到**的深淺，色相不動。
+ *
+ * 狀態色、種類色、專案色都是他自己在系統參數頁挑的，深淺完全不受控 ——
+ * 直接拿來當文字色，淺色在白底上會糊掉、深色在深色模式下會沉進背景。
+ * 這裡只把亮度往安全的方向推，挑的是紅的出來還是紅的。
+ *
+ * 回傳 `#rrggbb`，給 style 用（Tailwind 沒辦法表達執行期才知道的顏色）。
+ */
+export function readableColor(color: string | null | undefined, dark: boolean): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec((color ?? '').trim())
+  if (!m) return dark ? '#e2e8f0' : '#1e293b'
+  const n = parseInt(m[1], 16)
+  let [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  const lum = () => (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+
+  // 深色模式往亮的推、淺色模式往暗的推，一次推一點直到跨過門檻為止。
+  // 用乘法不用加法：加法會把三個通道拉平，紅色會愈調愈接近粉白。
+  if (dark) {
+    for (let i = 0; i < 24 && lum() < 0.55; i++) {
+      r = Math.min(255, Math.round(r * 1.08 + 6))
+      g = Math.min(255, Math.round(g * 1.08 + 6))
+      b = Math.min(255, Math.round(b * 1.08 + 6))
+    }
+  } else {
+    for (let i = 0; i < 24 && lum() > 0.42; i++) {
+      r = Math.round(r * 0.92); g = Math.round(g * 0.92); b = Math.round(b * 0.92)
+    }
+  }
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 帶顏色的下拉選項。
+ *
+ * 只給**資料本來就有顏色**的那幾種下拉用（狀態、任務種類、優先度）——
+ * 那些顏色是他在系統參數頁挑的，選單裡跟著上色，展開的時候就不用讀完字
+ * 才知道自己選到哪一個。沒有顏色的下拉（指派給誰、關聯類型…）維持原樣，
+ * 每個選項都上色只會變成一盤彩色糖果，反而看不出重點。
+ *
+ * `<option>` 的文字色在 Chrome / Edge / Firefox 有效，Safari 會忽略 ——
+ * **所以顏色只能當輔助**，選項的字本身一定要能單獨讀懂。
+ */
+export function ColorOption({
+  color, dark, children, ...p
+}: OptionHTMLAttributes<HTMLOptionElement> & { color?: string | null; dark: boolean }) {
+  return (
+    <option {...p} style={color ? { color: readableColor(color, dark) } : undefined}>
+      {children}
+    </option>
   )
 }
 

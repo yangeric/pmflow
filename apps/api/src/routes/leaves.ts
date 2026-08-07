@@ -18,6 +18,10 @@ import { badRequest, notFound } from '../lib/errors.js'
  *     不是隱私。但**備註只有本人與管理者看得到**：請假的區間要公開，
  *     請假的理由不必。所以備註是在這一層濾掉的，不是靠前端不畫。
  *
+ * 代理人（deputy_id，見 migrations/0016_leave_deputy.sql）跟備註相反，
+ * **是誰都看得到的**：知道「他不在」卻不知道「該找誰」等於只講了一半。
+ * 代理期間就是這筆請假的起訖日，權限怎麼算見 lib/auth.ts。
+ *
  * 起日不能晚於迄日在三個地方各擋一次（前端、這裡、資料表 CHECK）：
  * 前端擋是為了當場給回饋，這裡擋是因為 API 不是只有前端會呼叫（有 API 權杖），
  * 資料表擋是因為反向區間會讓行事曆的長條算出負寬度，整列排版跟著爆。
@@ -38,6 +42,13 @@ const listQuery = z.object({
   to: z.string().date().optional(),
 })
 
+/**
+ * 代理人。null／空字串一律當成「不指定」—— 表單上把人清掉時送過來的就是空的，
+ * 那是「取消代理」而不是「沒有這個欄位」，所以要跟 undefined 分得開。
+ */
+const deputyId = z.string().uuid().nullish()
+  .or(z.literal('').transform(() => null))
+
 const createBody = z.object({
   /** 不給就是幫自己填。給了別人的 id 就要管理者權限 */
   userId: z.string().uuid().optional(),
@@ -45,6 +56,7 @@ const createBody = z.object({
   startDate: z.string().date(),
   endDate: z.string().date(),
   note,
+  deputyId: deputyId.optional(),
 })
 
 const patchBody = z.object({
@@ -52,6 +64,7 @@ const patchBody = z.object({
   startDate: z.string().date().optional(),
   endDate: z.string().date().optional(),
   note: note.optional(),
+  deputyId: deputyId.optional(),
 })
 
 interface LeaveRow {
@@ -63,6 +76,9 @@ interface LeaveRow {
   endDate: string
   days: number
   note: string | null
+  /** 代理人。沒指定就是 null —— 不是每次請假都要找人代 */
+  deputyId: string | null
+  deputyName: string | null
   createdById: string | null
   createdByName: string | null
   createdAt: string
@@ -97,8 +113,35 @@ const selectColumns = sql`
   to_char(l.end_date, 'YYYY-MM-DD') AS "endDate",
   (l.end_date - l.start_date + 1) AS days,
   l.note,
+  l.deputy_id AS "deputyId", d.display_name AS "deputyName",
   l.created_by AS "createdById", c.display_name AS "createdByName",
   l.created_at AS "createdAt"`
+
+/** 三個查詢共用的兩個外接：登記的人、代理人。兩個都可能是空的 */
+const nameJoins = sql`
+  LEFT JOIN app_user c ON c.id = l.created_by
+  LEFT JOIN app_user d ON d.id = l.deputy_id`
+
+/**
+ * 代理人合不合法。兩條規矩，都在後端擋（前端只是不把不合法的選項畫出來）：
+ *  1. **不可以是請假的人自己** —— 自己代自己在權限上等於沒效果，
+ *     但畫面上會寫「代理：他自己」，看的人會以為他其實有在上班。
+ *  2. **要是同一個工作區的人** —— 代理是為了讓事情有人接手，
+ *     指一個不在這個工作區、什麼都看不到的人等於沒有指。
+ * （資料表也有 CHECK 擋第一條，但那時只會回一句看不懂的違反條件。）
+ */
+async function assertDeputy(
+  workspaceId: string, subjectId: string, deputy: string | null
+): Promise<void> {
+  if (!deputy) return
+  if (deputy === subjectId) {
+    throw badRequest('代理人不能是請假的人自己，請改指定另一個人')
+  }
+  const [member] = await sql`
+    SELECT 1 FROM workspace_member
+    WHERE workspace_id = ${workspaceId} AND user_id = ${deputy}`
+  if (!member) throw badRequest('代理人必須是這個工作區裡的人')
+}
 
 /** 補上「這個人能不能改這筆」，並依權限決定備註給不給看 */
 const forViewer = (row: LeaveRow, viewerId: string, canManage: boolean) => {
@@ -127,7 +170,7 @@ export default async function leaveRoutes(app: FastifyInstance) {
         SELECT ${selectColumns}
         FROM leave_record l
         JOIN app_user u ON u.id = l.user_id
-        LEFT JOIN app_user c ON c.id = l.created_by
+        ${nameJoins}
         WHERE l.workspace_id = ${workspaceId}
           AND (${from ?? null}::date IS NULL OR l.end_date >= ${from ?? null}::date)
           AND (${to ?? null}::date IS NULL OR l.start_date <= ${to ?? null}::date)
@@ -156,19 +199,22 @@ export default async function leaveRoutes(app: FastifyInstance) {
       SELECT 1 FROM workspace_member
       WHERE workspace_id = ${workspaceId} AND user_id = ${targetId}`
     if (!member) throw badRequest('這個人不在這個工作區裡')
+    await assertDeputy(workspaceId, targetId, b.deputyId ?? null)
 
     const [row] = await sql<LeaveRow[]>`
       WITH ins AS (
         INSERT INTO leave_record
-          (workspace_id, user_id, leave_type, start_date, end_date, note, created_by)
+          (workspace_id, user_id, leave_type, start_date, end_date, note,
+           deputy_id, created_by)
         VALUES (${workspaceId}, ${targetId}, ${b.leaveType},
-                ${b.startDate}, ${b.endDate}, ${b.note}, ${user.id})
+                ${b.startDate}, ${b.endDate}, ${b.note},
+                ${b.deputyId ?? null}, ${user.id})
         RETURNING *
       )
       SELECT ${selectColumns}
       FROM ins l
       JOIN app_user u ON u.id = l.user_id
-      LEFT JOIN app_user c ON c.id = l.created_by`
+      ${nameJoins}`
 
     reply.code(201)
     return forViewer(row, user.id, await isWorkspaceAdmin(user.id, workspaceId))
@@ -185,6 +231,10 @@ export default async function leaveRoutes(app: FastifyInstance) {
     const endDate = b.endDate ?? current.endDate
     if (startDate > endDate) throw badRequest('開始日不能晚於結束日')
 
+    // 沒送 deputyId 就是不動它；送了 null 是「取消代理」，兩件事不一樣
+    const deputy = b.deputyId !== undefined ? b.deputyId : current.deputyId
+    await assertDeputy(current.workspaceId, current.userId, deputy)
+
     const [row] = await sql<LeaveRow[]>`
       WITH upd AS (
         UPDATE leave_record SET
@@ -192,6 +242,7 @@ export default async function leaveRoutes(app: FastifyInstance) {
           start_date = ${startDate},
           end_date   = ${endDate},
           note       = ${b.note !== undefined ? b.note : current.note},
+          deputy_id  = ${deputy},
           updated_at = now()
         WHERE id = ${req.params.id}
         RETURNING *
@@ -199,7 +250,7 @@ export default async function leaveRoutes(app: FastifyInstance) {
       SELECT ${selectColumns}
       FROM upd l
       JOIN app_user u ON u.id = l.user_id
-      LEFT JOIN app_user c ON c.id = l.created_by`
+      ${nameJoins}`
 
     return forViewer(row, user.id, canManage)
   })
@@ -224,12 +275,13 @@ async function loadForWrite(userId: string, leaveId: string) {
     workspaceId: string; userId: string
     leaveType: (typeof LEAVE_TYPES)[number]
     startDate: string; endDate: string; note: string | null
+    deputyId: string | null
   }[]>`
     SELECT workspace_id AS "workspaceId", user_id AS "userId",
            leave_type AS "leaveType",
            to_char(start_date, 'YYYY-MM-DD') AS "startDate",
            to_char(end_date, 'YYYY-MM-DD') AS "endDate",
-           note
+           note, deputy_id AS "deputyId"
     FROM leave_record WHERE id = ${leaveId}`
   if (!row) throw notFound('找不到這筆請假紀錄')
 

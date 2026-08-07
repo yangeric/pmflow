@@ -167,8 +167,29 @@ export type ProjectRole = 'MANAGER' | 'EDITOR' | 'COMMENTER' | 'VIEWER'
 const RANK: Record<ProjectRole, number> = { VIEWER: 0, COMMENTER: 1, EDITOR: 2, MANAGER: 3 }
 
 /**
+ * 代理人：請假的時候可以指定一個人代他，**代理期間就是那筆請假的起訖日**
+ * （見 migrations/0016_leave_deputy.sql）。
+ *
+ * 實作的原則只有一句：**在既有的判斷裡把代理人當成請假者本人**，兩邊取聯集。
+ * 刻意不發一個新角色、也不另外做一套平行的權限檢查 —— 多一套就多一個
+ * 會跟主線走鐘的地方，而且事後沒有人查得出某個人到底是憑什麼改到那張任務。
+ * 所以這條規則只落在兩個點上：
+ *   1. 這裡（專案角色取聯集）—— 決定「進不進得去、能不能編輯」。
+ *   2. routes/tasks.ts 的 assertCanEditTask —— 決定「是不是這張任務的關係人」。
+ *
+ * **不做遞迴**：A 代 B、B 代 C 不等於 A 代 C。下面的 SQL 只往回找一層
+ * leave_record，沒有遞迴查詢就是這條規則的實作。
+ *
+ * 日期比較用 CURRENT_DATE：容器的 TZ 是 Asia/Taipei，跟整份程式判斷逾期
+ * （lib/inquiry.ts）用的是同一個基準，不要在這裡自己算今天。
+ */
+/**
  * 專案層權限檢查。所有路由都必須走這裡拿 projectId，
  * 不可以直接信任前端傳來的 workspaceId。
+ *
+ * 回傳的是**有效角色** = 自己的角色 ∪ 目前代理中的那些人的角色，取最高的那個。
+ * 代理進來的權限跟自己原本的權限沒有先後 —— 誰高就用誰，這就是「取聯集」。
+ * 一個查詢就把兩邊都撈出來，不為了代理再多跑一趟。
  */
 export async function requireProjectRole(
   userId: string, projectId: string, min: ProjectRole
@@ -176,12 +197,40 @@ export async function requireProjectRole(
   const rows = await sql<{ role: ProjectRole; workspace_id: string }[]>`
     SELECT pm.role, p.workspace_id
     FROM project p
-    JOIN project_member pm ON pm.project_id = p.id AND pm.user_id = ${userId}
-    WHERE p.id = ${projectId}`
+    JOIN project_member pm ON pm.project_id = p.id
+    WHERE p.id = ${projectId}
+      AND (
+        pm.user_id = ${userId}
+        -- 我今天正在代理的人，他在這個專案裡的角色也算我的。
+        -- 限定同一個工作區：在 A 工作區請的假，不該讓人在 B 工作區的專案裡動手。
+        OR EXISTS (
+          SELECT 1 FROM leave_record l
+          WHERE l.deputy_id = ${userId}
+            AND l.user_id = pm.user_id
+            AND l.workspace_id = p.workspace_id
+            AND CURRENT_DATE BETWEEN l.start_date AND l.end_date
+        )
+      )`
   if (!rows.length) throw forbidden('你不是這個專案的成員')
-  const { role, workspace_id } = rows[0]
+  const best = rows.reduce((a, b) => (RANK[b.role] > RANK[a.role] ? b : a))
+  const { role, workspace_id } = best
   if (RANK[role] < RANK[min]) throw forbidden(`這個操作需要 ${min} 以上權限，你目前是 ${role}`)
   return { role, workspaceId: workspace_id }
+}
+
+/**
+ * 今天我正在代理哪些人。
+ *
+ * 只給「跟身分有關」的判斷用（例如「這張任務是不是他開的」）——
+ * 專案角色那一段已經在 requireProjectRole 裡一起算完了，不要再問一次。
+ * 同樣不做遞迴，只看一層。
+ */
+export async function currentDeputyPrincipals(deputyId: string): Promise<string[]> {
+  const rows = await sql<{ user_id: string }[]>`
+    SELECT DISTINCT l.user_id FROM leave_record l
+    WHERE l.deputy_id = ${deputyId}
+      AND CURRENT_DATE BETWEEN l.start_date AND l.end_date`
+  return rows.map(r => r.user_id)
 }
 
 /**

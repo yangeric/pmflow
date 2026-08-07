@@ -1,9 +1,10 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type ProjectParam, type Task, type TaskStatus } from '../lib/api'
-import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, cx } from '../components/ui'
+import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, ColorOption, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../lib/auth'
+import { useTheme } from '../lib/theme'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 import { typesAllowedUnder } from '../lib/hierarchy'
 import { T } from '../strings'
@@ -20,6 +21,9 @@ export default function ListView({
   const qc = useQueryClient()
   const statusName = useMemo(
     () => Object.fromEntries(statuses.map(s => [s.key, s])), [statuses])
+  /* 狀態、種類的下拉要照他挑的顏色上色，深淺看現在的底色（見 ui.tsx 的 readableColor） */
+  const { resolved } = useTheme()
+  const dark = resolved === 'dark'
 
   /*
    * 我在這個專案是什麼角色。跟 App 那一層同一組 queryKey，讀到的是快取。
@@ -253,6 +257,9 @@ export default function ListView({
                         setTitle('')
                       }}
                       title={T.task.list.addChildTip(t.title)}
+                      /* 鈕上只剩一個「＋」，讀螢幕的人聽不出那是做什麼的，
+                         所以完整那句話一定要留在 aria-label 上 */
+                      aria-label={T.task.list.addChildTip(t.title)}
                       className={cx(
                         'ml-1 shrink-0 rounded px-1.5 py-0.5 text-[11px] transition-colors',
                         addingTo === t.id
@@ -328,11 +335,11 @@ export default function ListView({
                             跑哪去了。目前這一個一定選得到，否則下拉會顯示成別的狀態，
                             一存檔就把它靜悄悄改掉 */}
                         {statuses.map(s => (
-                          <option key={s.key} value={s.key}
-                                  disabled={hasOpenInquiry(t) && s.category === 'DONE'
-                                            && s.key !== t.statusKey}>
+                          <ColorOption key={s.key} value={s.key} color={s.color} dark={dark}
+                                       disabled={hasOpenInquiry(t) && s.category === 'DONE'
+                                                 && s.key !== t.statusKey}>
                             {s.name}
-                          </option>
+                          </ColorOption>
                         ))}
                       </select>
                     ) : (
@@ -483,12 +490,17 @@ function NewTaskType({ value, options, onChange }: {
   options: ProjectParam[]
   onChange: (v: string) => void
 }) {
+  const { resolved } = useTheme()
   if (options.length === 0) return null
   return (
     <Select value={value} onChange={e => onChange(e.target.value)}
             aria-label={T.task.drawer.fieldTaskType}
             className="w-28 shrink-0">
-      {options.map(t => <option key={t.key} value={t.key}>{t.name}</option>)}
+      {options.map(t => (
+        <ColorOption key={t.key} value={t.key} color={t.color} dark={resolved === 'dark'}>
+          {t.name}
+        </ColorOption>
+      ))}
     </Select>
   )
 }

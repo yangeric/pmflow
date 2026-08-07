@@ -44,6 +44,18 @@ services:
       PMFLOW_SEED_DEMO: "true"
       PMFLOW_ALLOW_SELF_REGISTRATION: "true"
       PMFLOW_INQUIRY_DEFAULT_DUE_DAYS: "7"
+      # ── 用 Google／Apple 的帳號登入 ──
+      # 預設全空 = 不啟用，登入頁不會畫那兩顆按鈕（這是正常狀態）。
+      # 要在本機試的話，把值放進外層 shell 的環境變數再 up 就好，不用改這個檔。
+      # ⚠️ 本機只驗得到「按鈕有沒有正確導去 Google」—— 對方要連得回 callback，
+      #    而 localhost 從外面連不到（Apple 更是完全不收 localhost）。
+      PMFLOW_PUBLIC_URL: ${PMFLOW_PUBLIC_URL:-http://localhost:8480}
+      PMFLOW_GOOGLE_CLIENT_ID: ${PMFLOW_GOOGLE_CLIENT_ID:-}
+      PMFLOW_GOOGLE_CLIENT_SECRET: ${PMFLOW_GOOGLE_CLIENT_SECRET:-}
+      PMFLOW_APPLE_CLIENT_ID: ${PMFLOW_APPLE_CLIENT_ID:-}
+      PMFLOW_APPLE_TEAM_ID: ${PMFLOW_APPLE_TEAM_ID:-}
+      PMFLOW_APPLE_KEY_ID: ${PMFLOW_APPLE_KEY_ID:-}
+      PMFLOW_APPLE_PRIVATE_KEY: ${PMFLOW_APPLE_PRIVATE_KEY:-}
     volumes:
       - attachments:/data/attachments
     depends_on:

@@ -11,7 +11,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type ParamKind, type ProjectParam } from '../lib/api'
-import { Button, Empty, Field, Input, Select, Spinner, cx } from './ui'
+import { Button, ColorOption, Empty, Field, Input, Select, Spinner, cx } from './ui'
+import { useTheme } from '../lib/theme'
 import { T } from '../strings'
 
 /**
@@ -605,6 +606,7 @@ function RemoveWithMove({
   onConfirm: (moveTo: string) => void
 }) {
   const [moveTo, setMoveTo] = useState(others[0]?.id ?? '')
+  const dark = useTheme().resolved === 'dark'
 
   return (
     <div className="border-t border-amber-200 bg-amber-50 px-4 py-3
@@ -617,7 +619,10 @@ function RemoveWithMove({
         <Field label={S.remove.moveToLabel}>
           <Select value={moveTo} disabled={busy}
                   onChange={e => setMoveTo(e.target.value)}>
-            {others.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {/* 這一頁整頁都在講顏色，選項當然要帶著自己的顏色 —— 見 ui.tsx 的 ColorOption */}
+            {others.map(o => (
+              <ColorOption key={o.id} value={o.id} color={o.color} dark={dark}>{o.name}</ColorOption>
+            ))}
           </Select>
         </Field>
         <Button variant="danger" disabled={busy || !moveTo}

@@ -1,3 +1,5 @@
+import { T } from '../strings'
+
 /**
  * 日期工具 —— 刻意不引進 date-fns / dayjs。
  *
@@ -85,9 +87,16 @@ export function monthGrid(year: number, month: number): Date[] {
   return Array.from({ length: 42 }, (_, i) => addDays(start, i))
 }
 
-export const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'] as const
+/*
+ * 星期與年月的字**不住在這裡**，在 `strings/calendar.ts`。
+ * 這個檔是日期計算，那兩個是會顯示在畫面上的文案 ——
+ * 混在一起的話，做在地化時會漏掉這兩個（它們不在 strings 底下，掃不到）。
+ * 這兩個 re-export 留著只是為了不要讓每個用到的地方各自去 import 兩個檔。
+ */
+export const WEEKDAY_LABELS = T.calendar.weekdays
 
-export const monthLabel = (year: number, month: number) => `${year} 年 ${month + 1} 月`
+/** month 是 0 起算（跟 `Date.getMonth()` 一致），到文案那一層才 +1 */
+export const monthLabel = (year: number, month: number) => T.calendar.monthLabel(year, month + 1)
 
 /** 給人看的短日期，例如 8/1 */
 export const shortDate = (s: string) => {

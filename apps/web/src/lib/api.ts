@@ -1,3 +1,5 @@
+import { T } from '../strings'
+
 const BASE = '/api/v1'
 
 let accessToken: string | null = null
@@ -138,6 +140,38 @@ export interface ApiToken {
   expiresOn: string | null
 }
 
+// ── 用 Google／Apple 的帳號登入 ──
+/**
+ * 站台可能一家都沒設定 —— 後端只回**設定齊全**的那幾家，
+ * 所以前端不必判斷任何環境變數，清單是空的就不要畫按鈕。
+ */
+export type OauthProviderId = 'GOOGLE' | 'APPLE'
+
+export interface OauthProvider { id: OauthProviderId; label: string }
+
+/**
+ * 一筆綁定。`email` 與 `displayName` 是**授權當下對方給的值**，只當參考 ——
+ * Apple 給的可能是轉寄用的假地址，名字也只有第一次授權才會有。
+ */
+export interface OauthIdentity {
+  id: string
+  provider: OauthProviderId
+  email: string | null
+  displayName: string | null
+  createdAt: string
+  lastLoginAt: string | null
+}
+
+export interface MyIdentities {
+  /** 沒有密碼的人，手上至少要留兩個綁定才解得掉其中一個 */
+  hasPassword: boolean
+  identities: OauthIdentity[]
+  /** 現在還可以綁哪幾家（已經綁過的與站台沒設定的都不在裡面） */
+  available: OauthProviderId[]
+  /** 後端算好的「現在能不能解除」。前端只負責照它收起按鈕，不要自己再算一次 */
+  canUnlink: boolean
+}
+
 /** 管理者看到的帳號一覽 */
 export interface AdminUser {
   id: string; email: string; displayName: string
@@ -160,6 +194,34 @@ export interface ProjectMember {
   id: string; displayName: string; email: string
   role: ProjectRole; joinedAt: string; isCreator: boolean
   hasAvatar: boolean
+}
+
+/**
+ * 成員頁上的一列任務。刻意比 `Task` 少很多欄位 ——
+ * 那一頁只要看得出「是哪一張、做到哪、什麼時候到期」，
+ * 不是第二個任務清單頁；點下去會開任務詳情，細節在那裡看。
+ */
+export interface MemberTask {
+  id: string; ref: string; title: string
+  /** 專案自己定義的種類鍵（EPIC / TASK / BUG / MILESTONE 或自訂的） */
+  type: string
+  statusKey: string; progress: number
+  startDate: string | null; dueDate: string | null
+  inquiryState: InquiryState
+  /** 現在的負責人。「曾經的任務」那一區要靠它講出「現在是誰負責」 */
+  assigneeId: string | null; assigneeName: string | null
+  assigneeHasAvatar: boolean
+}
+
+/**
+ * 從他手上轉出去、現在不在他身上的任務。
+ * 多的三件事就是這一區存在的理由：現在在誰身上（上面的 assigneeName）、
+ * 哪一天轉出去的、轉的時候附了什麼交接說明。
+ */
+export interface PastMemberTask extends MemberTask {
+  /** YYYY-MM-DD。後端已經照資料庫時區格好了，前端不要再轉一次 */
+  handedOverOn: string
+  handoverNote: string | null
 }
 
 /** 別人送來的加入申請（只有建立者看得到） */
@@ -391,6 +453,26 @@ export const Api = {
   logout: () => api('/auth/logout', { method: 'POST' }),
   me: () => api<{ user: User; workspaces: Workspace[] }>('/auth/me'),
 
+  // ── 用 Google／Apple 的帳號登入 ──
+  /** 登入頁要畫哪幾顆按鈕。沒設定的那一家不會出現在這份清單裡 */
+  oauthProviders: () => api<{ providers: OauthProvider[] }>('/auth/oauth/providers'),
+  /** 我綁了哪幾種，還能不能解除 */
+  oauthIdentities: () => api<MyIdentities>('/me/oauth/identities'),
+  /** 綁定用的一次性入場券（60 秒）。整頁跳轉帶不了 Authorization 標頭，所以要這一步 */
+  oauthLinkTicket: () => api<{ ticket: string }>('/me/oauth/link-ticket', { method: 'POST' }),
+  unlinkOauthIdentity: (id: string) =>
+    api(`/me/oauth/identities/${id}`, { method: 'DELETE' }),
+  /**
+   * 導向授權頁的網址。
+   *
+   * **這一個不是 fetch，是給瀏覽器直接開的**（登入是整頁跳轉、綁定是小視窗）——
+   * 整段流程要跳出這個站再跳回來，fetch 走不完，而且拿不到對方的登入畫面。
+   * 帶了 ticket 就是綁定模式，沒帶就是登入。
+   */
+  oauthStartUrl: (provider: OauthProviderId, ticket?: string) =>
+    `${BASE}/auth/oauth/${provider.toLowerCase()}/start`
+    + (ticket ? `?ticket=${encodeURIComponent(ticket)}` : ''),
+
   projects: () => api<{ projects: Project[] }>('/projects'),
   project: (id: string) =>
     api<Project & {
@@ -448,6 +530,13 @@ export const Api = {
     api(`/projects/${projectId}/members/${userId}`, { method: 'PATCH', json: { role } }),
   removeMember: (projectId: string, userId: string) =>
     api(`/projects/${projectId}/members/${userId}`, { method: 'DELETE' }),
+  /**
+   * 成員頁：這個人現在手上的任務（不分狀態）與從他手上轉出去的任務。
+   * 同專案的人都叫得動 —— 這是「誰在做什麼」，不是管理功能。
+   */
+  memberTasks: (projectId: string, userId: string) =>
+    api<{ current: MemberTask[]; past: PastMemberTask[] }>(
+      `/projects/${projectId}/members/${userId}/tasks`),
 
   /**
    * 要搜尋才回東西（比對專案名稱或代碼）。沒給 q 就只回自己審核中的申請 ——
@@ -527,7 +616,7 @@ export const Api = {
     const headers = new Headers()
     if (accessToken) headers.set('authorization', `Bearer ${accessToken}`)
     const res = await fetch(`${BASE}/users/${userId}/avatar`, { headers, credentials: 'include' })
-    if (!res.ok) throw new ApiError(res.status, '讀不到頭像')
+    if (!res.ok) throw new ApiError(res.status, T.account.avatar.loadFailed)
     return res.blob()
   },
 

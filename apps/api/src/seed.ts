@@ -123,6 +123,15 @@ export async function seedDemo(): Promise<boolean> {
         { n: 8, title: '遷移與切換',     type: 'EPIC',      st: 'todo',  s: 21, d: 38, parent: null, prog: 0, c: -28 },
         { n: 9, title: '系統遷移測試',   type: 'TASK',      st: 'todo',  s: 21, d: 34, parent: 8,    prog: 0, c: -28 },
         { n: 10, title: '正式切換',      type: 'MILESTONE', st: 'todo',  s: 38, d: 38, parent: 8,    prog: 0, c: -28 },
+        /*
+         * 「同時完成」那個匯合點的下游。
+         *
+         * 少了這一張，測試與切換這組同時完成的任務後面就沒有人接 ——
+         * 關聯圖的規則是「匯合點的結束點沒有任務可接就不畫點」
+         * （見 AGENTS.md），所以示範資料會示範不到紫色匯合點長什麼樣子。
+         * 有了它，畫面上才會出現「兩張任務 → 匯合點 → 一張任務」的完整形狀。
+         */
+        { n: 18, title: '切換後驗收',   type: 'TASK',      st: 'todo',  s: 39, d: 42, parent: 8,    prog: 0, c: -28 },
       ]
 
       const ids = new Map<number, string>()
@@ -184,6 +193,9 @@ export async function seedDemo(): Promise<boolean> {
         [6, 7, 'FS', 0],        // 到貨後施工
         [7, 9, 'SS', 0],        // 施工與測試同時起跑（等待任務開始，才能開始）
         [9, 10, 'FF', 0],       // 測試與切換同時收尾（等待任務完成，才能完成）
+        // 同時收尾的那兩張，後面接驗收 —— 關聯圖上就會畫成
+        // 「兩張任務 → 同時完成的匯合點 → 一張任務」
+        [10, 18, 'FS', 0],
         [3, 4, 'RELATES', 0],   // 語意關聯，不影響排程
       ]
       for (const [s, t, type, lag] of links) {
