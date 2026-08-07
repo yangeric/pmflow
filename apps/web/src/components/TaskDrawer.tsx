@@ -2,9 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type LinkType, type Task, type TaskDetail, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
-import { Button, Input, Select, Field, Spinner, cx } from './ui'
+import { Button, Input, Select, Field, Spinner, ColorOption, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
+import { useTheme } from '../lib/theme'
 import { T } from '../strings'
 import { typesAllowedFor } from '../lib/hierarchy'
 
@@ -36,6 +37,12 @@ export function TaskDrawer({
   onSeen?: () => void
 }) {
   const qc = useQueryClient()
+  /*
+   * 下拉選項要照他挑的顏色上色，深淺得看現在是淺色還是深色底 ——
+   * readableColor 會把顏色推到讀得到的那一側（見 ui.tsx）。
+   */
+  const { resolved } = useTheme()
+  const dark = resolved === 'dark'
   const { data, isLoading } = useQuery({ queryKey: ['task', taskId], queryFn: () => Api.task(taskId) })
   const [linkError, setLinkError] = useState<string | null>(null)
 
@@ -73,7 +80,7 @@ export function TaskDrawer({
   const isManager = role === 'MANAGER'
   const canEditLinks = isManager || role === 'EDITOR'
   const canEdit = isManager
-    || (canEditLinks && !!user && !!data && data.createdById === user.id)
+    || (canEditLinks && !!user && !!data && (data.createdById === user.id || data.assigneeId === user.id))
 
   // Esc 關閉抽屜。在輸入框裡按 Esc 不關，免得打到一半誤觸把內容弄丟。
   useEffect(() => {
@@ -195,14 +202,14 @@ export function TaskDrawer({
   const dirty = !!data && (Object.keys(draft) as Array<keyof Draft>)
     .some(k => draft[k] !== data[k])
 
+  const isDoneStatus = statuses.some(s => s.key === data?.statusKey && s.category === 'DONE')
+  const isTaskLocked = isDoneStatus && !isManager
+
   /**
-   * 選了「做完了」那一類、但還有對外詢問沒回 —— 保存鈕要變灰並說明原因。
-   * 下拉那邊也已經把那幾個選項灰掉了，這裡是同一條規則的第二道 ——
-   * 既有資料本來就可能停在做完的狀態上，那種情況下拉留著它，
-   * 但只要他動了別的欄位就會走到這裡來。
+   * 選了「做完了」那一類、但還有對外詢問沒回，或者已完成任務被鎖定 —— 保存鈕要變灰。
    */
-  const saveBlocked = openInquiries > 0
-    && statuses.some(s => s.key === form?.statusKey && s.category === 'DONE')
+  const saveBlocked = isTaskLocked || (openInquiries > 0
+    && statuses.some(s => s.key === form?.statusKey && s.category === 'DONE'))
 
   const [targetId, setTargetId] = useState('')
   const [linkType, setLinkType] = useState<LinkType>('FS')
@@ -423,7 +430,9 @@ export function TaskDrawer({
                             onChange={e => edit({ type: e.target.value as TaskDetail['type'] })}
                             className="w-full">
                       {typeChoices.map(t => (
-                        <option key={t.key} value={t.key}>{t.name}</option>
+                        <ColorOption key={t.key} value={t.key} color={t.color} dark={dark}>
+                          {t.name}
+                        </ColorOption>
                       ))}
                     </Select>
                   ) : (
@@ -442,11 +451,11 @@ export function TaskDrawer({
                             onChange={e => edit({ statusKey: e.target.value })}
                             className="w-full">
                       {statuses.map(s => (
-                        <option key={s.key} value={s.key}
-                                disabled={openInquiries > 0 && s.category === 'DONE'
-                                          && s.key !== data.statusKey}>
+                        <ColorOption key={s.key} value={s.key} color={s.color} dark={dark}
+                                     disabled={openInquiries > 0 && s.category === 'DONE'
+                                               && s.key !== data.statusKey}>
                           {s.name}
-                        </option>
+                        </ColorOption>
                       ))}
                     </Select>
                   ) : (
@@ -482,7 +491,9 @@ export function TaskDrawer({
                             onChange={e => edit({ priority: e.target.value as TaskDetail['priority'] })}
                             className="w-full">
                       {priorities.map(p => (
-                        <option key={p.key} value={p.key}>{p.name}</option>
+                        <ColorOption key={p.key} value={p.key} color={p.color} dark={dark}>
+                          {p.name}
+                        </ColorOption>
                       ))}
                     </Select>
                   ) : (

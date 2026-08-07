@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { sql } from '../lib/db.js'
-import { authenticate, requireProjectRole, requireTaskAccess } from '../lib/auth.js'
+import {
+  authenticate, currentDeputyPrincipals, requireProjectRole, requireTaskAccess,
+} from '../lib/auth.js'
 import { rankBetween } from '../lib/rank.js'
 import { rebuildClosure, assertNotDescendant } from '../lib/graph.js'
 import { assertTypeHierarchy } from '../lib/hierarchy.js'
@@ -21,20 +23,41 @@ import { assertNoOpenInquiries } from '../lib/inquiry.js'
  * **但「目前遇到的問題」與發文追蹤的回覆不受這條限制** —— 那兩件事本來就是
  * 「誰遇到誰寫、誰收到回覆誰登錄」，卡在權限上只會讓資訊留在別人的腦袋裡。
  * 那兩條路各自只要求專案成員身分，不走這個函式。
+ *
+ * **代理人也算**：請假的人指定的代理人，在代理期間（＝那筆請假的起訖日）
+ * 就當成請假者本人（見 lib/auth.ts）。所以「開這張任務的人正在請假」時，
+ * 他的代理人改得動這張任務 —— 不然人一請假，他開的那些任務就整批動不了。
+ * 角色那一半已經在 requireProjectRole 裡取過聯集了，這裡只補「是不是關係人」。
  */
 async function assertCanEditTask(
   taskId: string, userId: string, role: string
 ): Promise<void> {
-  if (role === 'MANAGER') return
-  const [row] = await sql<{ taskCreator: string | null; projectCreator: string | null }[]>`
-    SELECT t.created_by AS "taskCreator", p.created_by AS "projectCreator"
-    FROM task t JOIN project p ON p.id = t.project_id
+  const [row] = await sql<{
+    taskCreator: string | null; assigneeId: string | null; projectCreator: string | null; statusCategory: string | null
+  }[]>`
+    SELECT t.created_by AS "taskCreator", t.assignee_id AS "assigneeId", p.created_by AS "projectCreator", s.category AS "statusCategory"
+    FROM task t
+    JOIN project p ON p.id = t.project_id
+    LEFT JOIN task_status s ON s.project_id = t.project_id AND s.key = t.status_key
     WHERE t.id = ${taskId}`
-  if (row?.taskCreator === userId || row?.projectCreator === userId) return
-  throw forbidden(
-    '只有開這張任務的人與專案管理者可以修改任務。'
-    + '你仍然可以填寫「目前遇到的問題」、登錄發文追蹤的回覆，以及留言。'
-  )
+  if (!row) throw notFound('找不到任務')
+
+  // 已完成的任務：鎖定，只有專案管理者 (MANAGER / 擁有者) 可以改
+  if (row.statusCategory === 'DONE' && role !== 'MANAGER') {
+    throw forbidden('已完成的任務已鎖定，只有專案管理者可以修改')
+  }
+
+  if (role === 'MANAGER') return
+  if (row.taskCreator === userId || row.assigneeId === userId || row.projectCreator === userId) return
+
+  const principals = await currentDeputyPrincipals(userId)
+  if (principals.length && (
+    (row.taskCreator && principals.includes(row.taskCreator)) ||
+    (row.assigneeId && principals.includes(row.assigneeId)) ||
+    (row.projectCreator && principals.includes(row.projectCreator))
+  )) return
+
+  throw forbidden('只有開單人、負責人、專案管理者及其代理人可以修改任務')
 }
 
 const TASK_COLUMNS = sql`
