@@ -572,6 +572,27 @@ export default async function parameterRoutes(app: FastifyInstance) {
             + '請先把那些任務搬到合適的上層，或改成別的種類，再回來刪。')
         }
       }
+
+      // 刪除狀態時整批轉移，不能把帶著未回覆詢問的任務轉到「做完」狀態 (Ref: CR-044)
+      if (kind === 'status') {
+        const [targetStatus] = await sql<{ category: string; name: string }[]>`
+          SELECT category, name FROM task_status
+          WHERE project_id = ${req.params.id} AND key = ${targetKey}`
+        if (targetStatus?.category === 'DONE') {
+          const [bad] = await sql<{ count: number }[]>`
+            SELECT count(*)::int AS count
+            FROM task
+            WHERE project_id = ${req.params.id}
+              AND deleted_at IS NULL
+              AND status_key = ${self.key}
+              AND inquiry_state IN ('AWAITING', 'PARTIAL', 'OVERDUE')`
+          if (bad && bad.count > 0) {
+            throw badRequest(
+              `有 ${bad.count} 張任務含有未回覆的對外詢問，無法整批改為「${targetStatus.name}」`,
+              '還有對外詢問未回覆的任務不能搬到「做完」那一類的狀態。請先處理完成對外詢問，或將任務改至其他狀態後再刪除。')
+          }
+        }
+      }
     }
 
     await sql.begin(async tx => {

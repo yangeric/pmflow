@@ -67,8 +67,6 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 已知的小債
 
-- `routes/parameters.ts` 刪除任務種類時的「整批搬到另一種」已經擋了階層，
-  但**沒有擋「還有對外詢問沒回」**那條規則（那條只在改狀態時擋）。
 - 熱圖在工時模式下示範資料幾乎整片紅；熱圖左邊人名欄橫捲時會捲出畫面。
 - 四種排程依賴的長說明在關聯圖上沒有地方顯示（說明列去重的副作用）。
 
