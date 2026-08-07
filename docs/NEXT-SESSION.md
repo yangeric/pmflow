@@ -25,6 +25,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 還沒動工（他交代過、還沒做）
 
+- **對外詢問回覆日單行佈局與 +幾天 選項 (`CR-047`)**：完成將 `InquiryTable.tsx` 的期望回覆日重構為不換行單行佈局，`+1 天` / `+3 天` 等選擇連動即時更新日期。
 - **清理未追蹤檔 (`CR-042`)**：已安全移除本地臨時筆記檔案 `切換後驗收`，`git status` 100% 乾淨。
 - **全部功能打包推送 main (`CR-041`)**：完成將 OAuth 登入、請假代理人、成員頁面板等共 37 個異動檔案 Commit 並 Push 至 main。
 - **發版批次檔 release-0.2.2.bat (`CR-040`)**：完成產出 `release-0.2.2.bat`，可直接雙擊發版構建 `v0.2.2`。

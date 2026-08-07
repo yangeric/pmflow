@@ -326,15 +326,15 @@ function useDueDate(base: string, init: () => { preset: DuePresetKey; date: stri
 }
 
 function DueDateField({ state }: { state: ReturnType<typeof useDueDate> }) {
+  // Ref: CR-047
   return (
-    <div className="space-y-1">
-      {/* 原生 select 的底色不吃 Tailwind 的預設，深色底下得自己指定，
-          不然是白底黑字的一塊 */}
+    <div className="flex items-center gap-1.5 whitespace-nowrap">
+      {/* 原生 select 的底色不吃 Tailwind 的預設，深色底下得自己指定 */}
       <select
         value={state.preset}
         onChange={e => state.choose(e.target.value as DuePresetKey)}
         aria-label={T.inquiry.due.label}
-        className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs
+        className="shrink-0 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs
                    focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40
                    dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
       >
@@ -342,17 +342,14 @@ function DueDateField({ state }: { state: ReturnType<typeof useDueDate> }) {
           <option key={p.key} value={p.key}>{T.inquiry.due.preset[p.key]}</option>
         ))}
       </select>
-      {/* color-scheme 決定日期選擇器那顆小日曆的長相，只給背景色它還是白的 */}
-      <Input type="date" className="dark:[color-scheme:dark]"
+      {/* color-scheme 決定日期選擇器那顆小日曆的長相 */}
+      <Input type="date" className="w-32 shrink-0 py-1 text-xs dark:[color-scheme:dark]"
              value={state.date} onChange={e => state.setDate(e.target.value)} />
-      <span className="block text-[10px] text-slate-400 dark:text-slate-400">
-        {state.date
-          ? T.inquiry.due.resolved(
-              state.date.replaceAll('-', '/'),
-              WEEKDAY_LABELS[parseYmd(state.date).getDay()],
-            )
-          : T.inquiry.due.noDeadline}
-      </span>
+      {state.date && (
+        <span className="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">
+          (週{WEEKDAY_LABELS[parseYmd(state.date).getDay()]})
+        </span>
+      )}
     </div>
   )
 }
@@ -373,13 +370,11 @@ function DueDateEditor({ inquiry, onSubmit, onCancel, busy }: {
   }))
 
   return (
-    <div className="w-48 space-y-1">
+    <div className="flex items-center gap-1.5 whitespace-nowrap">
       <DueDateField state={due} />
-      <div className="flex gap-1">
-        <Button variant="primary" className="px-2 py-1 text-xs" disabled={busy}
-                onClick={() => onSubmit(due.date || null)}>{T.common.save}</Button>
-        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCancel}>{T.common.cancel}</Button>
-      </div>
+      <Button variant="primary" className="px-2 py-1 text-xs" disabled={busy}
+              onClick={() => onSubmit(due.date || null)}>{T.common.save}</Button>
+      <Button variant="ghost" className="px-2 py-1 text-xs" onClick={onCancel}>{T.common.cancel}</Button>
     </div>
   )
 }
