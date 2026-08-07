@@ -935,7 +935,7 @@ function ProgressField({ value, onCommit }: {
         * 跟 `w-16` 是同一個 specificity，誰贏要看 CSS 的順序 ——
         * 實際上是 `w-full` 贏，數字框會把拖拉條整條擠掉。
         */}
-      <div className="w-16 shrink-0">
+      <div className="flex w-20 shrink-0 items-center gap-1">
         <Input
           type="number" min={0} max={100} value={draft}
           aria-label={T.task.drawer.fieldProgress}
@@ -943,6 +943,7 @@ function ProgressField({ value, onCommit }: {
           onBlur={e => commit(Number(e.target.value))}
           className="text-right tabular-nums"
         />
+        <span className="text-xs text-slate-500 dark:text-slate-400">%</span>
       </div>
     </div>
   )

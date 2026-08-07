@@ -25,6 +25,7 @@ docker compose -f docker-compose.dev.yml -f docker-compose.hmr.yml up -d
 
 ## 還沒動工（他交代過、還沒做）
 
+- **進度輸入框 % 符號顯示 (`CR-039`)**：於 `TaskDrawer.tsx` 的進度輸入框右側加上 `%` 標籤。
 - **事前分析檔名經同意才動手 (`CR-038`)**：將「先查 CODEMAP 分析改動檔案，列出清單等使用者同意才動手」寫入 `AGENTS.md`。
 - **已完成任務鎖定僅管理者可改 (`CR-037`)**：將「已完成任務僅專案建立者(管理者)可修改」之正式條文寫入 `AGENTS.md`。
 - **清單視角功能規範 (`CR-036`)**：將 `List.tsx` 完整功能與規則寫入 `D:\NewProject\AGENTS.md` 長期規則與 `CODEMAP.md` 中。
