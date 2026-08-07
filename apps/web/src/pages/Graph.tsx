@@ -2013,12 +2013,20 @@ function LegendBar() {
           onMouseLeave={unhover}>{G.legend.operation}</span>
       </div>
 
-      {/* 兩排都可以左右滑：圖示只會愈加愈多，硬要塞進一排就會折行把圖擠掉 */}
+      {/* 說明列加入四種排程依賴說明 (Ref: CR-046) */}
       <div className="min-w-0 flex-1">
-      {/*
-        * 線不列在這裡：每條邊上本來就掛著中文短句（完成後開始、相關…），
-        * 說明列再抄一次等於同一件事講兩遍。留下來的只有「猜不出意思的形狀」。
-        */}
+      <LegendRowStrip label={G.legend.rowScheduling}>
+        {(['FS', 'SS', 'FF', 'SF'] as const).map(type => (
+          <LegendChip key={type}
+                      onMouseEnter={hover(G.linkChip[type], G.help.scheduling[type])}
+                      onMouseLeave={unhover}>
+            <span className="mr-1 inline-block h-0.5 w-3 rounded-full"
+                  style={{ backgroundColor: SCHEDULING_COLOR[type] }} />
+            {G.linkChip[type]}
+          </LegendChip>
+        ))}
+      </LegendRowStrip>
+
       <LegendRowStrip label={G.legend.rowShape}>
         {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
         <button type="button"
