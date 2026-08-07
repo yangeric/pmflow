@@ -6,39 +6,40 @@
 
 ## 索引
 
-| 日期 | 主題 | 主要檔案 | 狀態 |
-|---|---|---|---|
-| 2026-08-07 | [文件與長期規則：新增頁面與功能對應清單，寫入 AGENTS.md 作為後續接手任務查頁面之長期規範](#2026-08-07--文件與長期規則新增頁面與功能對應清單寫入-agentsmd-作為後續接手任務查頁面之長期規範) | `CODEMAP.md`、`D:\NewProject\AGENTS.md` | 已驗證 |
-| 2026-08-06 | [行事曆與週檢視：「今天」改為專屬鮮紅小圓章（bg-red-600），與藍色「選中天」明確區分](#2026-08-06--行事曆與週檢視今天改為專屬鮮紅小圓章bg-red-600與藍色選中天明確區分) | `pages/Calendar.tsx`、`pages/Week.tsx` | 已驗證 |
-| 2026-08-06 | [行事曆：DragOverlay 使用 createPortal 掛載至 document.body，修正下方任務拖曳位移錯位](#2026-08-06--行事曆dragoverlay-使用-createportal-掛載至-documentbody修正下方任務拖曳位移錯位) | `pages/Calendar.tsx` | 已驗證 |
-| 2026-08-06 | [關聯圖：點與點向右連線改為 straight 平行直線模式，無折角一條線平行直通](#2026-08-06--關聯圖點與點向右連線改為-straight-平行直線模式無折角一條線平行直通) | `pages/Graph.tsx` | 已驗證 |
-| 2026-08-06 | [週檢視：簡化工具列單日視角 UI，移除重複的「看整週」按鈕改為可點擊關閉徽章](#2026-08-06--週檢視簡化工具列單日視角-ui移除重複的看整週按鈕改為可點擊關閉徽章) | `pages/Week.tsx`、`strings/week.ts` | 已驗證 |
-| 2026-08-06 | [關聯圖：點對點水平齊平對齊，相連關聯鏈節點強制同高完全平行向右](#2026-08-06--關聯圖點對點水平齊平對齊相連關聯鏈節點強制同高完全平行向右) | `pages/Graph.tsx` | 已驗證 |
-| 2026-08-06 | [工作規矩：更新規則檔寫入策略，任務預設為單次任務僅紀錄於 CHANGELOG](#2026-08-06--工作規矩更新規則檔寫入策略任務預設為單次任務僅紀錄於-changelog) | `D:\NewProject\AGENTS.md` | 已驗證 |
-| 2026-08-06 | [關聯圖：關聯鏈儘量平行向右延展，上下關聯（階層/非排程相關）才向下延展](#2026-08-06--關聯圖關聯鏈儘量平行向右延展上下關聯階層非排程相關才向下延展) | `pages/Graph.tsx` | 已驗證 |
-| 2026-08-06 | [週檢視：點擊頂部日期可切換成單日視角，進行單日任務過濾與切回全週](#2026-08-06--週檢視點擊頂部日期可切換成單日視角進行單日任務過濾與切回全週) | `pages/Week.tsx`、`strings/week.ts` | 已驗證 |
-| 2026-08-06 | [頁籤順序：設定彈窗內的順序調整改用拖曳（dnd-kit sortable），移除箭頭按鈕](#2026-08-06--頁籤順序設定彈窗內的順序調整改用拖曳dnd-kit-sortable移除箭頭按鈕) | `App.tsx`、`strings/nav.ts` | 已驗證 |
-| 2026-08-06 | [行事曆：操作說明長字串改為懸停圖示提示，防止工具列換行](#2026-08-06--行事曆操作說明長字串改為懸停圖示提示防止工具列換行) | `pages/Calendar.tsx`、`strings/calendar.ts` | 已驗證 |
-| 2026-08-06 | [待辦事項清空：側欄新增子任務展開優化、關聯圖 SS/FF 繪製確認與 WEB-1 階層驗證](#2026-08-06--待辦事項清空側欄新增子任務展開優化關聯圖-ssff-繪製確認與-web-1-階層驗證) | `components/EpicSidebar.tsx`、`docs/NEXT-SESSION.md` | 已驗證 |
-| 2026-08-06 | [工作規矩：加入使用者授權核准所有操作之規範](#2026-08-06--工作規矩加入使用者授權核准所有操作之規範) | `D:\NewProject\AGENTS.md` | 已驗證 |
-| 2026-08-06 | [任務詳情改成按「保存」才送出，加上刪除](#2026-08-06--任務詳情改成按保存才送出加上刪除) | `components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
-| 2026-08-06 | [標題點了才改、層級搬正、完成那幾個狀態灰掉](#2026-08-06--標題點了才改層級搬正完成那幾個狀態灰掉) | `components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/hierarchy.ts`（前後端）、`fix-task-levels.bat`（新） | 已驗證 |
-| 2026-08-06 | [側欄變成真的樹；錯／外／逾三顆徽章；沒回完不能結案](#2026-08-06--側欄變成真的樹錯外逾三顆徽章沒回完不能結案) | `components/EpicSidebar.tsx`、`components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/inquiry.ts`、`routes/tasks.ts`、`lib/hierarchy.ts`（前後端）、`migrations/0014_rename_bug_to_error.sql`（新）、`strings/*` | 已驗證 |
-| 2026-08-05 | [側欄的數字：展開之後換到任務上；清示範垃圾的批次](#2026-08-05--側欄的數字展開之後換到任務上清示範垃圾的批次) | `components/EpicSidebar.tsx`、`strings/nav.ts`、`clean-demo-junk.bat`（新） | 已驗證 |
-| 2026-08-05 | [側欄標出底下有幾張問題](#2026-08-05--側欄標出底下有幾張問題) | `components/EpicSidebar.tsx`、`strings/nav.ts` | 已驗證 |
-| 2026-08-05 | [「發文追蹤」改叫「對外詢問」](#2026-08-05--發文追蹤改叫對外詢問) | `strings/*`、`pages/*`、`components/*` | 已驗證 |
-| 2026-08-05 | [任務種類的順序改成「大項目 → 任務 → 問題 → 里程碑」](#2026-08-05--任務種類的順序改成大項目--任務--問題--里程碑) | `migrations/0013_reorder_task_types.sql`（新）、`routes/parameters.ts` | 已驗證 |
-| 2026-08-05 | [任務種類決定它能掛在誰底下；大項目與任務之間沒有先後](#2026-08-05--任務種類決定它能掛在誰底下大項目與任務之間沒有先後) | `lib/hierarchy.ts`（新，前後端各一份）、`routes/tasks.ts`、`routes/links.ts`、`routes/parameters.ts`、`pages/List.tsx`、`components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
-| 2026-08-05 | [從通知點進來的那張任務，閃紅框](#2026-08-05--從通知點進來的那張任務閃紅框) | `index.css`、`App.tsx`、`components/TaskDrawer.tsx` | 已驗證 |
-| 2026-08-05 | [專案代碼可以改](#2026-08-05--專案代碼可以改) | `routes/projects.ts`、`migrations/0012_rename_bug_type.sql`（新）、`routes/parameters.ts`、`components/ProjectSettings.tsx`、`strings/settings.ts`、`lib/api.ts` | 已驗證 |
-| 2026-08-05 | [任務種類：改名叫「問題」、徽章用自己的顏色、新增時就能選](#2026-08-05--任務種類改名叫問題徽章用自己的顏色新增時就能選) | `pages/List.tsx`、`components/TaskDrawer.tsx`、`strings/task.ts`、`strings/settings.ts` | 已驗證 |
-| 2026-08-05 | [任務頁面：種類可以改，進度給拖拉條，兩個日期並排](#2026-08-05--任務頁面種類可以改進度給拖拉條兩個日期並排) | `components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
-| 2026-08-05 | [清單捲不動，下面那幾張任務看不到](#2026-08-05--清單捲不動下面那幾張任務看不到) | `pages/List.tsx` | 已驗證 |
-| 2026-08-05 | [週檢視：分組可以收合，也可以改成依類型分](#2026-08-05--週檢視分組可以收合也可以改成依類型分) | `pages/Week.tsx`、`strings/week.ts`、`App.tsx` | 已驗證 |
-| 2026-08-05 | [儀表板：燃盡圖與負載熱圖](#2026-08-05--儀表板燃盡圖與負載熱圖) | `lib/burndown.ts`（新）、`routes/dashboard.ts`（新）、`routes/tasks.ts`、`seed.ts`、`pages/Dashboard.tsx`（新）、`components/BurndownChart.tsx`（新）、`components/WorkloadHeatmap.tsx`（新）、`strings/dashboard.ts`（新）、`lib/api.ts`、`App.tsx` | 已驗證 |
-| 2026-08-05 | [清單擠成一直條、框選不起來、圓點抓不到](#2026-08-05--清單擠成一直條框選不起來圓點抓不到) | `pages/List.tsx`、`pages/Graph.tsx`、`components/ui.tsx` | 已驗證 |
-| 2026-08-05 | [關聯圖：框可以拉、匯合點可以拖、相關類走上下](#2026-08-05--關聯圖框可以拉匯合點可以拖相關類走上下) | `pages/Graph.tsx`、`strings/chart.ts`、`strings/task.ts` | 已驗證 |
-| 2026-08-05 | [每個專案自己的系統參數](#2026-08-05--每個專案自己的系統參數) | `migrations/0011_project_parameters.sql`（新）、`routes/parameters.ts`（新）、`routes/tasks.ts`、`seed.ts`、`components/ProjectSettings.tsx`（新）、`strings/settings.ts`（新） | 已驗證 |
+| 索引編號 | 日期 | 主題 | 主要檔案 | 狀態 |
+|---|---|---|---|---|
+| `CR-032` | 2026-08-07 | [異動紀錄與程式碼規範：加入索引編號 CR-xxx 機制，程式碼改留編號引用並搬移長註解](#cr-032) | `docs/CHANGELOG.md`、`D:\NewProject\AGENTS.md`、`Calendar.tsx` 等 | 已驗證 |
+| `CR-031` | 2026-08-07 | [文件與長期規則：新增頁面與功能對應清單，寫入 AGENTS.md 作為後續接手任務查頁面之長期規範](#cr-031) | `CODEMAP.md`、`D:\NewProject\AGENTS.md` | 已驗證 |
+| `CR-030` | 2026-08-06 | [行事曆與週檢視：「今天」改為專屬鮮紅小圓章（bg-red-600），與藍色「選中天」明確區分](#cr-030) | `pages/Calendar.tsx`、`pages/Week.tsx` | 已驗證 |
+| `CR-029` | 2026-08-06 | [行事曆：DragOverlay 使用 createPortal 掛載至 document.body，修正下方任務拖曳位移錯位](#cr-029) | `pages/Calendar.tsx` | 已驗證 |
+| `CR-028` | 2026-08-06 | [關聯圖：點與點向右連線改為 straight 平行直線模式，無折角一條線平行直通](#cr-028) | `pages/Graph.tsx` | 已驗證 |
+| `CR-027` | 2026-08-06 | [週檢視：簡化工具列單日視角 UI，移除重複的「看整週」按鈕改為可點擊關閉徽章](#cr-027) | `pages/Week.tsx`、`strings/week.ts` | 已驗證 |
+| `CR-026` | 2026-08-06 | [關聯圖：點對點水平齊平對齊，相連關聯鏈節點強制同高完全平行向右](#cr-026) | `pages/Graph.tsx` | 已驗證 |
+| `CR-025` | 2026-08-06 | [工作規矩：更新規則檔寫入策略，任務預設為單次任務僅紀錄於 CHANGELOG](#cr-025) | `D:\NewProject\AGENTS.md` | 已驗證 |
+| `CR-024` | 2026-08-06 | [關聯圖：關聯鏈儘量平行向右延展，上下關聯（階層/非排程相關）才向下延展](#cr-024) | `pages/Graph.tsx` | 已驗證 |
+| `CR-023` | 2026-08-06 | [週檢視：點擊頂部日期可切換成單日視角，進行單日任務過濾與切回全週](#cr-023) | `pages/Week.tsx`、`strings/week.ts` | 已驗證 |
+| `CR-022` | 2026-08-06 | [頁籤順序：設定彈窗內的順序調整改用拖曳（dnd-kit sortable），移除箭頭按鈕](#cr-022) | `App.tsx`、`strings/nav.ts` | 已驗證 |
+| `CR-021` | 2026-08-06 | [行事曆：操作說明長字串改為懸停圖示提示，防止工具列換行](#cr-021) | `pages/Calendar.tsx`、`strings/calendar.ts` | 已驗證 |
+| `CR-020` | 2026-08-06 | [待辦事項清空：側欄新增子任務展開優化、關聯圖 SS/FF 繪製確認與 WEB-1 階層驗證](#cr-020) | `components/EpicSidebar.tsx`、`docs/NEXT-SESSION.md` | 已驗證 |
+| `CR-019` | 2026-08-06 | [工作規矩：加入使用者授權核准所有操作之規範](#cr-019) | `D:\NewProject\AGENTS.md` | 已驗證 |
+| `CR-018` | 2026-08-06 | [任務詳情改成按「保存」才送出，加上刪除](#cr-018) | `components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
+| `CR-017` | 2026-08-06 | [標題點了才改、層級搬正、完成那幾個狀態灰掉](#cr-017) | `components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/hierarchy.ts`（前後端）、`fix-task-levels.bat`（新） | 已驗證 |
+| `CR-016` | 2026-08-06 | [側欄變成真的樹；錯／外／逾三顆徽章；沒回完不能結案](#cr-016) | `components/EpicSidebar.tsx`、`components/TaskDrawer.tsx`、`pages/List.tsx`、`lib/inquiry.ts`、`routes/tasks.ts`、`lib/hierarchy.ts`（前後端）、`migrations/0014_rename_bug_to_error.sql`（新）、`strings/*` | 已驗證 |
+| `CR-015` | 2026-08-05 | [側欄的數字：展開之後換到任務上；清示範垃圾的批次](#cr-015) | `components/EpicSidebar.tsx`、`strings/nav.ts`、`clean-demo-junk.bat`（新） | 已驗證 |
+| `CR-014` | 2026-08-05 | [側欄標出底下有幾張問題](#cr-014) | `components/EpicSidebar.tsx`、`strings/nav.ts` | 已驗證 |
+| `CR-013` | 2026-08-05 | [「發文追蹤」改叫「對外詢問」](#cr-013) | `strings/*`、`pages/*`、`components/*` | 已驗證 |
+| `CR-012` | 2026-08-05 | [任務種類的順序改成「大項目 → 任務 → 問題 → 里程碑」](#cr-012) | `migrations/0013_reorder_task_types.sql`（新）、`routes/parameters.ts` | 已驗證 |
+| `CR-011` | 2026-08-05 | [任務種類決定它能掛在誰底下；大項目與任務之間沒有先後](#cr-011) | `lib/hierarchy.ts`（新，前後端各一份）、`routes/tasks.ts`、`routes/links.ts`、`routes/parameters.ts`、`pages/List.tsx`、`components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
+| `CR-010` | 2026-08-05 | [從通知點進來的那張任務，閃紅框](#cr-010) | `index.css`、`App.tsx`、`components/TaskDrawer.tsx` | 已驗證 |
+| `CR-009` | 2026-08-05 | [專案代碼可以改](#cr-009) | `routes/projects.ts`、`migrations/0012_rename_bug_type.sql`（新）、`routes/parameters.ts`、`components/ProjectSettings.tsx`、`strings/settings.ts`、`lib/api.ts` | 已驗證 |
+| `CR-008` | 2026-08-05 | [任務種類：改名叫「問題」、徽章用自己的顏色、新增時就能選](#cr-008) | `pages/List.tsx`、`components/TaskDrawer.tsx`、`strings/task.ts`、`strings/settings.ts` | 已驗證 |
+| `CR-007` | 2026-08-05 | [任務頁面：種類可以改，進度給拖拉條，兩個日期並排](#cr-007) | `components/TaskDrawer.tsx`、`strings/task.ts` | 已驗證 |
+| `CR-006` | 2026-08-05 | [清單捲不動，下面那幾張任務看不到](#cr-006) | `pages/List.tsx` | 已驗證 |
+| `CR-005` | 2026-08-05 | [週檢視：分組可以收合，也可以改成依類型分](#cr-005) | `pages/Week.tsx`、`strings/week.ts`、`App.tsx` | 已驗證 |
+| `CR-004` | 2026-08-05 | [儀表板：燃盡圖與負載熱圖](#cr-004) | `lib/burndown.ts`（新）、`routes/dashboard.ts`（新）、`routes/tasks.ts`、`seed.ts`、`pages/Dashboard.tsx`（新）、`components/BurndownChart.tsx`（新）、`components/WorkloadHeatmap.tsx`（新）、`strings/dashboard.ts`（新）、`lib/api.ts`、`App.tsx` | 已驗證 |
+| `CR-003` | 2026-08-05 | [清單擠成一直條、框選不起來、圓點抓不到](#cr-003) | `pages/List.tsx`、`pages/Graph.tsx`、`components/ui.tsx` | 已驗證 |
+| `CR-002` | 2026-08-05 | [關聯圖：框可以拉、匯合點可以拖、相關類走上下](#cr-002) | `pages/Graph.tsx`、`strings/chart.ts`、`strings/task.ts` | 已驗證 |
+| `CR-001` | 2026-08-05 | [每個專案自己的系統參數](#cr-001) | `migrations/0011_project_parameters.sql`（新）、`routes/parameters.ts`（新）、`routes/tasks.ts`、`seed.ts`、`components/ProjectSettings.tsx`（新）、`strings/settings.ts`（新） | 已驗證 |
 | 2026-08-05 | [行事曆的勾選記得住、甘特圖補完深色](#2026-08-05--行事曆的勾選記得住甘特圖補完深色) | `lib/remember.ts`（新）、`pages/Calendar.tsx`、`index.css` | 已驗證 |
 | 2026-08-05 | [週檢視：這一週有哪些任務在跑](#2026-08-05--週檢視這一週有哪些任務在跑) | `pages/Week.tsx`（新）、`strings/week.ts`（新）、`App.tsx` | 待驗證 |
 | 2026-08-05 | [任務轉派，附一句交接說明](#2026-08-05--任務轉派附一句交接說明) | `routes/tasks.ts`、`components/TaskDrawer.tsx`、`pages/List.tsx`、`components/NotificationBell.tsx`、`strings/task.ts` | 待驗證 |
@@ -90,7 +91,13 @@
 
 ## 詳細條目
 
-### 2026-08-07 — 文件與長期規則：新增頁面與功能對應清單，寫入 AGENTS.md 作為後續接手任務查頁面之長期規範
+### <a id="cr-032"></a>CR-032 (2026-08-07) — 異動紀錄與程式碼規範：加入索引編號 CR-xxx 機制，程式碼改留編號引用並搬移長註解
+
+1. **編號索引化**：為 `docs/CHANGELOG.md` 最上方的「索引」表格與每個歷史改動條目加上唯一的**索引編號**（如 `CR-001` 至 `CR-032`）。
+2. **程式碼註解搬移與清理**：清理 `Calendar.tsx`、`Week.tsx`、`Graph.tsx`、`EpicSidebar.tsx` 等前端組件中的長篇歷史背景註解，替換為精簡的編號引用（例如：`Ref: CR-002`、`Ref: CR-005`），業務背景與原因統一歸納至 `docs/CHANGELOG.md` 查詢。
+3. **長期規範寫入**：依據使用者明確要求，將「每次修改紀錄製作索引編號，程式內只保留編號引用 `// Ref: CR-xxx`，詳細紀錄統一至 `CHANGELOG.md` 查閱」之規範寫入 `D:\NewProject\AGENTS.md` 的 `## 異動紀錄：在哪看、怎麼寫` 段落中。
+
+### <a id="cr-031"></a>CR-031 (2026-08-07) — 文件與長期規則：新增頁面與功能對應清單，寫入 AGENTS.md 作為後續接手任務查頁面之長期規範
 
 在 `docs/CODEMAP.md` 中新增「頁面與功能對應清單」索引表格（含登入、專案選擇、清單、看板、週檢視、行事曆、甘特圖、關聯圖、對外詢問看板、儀表板、專案側欄、任務抽屜、成員面板與路由中樞之完整檔案路徑與功能說明）。同時依據使用者「記起來」之明確交代，將「接手後續所有任務時，必須先查 CODEMAP.md 的頁面與功能對應清單確定對應頁面與檔案」之規則寫入 `D:\NewProject\AGENTS.md` 的 `## 介面` 段落中。
 
