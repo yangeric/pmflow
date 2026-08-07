@@ -210,6 +210,7 @@ export const task = {
   board: {
     overdueCount: (count: number) => `${count} 逾期`,
     dropHere: '拖曳卡片到這裡',
+    moveFailed: '移動任務失敗',
   },
 
   /**

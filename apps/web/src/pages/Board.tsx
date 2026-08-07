@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Api, type Task, type TaskStatus } from '../lib/api'
+import { Api, ApiError, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, cx } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { T } from '../strings'
@@ -30,6 +30,7 @@ export default function Board({
 }) {
   const qc = useQueryClient()
   const [dragging, setDragging] = useState<Task | null>(null)
+  const [error, setError] = useState<string | null>(null) // Ref: CR-043
 
   /*
    * 拖一張卡片就是改它的狀態，走的是 POST /tasks/:id/move ——
@@ -85,11 +86,16 @@ export default function Board({
       })
       return { prev }
     },
-    onError: (_e, _v, ctx) => { if (ctx?.prev) qc.setQueryData(['tasks', projectId], ctx.prev) },
+    onError: (e: unknown, _v, ctx) => { // Ref: CR-043
+      if (ctx?.prev) qc.setQueryData(['tasks', projectId], ctx.prev)
+      const msg = e instanceof ApiError ? (e.detail || e.title) : String((e as Error)?.message || T.task.board.moveFailed)
+      setError(msg)
+    },
     onSettled: () => qc.invalidateQueries({ queryKey: ['tasks', projectId] }),
   })
 
   function onDragStart(e: DragStartEvent) {
+    setError(null)
     setDragging(tasks.find(t => t.id === e.active.id) ?? null)
   }
 
@@ -123,19 +129,27 @@ export default function Board({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners}
-                onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="flex h-full gap-3 overflow-x-auto p-4">
-        {columns.map(col => (
-          <Column key={col.key} column={col} onOpen={onOpen} canDrag={canDrag}
-                  topPriority={topPriority} />
-        ))}
-      </div>
-      <DragOverlay>
-        {dragging && <Card task={dragging} overlay draggable onOpen={() => {}}
-                             topPriority={topPriority} />}
-      </DragOverlay>
-    </DndContext>
+    <div className="flex h-full flex-col">
+      {error && (
+        <div className="mx-4 mt-3 flex items-center justify-between rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 ring-1 ring-red-200 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-2 font-bold hover:opacity-80">✕</button>
+        </div>
+      )}
+      <DndContext sensors={sensors} collisionDetection={closestCorners}
+                  onDragStart={onDragStart} onDragEnd={onDragEnd}>
+        <div className="flex flex-1 gap-3 overflow-x-auto p-4">
+          {columns.map(col => (
+            <Column key={col.key} column={col} onOpen={onOpen} canDrag={canDrag}
+                    topPriority={topPriority} />
+          ))}
+        </div>
+        <DragOverlay>
+          {dragging && <Card task={dragging} overlay draggable onOpen={() => {}}
+                               topPriority={topPriority} />}
+        </DragOverlay>
+      </DndContext>
+    </div>
   )
 }
 
