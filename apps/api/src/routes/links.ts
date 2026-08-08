@@ -33,28 +33,19 @@ export default async function linkRoutes(app: FastifyInstance) {
     }
 
     const link = await sql.begin(async tx => {
-      // 排程類才需要擋環；語意類（RELATES / BLOCKS…）不影響日期，成環無妨
+      // 驗證類型邊界：大項目只能與大項目連結，不能與一般任務連結
+      const kinds = await tx<{ id: string; type: string }[]>`
+        SELECT id, type FROM task WHERE id = ANY(${[sourceId, targetId]}::uuid[])`
+      const epics = kinds.filter(k => k.type === 'EPIC').length
+      if (epics === 1) {
+        throw badRequest(
+          '大項目只能與大項目建立關聯線。',
+          '大項目不能與一般任務建立關聯。請在兩個大項目之間，或兩張一般任務之間建立關聯。'
+        )
+      }
+
+      // 排程類才需要擋環與祖先後代衝突；語意類（RELATES / BLOCKS…）不影響日期，成環無妨
       if (isScheduling(b.linkType)) {
-        /*
-         * 大項目與任務之間沒有先後 —— 它們是包含關係，不是前後關係。
-         * 大項目的日期本來就是底下那些任務彙總出來的，再給它拉一條排程依賴，
-         * 等於叫排程引擎同時聽兩個互相矛盾的來源。
-         *
-         * 大項目對大項目可以（那是兩個階段的先後），任務對任務可以。
-         * 只有「一邊是大項目、另一邊不是」要擋。語意類不受這條限制 ——
-         * 「這個大項目跟那張任務相關」是一句成立的話，它只是不推動日期。
-         */
-        const kinds = await tx<{ id: string; type: string }[]>`
-          SELECT id, type FROM task WHERE id = ANY(${[sourceId, targetId]}::uuid[])`
-        const epics = kinds.filter(k => k.type === 'EPIC').length
-        if (epics === 1) {
-          throw badRequest(
-            '大項目與任務之間不能建立排程依賴。',
-            '大項目是「包含」底下那些任務，不是排在它們前面或後面；'
-            + '它的日期已經由子任務彙總出來了。'
-            + '要表達順序，請在兩個大項目之間、或兩張任務之間建立依賴；'
-            + '只是想標示有關係的話，請改用「相關」。')
-        }
 
         // 先驗祖先／後代關係。順序很重要：階層邊本身也算在環裡，
         // 若先跑 assertNoCycle，使用者只會看到「會造成循環依賴」這種

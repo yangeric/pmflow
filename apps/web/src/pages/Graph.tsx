@@ -1922,19 +1922,48 @@ function GraphCanvas({
     onSuccess: () => { setError(null); invalidate() },
   })
 
+  const taskTypeMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const t of tasks) {
+      map.set(t.id, t.type)
+    }
+    if (graph?.nodes) {
+      for (const n of graph.nodes) {
+        map.set(n.id, n.type)
+      }
+    }
+    return map
+  }, [tasks, graph?.nodes])
+
   /**
-   * 簡化拉線體驗：任意接點皆可自由拉線，完全不設限，拉線即完成連線。
+   * 建立關聯規則：大項目（EPIC）只能與大項目連結，不能與一般任務連結。
    */
   const isValidConnection = useCallback((c: Connection | Edge) => {
-    return !!c.source && !!c.target && c.source !== c.target
-  }, [])
+    if (!c.source || !c.target || c.source === c.target) return false
+    const sourceType = taskTypeMap.get(c.source)
+    const targetType = taskTypeMap.get(c.target)
+    if (sourceType === 'EPIC' || targetType === 'EPIC') {
+      return sourceType === 'EPIC' && targetType === 'EPIC'
+    }
+    return true
+  }, [taskTypeMap])
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
+    const sourceType = taskTypeMap.get(c.source)
+    const targetType = taskTypeMap.get(c.target)
+
+    if (sourceType === 'EPIC' || targetType === 'EPIC') {
+      if (sourceType !== 'EPIC' || targetType !== 'EPIC') {
+        setError('大項目只能與大項目建立關聯線！')
+        return
+      }
+    }
+
     const viaRelation = c.sourceHandle === H_REL_OUT || c.targetHandle === H_REL_IN
     const linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
     addLink.mutate({ source: c.source, target: c.target, linkType })
-  }, [addLink])
+  }, [addLink, taskTypeMap])
 
   const parentOfMap = useMemo(() => new Map(shownNodes.map(n => [n.id, n.parentId ?? null])), [shownNodes])
 
