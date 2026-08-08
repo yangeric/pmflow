@@ -21,30 +21,52 @@ import { useTheme } from '../lib/theme'
 function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: string; targetId: string; linkType: string }> = []): Task[] {
   if (taskList.length <= 1) return taskList
   const itemMap = new Map(taskList.map(t => [t.id, t]))
-  const inDegree = new Map<string, number>()
-  const childrenMap = new Map<string, string[]>()
-  
-  for (const t of taskList) {
-    inDegree.set(t.id, 0)
-    childrenMap.set(t.id, [])
-  }
-  
+
+  // 找出有參與關聯的 ID
+  const connectedIds = new Set<string>()
   for (const e of edges) {
     if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
-      childrenMap.get(e.sourceId)!.push(e.targetId)
-      inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
+      connectedIds.add(e.sourceId)
+      connectedIds.add(e.targetId)
     }
   }
 
-  // 根節點（沒有入度的事件），依據原 rank / ref 排序
-  const roots = taskList.filter(t => (inDegree.get(t.id) ?? 0) === 0).sort((a, b) => {
+  // 分離出「有關聯」與「無關聯」兩群
+  const connectedTasks = taskList.filter(t => connectedIds.has(t.id))
+  const unconnectedTasks = taskList.filter(t => !connectedIds.has(t.id)).sort((a, b) => {
     const ra = Number(a.rank) || 0
     const rb = Number(b.rank) || 0
     if (ra !== rb) return ra - rb
     return a.ref.localeCompare(b.ref, undefined, { numeric: true })
   })
 
-  const result: Task[] = []
+  // 如果全都沒有關聯，直接回傳原預設排序
+  if (connectedTasks.length === 0) return taskList
+
+  const inDegree = new Map<string, number>()
+  const childrenMap = new Map<string, string[]>()
+  
+  for (const t of connectedTasks) {
+    inDegree.set(t.id, 0)
+    childrenMap.set(t.id, [])
+  }
+  
+  for (const e of edges) {
+    if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
+      childrenMap.get(e.sourceId)?.push(e.targetId)
+      inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
+    }
+  }
+
+  // 根節點（沒有入度的事件），依據原 rank / ref 排序
+  const roots = connectedTasks.filter(t => (inDegree.get(t.id) ?? 0) === 0).sort((a, b) => {
+    const ra = Number(a.rank) || 0
+    const rb = Number(b.rank) || 0
+    if (ra !== rb) return ra - rb
+    return a.ref.localeCompare(b.ref, undefined, { numeric: true })
+  })
+
+  const connectedResult: Task[] = []
   const visited = new Set<string>()
 
   // 深度優先走訪 (DFS)，當上游連線到下游時，下游緊貼在預設上游正後方，中間不插入無關事件
@@ -52,7 +74,7 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     if (visited.has(id)) return
     visited.add(id)
     const task = itemMap.get(id)
-    if (task) result.push(task)
+    if (task) connectedResult.push(task)
 
     const nextTasks = (childrenMap.get(id) ?? [])
       .map(nid => itemMap.get(nid))
@@ -73,14 +95,15 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     dfs(root.id)
   }
 
-  // 預防環形依賴或遺漏節點
-  for (const t of taskList) {
+  // 預防環形依賴或遺漏的有連線節點
+  for (const t of connectedTasks) {
     if (!visited.has(t.id)) {
-      result.push(t)
+      connectedResult.push(t)
     }
   }
 
-  return result
+  // 無關聯的事件統一掛在 Menu 最下方
+  return [...connectedResult, ...unconnectedTasks]
 }
 
 const COLLAPSE_KEY = 'pmflow.sidebar'
