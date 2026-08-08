@@ -323,69 +323,71 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
         <div className="h-1 rounded-t-lg shrink-0" style={{ backgroundColor: data.color }} />
         
         <div className="p-3 flex-1 flex flex-col justify-between">
-          {/* 第一列：[收納按鈕] ＋ 編號 (MRG) ＋ 大項目徽章 ｜ 右側 [縮放按鈕 (僅收納開啟時才顯示)] */}
-          <div className="flex items-center justify-between gap-1">
-            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  data.onToggleContainer?.()
-                }}
-                className={cx(
-                  'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
-                  data.isContainerMode
-                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                )}
-                title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
-              >
-                {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
-              </button>
-              <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                {data.ref}
-              </span>
-              <span className={cx(BADGE, BADGE_VIOLET_SOFT)}>
-                {G.badge.epic}
-              </span>
-            </div>
-            
-            {data.isContainerMode && (
-              <div className="flex shrink-0 items-center gap-1">
+          <div className="shrink-0">
+            {/* 第一列：[收納按鈕] ＋ 編號 (MRG) ＋ 大項目徽章 ｜ 右側 [縮放按鈕 (僅收納開啟時才顯示)] */}
+            <div className="flex items-center justify-between gap-1">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
-                    setResizable(r => !r)
+                    data.onToggleContainer?.()
                   }}
                   className={cx(
-                    'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
-                    resizable
+                    'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                    data.isContainerMode
                       ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
                       : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
                   )}
-                  title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳邊角調整框大小'}
+                  title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
                 >
-                  {resizable ? '📐 縮放中' : '📐 縮放'}
+                  {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
                 </button>
+                <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                  {data.ref}
+                </span>
+                <span className={cx(BADGE, BADGE_VIOLET_SOFT)}>
+                  {G.badge.epic}
+                </span>
               </div>
-            )}
-          </div>
-
-          {/* 第二列：標題 (位置完全統一在第二列) */}
-          <div className="mt-1 line-clamp-2 text-xs font-medium leading-snug text-slate-800 dark:text-slate-100" title={data.title}>
-            {data.title}
-          </div>
-
-          {/* 第三列：進度條 (滿寬適配，框變大時自動伸縮填滿) */}
-          <div className="mt-2 flex items-center gap-2 w-full">
-            <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
-              <div className="h-1 rounded transition-all duration-300"
-                   style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+              
+              {data.isContainerMode && (
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setResizable(r => !r)
+                    }}
+                    className={cx(
+                      'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                      resizable
+                        ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                    )}
+                    title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳邊角調整框大小'}
+                  >
+                    {resizable ? '📐 縮放中' : '📐 縮放'}
+                  </button>
+                </div>
+              )}
             </div>
-            <span className="text-[10px] tabular-nums font-medium text-slate-500 dark:text-slate-400">
-              {data.progress}%
-            </span>
+
+            {/* 第二列：標題 (位置完全統一在標號正下方，固定第二行) */}
+            <div className="mt-1 line-clamp-2 text-xs font-medium leading-snug text-slate-800 dark:text-slate-100" title={data.title}>
+              {data.title}
+            </div>
+
+            {/* 第三列：進度條 (滿寬適配，框變大時自動伸縮填滿) */}
+            <div className="mt-2 flex items-center gap-2 w-full">
+              <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+                <div className="h-1 rounded transition-all duration-300"
+                     style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+              </div>
+              <span className="text-[10px] tabular-nums font-medium text-slate-500 dark:text-slate-400">
+                {data.progress}%
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1859,7 +1861,7 @@ function GraphCanvas({
           if (maxBottom > 0) height = Math.max(height ?? 288, maxBottom)
         }
 
-        const sizeStyle = width && height ? { width, height } : {}
+        const sizeStyle = isBox && width && height ? { width, height } : {}
 
         return {
           ...n,
@@ -1867,7 +1869,7 @@ function GraphCanvas({
           position: dragged[n.id] ?? n.position,
           selected: !!selectedIds[n.id],
           style: { ...n.style, ...sizeStyle },
-          measured: (width && height ? { width, height } : undefined) ?? n.measured ?? measured[n.id],
+          measured: (isBox && width && height ? { width, height } : undefined) ?? n.measured ?? measured[n.id],
           data: {
             ...n.data,
             color: statusColor(n.data.statusKey),
