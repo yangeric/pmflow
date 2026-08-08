@@ -194,7 +194,7 @@ export function EpicSidebar({
     enabled: !!project?.id,
   })
 
-  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn } = useMemo(() => {
+  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn, dividerAfterEpics } = useMemo(() => {
     const edges = graphData?.edges ?? []
     const ids = new Set(tasks.map(t => t.id))
     const rawEpics = tasks.filter(t => !t.parentId)
@@ -286,7 +286,62 @@ export function EpicSidebar({
     }))
 
     const looseCount = tasks.filter(t => t.parentId && !ids.has(t.parentId)).length
-    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn, inquiriesIn }
+
+    // 找出頂層大項目/事件框之間的連線群組與包含關係，判定何時需要在整個關聯的最後一個事件後面加分隔線
+    const parentOfMap = new Map<string, string>()
+    const hasKidsSet = new Set<string>()
+    for (const t of tasks) {
+      if (t.parentId) {
+        parentOfMap.set(t.id, t.parentId)
+        hasKidsSet.add(t.parentId)
+      }
+    }
+
+    const epicIdSet = new Set(epics.map(e => e.id))
+
+    // 連通分量 (Union-Find)
+    const parentUF = new Map<string, string>()
+    const findUF = (i: string): string => {
+      if (!parentUF.has(i)) parentUF.set(i, i)
+      if (parentUF.get(i) !== i) parentUF.set(i, findUF(parentUF.get(i)!))
+      return parentUF.get(i)!
+    }
+    const unionUF = (i: string, j: string) => {
+      const ri = findUF(i)
+      const rj = findUF(j)
+      if (ri !== rj) parentUF.set(ri, rj)
+    }
+
+    // 將跨任務/大項目的連線向上映射至頂層大項目
+    for (const e of edges) {
+      let src = e.sourceId
+      let tgt = e.targetId
+      while (parentOfMap.has(src) && !epicIdSet.has(src)) src = parentOfMap.get(src)!
+      while (parentOfMap.has(tgt) && !epicIdSet.has(tgt)) tgt = parentOfMap.get(tgt)!
+      if (epicIdSet.has(src) && epicIdSet.has(tgt) && src !== tgt) {
+        unionUF(src, tgt)
+      }
+    }
+
+    const componentLastEpicMap = new Map<string, string>()
+    const componentHasBoxMap = new Map<string, boolean>()
+
+    for (const e of epics) {
+      const root = findUF(e.id)
+      componentLastEpicMap.set(root, e.id)
+      if (hasKidsSet.has(e.id)) {
+        componentHasBoxMap.set(root, true)
+      }
+    }
+
+    const dividerAfterEpics = new Set<string>()
+    for (const [root, lastEpicId] of componentLastEpicMap.entries()) {
+      if (componentHasBoxMap.get(root)) {
+        dividerAfterEpics.add(lastEpicId)
+      }
+    }
+
+    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn, inquiriesIn, dividerAfterEpics }
   }, [tasks])
 
   /** 一列任務的問題數：底下的，加上自己（如果它本身就是一張問題） */
@@ -457,6 +512,7 @@ export function EpicSidebar({
             expand={expand}
             selectedEpicId={selectedEpicId}
             selectedTaskId={selectedTaskId}
+            showDivider={dividerAfterEpics.has(epic.id)}
             onSelectEpic={onSelectEpic}
             onOpenTask={onOpenTask}
           />
@@ -526,7 +582,7 @@ export function EpicSidebar({
  */
 function TreeNode({
   task, depth, projectId, childrenOf, stat, bugsUnder, overdueIn, inquiriesIn, types,
-  expanded, autoOpen, toggle, expand, selectedEpicId, selectedTaskId, onSelectEpic, onOpenTask,
+  expanded, autoOpen, toggle, expand, selectedEpicId, selectedTaskId, showDivider, onSelectEpic, onOpenTask,
 }: {
   task: Task
   depth: number
@@ -546,6 +602,7 @@ function TreeNode({
   expand: (id: string) => void
   selectedEpicId: string | null
   selectedTaskId: string | null
+  showDivider?: boolean
   onSelectEpic: (id: string) => void
   onOpenTask: (id: string) => void
 }) {
@@ -803,8 +860,8 @@ function TreeNode({
         />
       ))}
 
-      {/* 含有多個子事件的事件框/大項目，在其最後一個子事件後面加上分隔線 */}
-      {isRoot && kids.length > 0 && (
+      {/* 整個關聯群組（大項目與連線事件）的最後一個事件後面加上分隔線 */}
+      {showDivider && (
         <div className="my-2 border-b border-slate-200 dark:border-slate-700/60" />
       )}
     </div>
