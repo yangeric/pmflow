@@ -38,14 +38,16 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
   const isBoxedOrInBox = (t: Task) => !!t.parentId || hasKidsSet.has(t.id)
 
   const comparePriority = (a: Task, b: Task) => {
-    // 事件框／大項目內的事件排序優於散落無框獨立事件
+    // 1. 事件框／框內事件優先於散落無框獨立事件
     const boxA = isBoxedOrInBox(a) ? 1 : 0
     const boxB = isBoxedOrInBox(b) ? 1 : 0
     if (boxA !== boxB) return boxB - boxA
 
-    const ra = Number(a.rank) || 0
-    const rb = Number(b.rank) || 0
-    if (ra !== rb) return ra - rb
+    // 2. 基本順序：依據開任務的編號順序 (MRG-1, MRG-2, MRG-3...)
+    const numA = a.number ?? 0
+    const numB = b.number ?? 0
+    if (numA !== numB) return numA - numB
+
     return a.ref.localeCompare(b.ref, undefined, { numeric: true })
   }
 
