@@ -1622,26 +1622,15 @@ function GraphCanvas({
       for (let j = i + 1; j < ids.length; j++) {
         const a = ids[i], b = ids[j]
         if (isKin(a, b)) continue                          // 父子／祖孫
-        const ordered = reach.get(a)!.has(b) || reach.get(b)!.has(a)   // 有先後
-
-        // 明確連了「同時開始」「同時完成」的，不管有沒有填日期都算數 ——
-        // 那是使用者親手講的，比日期可靠
+        // 必須要有明確建立的排程依賴連線 (forkA / joinA)，才算同時開始與同時完成。
+        // 當完全沒有任何關聯連線時，不依據日期自動猜測「同時開始」、「同時完成」或「重疊」，避免畫面誤判警示。
         const forkA = simul.forkOf.get(a)
         const joinA = simul.joinOf.get(a)
-        const sa = span.get(a), sb = span.get(b)
-        const sameStart = (!!forkA && forkA === simul.forkOf.get(b))
-          || (!ordered && !!sa && !!sb && sa.s === sb.s)
-        const sameFinish = (!!joinA && joinA === simul.joinOf.get(b))
-          || (!ordered && !!sa && !!sb && sa.e === sb.e)
+        const sameStart = !!forkA && forkA === simul.forkOf.get(b)
+        const sameFinish = !!joinA && joinA === simul.joinOf.get(b)
 
         if (sameStart) { add(a, 'sameStart', refOf.get(b)!); add(b, 'sameStart', refOf.get(a)!) }
         if (sameFinish) { add(a, 'sameFinish', refOf.get(b)!); add(b, 'sameFinish', refOf.get(a)!) }
-        if (sameStart || sameFinish) continue
-
-        if (ordered || !sa || !sb) continue
-        if (sa.s > sb.e || sb.s > sa.e) continue           // 日期沒重疊
-        add(a, 'overlap', refOf.get(b)!)
-        add(b, 'overlap', refOf.get(a)!)
       }
     }
     return out
