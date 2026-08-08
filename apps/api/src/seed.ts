@@ -192,19 +192,8 @@ export async function seedDemo(): Promise<boolean> {
                                   note, created_by)
         VALUES (${ws.id}, ${user.id}, 'ANNUAL', ${day(4)}, ${day(5)}, '家庭旅遊', ${user.id})`
 
-      // 四種依賴各示範一條 + 豐富匯合點範例
-      const links: Array<[number, number, string, number]> = [
-        [2, 6, 'FS', 2],        // 需求確認完成 2 天後才採購（等待任務完成，才能開始）
-        [6, 7, 'FS', 0],        // 到貨後施工
-        [7, 9, 'SS', 0],        // 施工與測試同時起跑
-        [9, 10, 'FF', 0],       // 測試與切換同時收尾（2對1紫色 FF 匯合點起點 1）
-        [20, 10, 'FF', 0],      // 資安複審與切換同時收尾（2對1紫色 FF 匯合點起點 2）
-        [10, 18, 'FS', 0],      // 同時收尾後接驗收
-        [4, 20, 'FS', 0],       // 網路架構確認完成後開始資安複審
-        [4, 21, 'FS', 1],       // 網路架構確認完成後 1 天套用防火牆規則
-        [21, 22, 'FS', 0],      // 防火牆套用完成後進行資安合規稽核
-        [3, 4, 'RELATES', 0],   // 語意關聯，不影響排程
-      ]
+      // 預設拔掉所有初始連線，讓使用者開關聯圖時可從頭自由拉線
+      const links: Array<[number, number, string, number]> = []
       for (const [s, t, type, lag] of links) {
         await tx`INSERT INTO task_link (workspace_id, source_id, target_id, link_type, lag_days, created_by)
                  VALUES (${ws.id}, ${ids.get(s)!}, ${ids.get(t)!}, ${type}, ${lag}, ${user.id})`
