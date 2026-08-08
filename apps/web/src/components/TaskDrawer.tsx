@@ -17,13 +17,14 @@ import { typesAllowedFor } from '../lib/hierarchy'
  * variant='overlay'：舊的覆蓋式抽屜，保留給之後可能需要的浮動情境。
  */
 export function TaskDrawer({
-  taskId, workspaceId, statuses, allTasks, onClose, variant = 'pane', flash = false, onSeen,
+  taskId, workspaceId, statuses, allTasks, onClose, onSelectTask, variant = 'pane', flash = false, onSeen,
 }: {
   taskId: string
   workspaceId: string
   statuses: TaskStatus[]
   allTasks: Task[]
   onClose: () => void
+  onSelectTask?: (taskId: string) => void
   variant?: 'pane' | 'overlay'
   /**
    * 從通知點進來的就閃一下紅框，指出「就是這一張」——
@@ -712,15 +713,10 @@ export function TaskDrawer({
                     <Field label={T.task.link.fieldType}>
                       <Select value={linkType} onChange={e => setLinkType(e.target.value as LinkType)}
                               className="w-full">
-                        {/* 大項目與任務之間沒有先後，排程那一組整個不畫（見下方說明） */}
-                        {schedulingAllowed && (
-                          <optgroup label={T.task.link.groupScheduling}>
-                            {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
-                          </optgroup>
-                        )}
-                        <optgroup label={T.task.link.groupSemantic}>
-                          {SEMANTIC.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
-                        </optgroup>
+                        {/* 僅保留核心 4 項排程依賴 (FS / SS / FF / SF) */}
+                        {schedulingAllowed && SCHEDULING.map(t => (
+                          <option key={t} value={t}>{LINK_LABEL[t]}</option>
+                        ))}
                       </Select>
                     </Field>
                     {/* 選項少了一整組一定要講原因，不然看起來像壞掉 */}
@@ -750,7 +746,7 @@ export function TaskDrawer({
                 )}
               </div>
 
-              {/* ── 上下階層 ── */}
+              {/* ── 上下階層 (點擊可切換打開該子任務詳情) ── */}
               {data.children.length > 0 && (
                 <div>
                   <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -761,12 +757,18 @@ export function TaskDrawer({
                   </h3>
                   <div className="space-y-1">
                     {data.children.map(c => (
-                      <div key={c.id} className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-1.5 text-sm
-                                                 dark:bg-slate-800 dark:text-slate-200">
-                        <span className="font-mono text-xs text-slate-500 dark:text-slate-400">{c.ref}</span>
-                        <span className="flex-1 truncate">{c.title}</span>
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => onSelectTask?.(c.id)}
+                        className="flex w-full items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-left transition-colors hover:bg-blue-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer group"
+                        title="點擊打開該子任務事件詳情頁"
+                      >
+                        <span className="font-mono text-xs text-slate-500 dark:text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400">{c.ref}</span>
+                        <span className="flex-1 truncate font-medium group-hover:text-blue-600 dark:group-hover:text-blue-400">{c.title}</span>
                         <span className="text-xs text-slate-400 dark:text-slate-400">{c.progress}%</span>
-                      </div>
+                        <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                      </button>
                     ))}
                   </div>
                 </div>

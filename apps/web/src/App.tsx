@@ -627,6 +627,7 @@ function ProjectWorkspace({
               flash={flashTask === openTask}
               onSeen={onFlashSeen}
               onClose={() => { onFlashSeen(); setOpenTask(null) }}
+              onSelectTask={setOpenTask}
             />
           ) : (
             <>
