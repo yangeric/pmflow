@@ -5,7 +5,8 @@ import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
 import { rollup } from '../lib/rollup'
 import { T } from '../strings'
 import { useUnreadNotifications } from '../lib/useUnreadNotifications'
-import { Button, Input, Select, cx } from './ui'
+import { Button, Input, Select, ColorOption, readableColor, cx } from './ui'
+import { useTheme } from '../lib/theme'
 
 /**
  * Ref: CR-006 (專案樹狀側欄架構與折疊狀態持久化，詳見 CHANGELOG.md)
@@ -58,8 +59,17 @@ export function EpicSidebar({
   onSwitchProject: () => void
 }) {
   const qc = useQueryClient()
+  const { resolved } = useTheme()
+  const dark = resolved === 'dark'
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
+
+  const typeList = useMemo(() => types.length ? types : [
+    { key: 'EPIC', name: '大項目', color: '#d97706' },
+    { key: 'TASK', name: '任務', color: '#3178c6' },
+    { key: 'BUG', name: '問題', color: '#dc2626' },
+    { key: 'MILESTONE', name: '里程碑', color: '#8b5cf6' }
+  ], [types])
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
@@ -338,15 +348,13 @@ export function EpicSidebar({
               <Select
                 value={createType}
                 onChange={e => setCreateType(e.target.value)}
-                className="text-xs py-1 flex-1"
+                style={typeList.find(t => t.key === createType)?.color ? { color: readableColor(typeList.find(t => t.key === createType)?.color, dark) } : undefined}
+                className="text-xs py-1 flex-1 font-medium"
               >
-                {(types.length ? types : [
-                  { key: 'EPIC', name: '大項目' },
-                  { key: 'TASK', name: '任務' },
-                  { key: 'BUG', name: '問題' },
-                  { key: 'MILESTONE', name: '里程碑' }
-                ]).map(t => (
-                  <option key={t.key} value={t.key}>{t.name}</option>
+                {typeList.map(t => (
+                  <ColorOption key={t.key} value={t.key} color={t.color} dark={dark}>
+                    {t.name}
+                  </ColorOption>
                 ))}
               </Select>
             </div>

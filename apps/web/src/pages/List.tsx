@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type ProjectParam, type Task, type TaskStatus } from '../lib/api'
-import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, ColorOption, cx } from '../components/ui'
+import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, ColorOption, readableColor, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../lib/auth'
 import { useUnreadNotifications } from '../lib/useUnreadNotifications'
@@ -500,12 +500,15 @@ function NewTaskType({ value, options, onChange }: {
 }) {
   const { resolved } = useTheme()
   if (options.length === 0) return null
+  const selectedColor = options.find(t => t.key === value)?.color
+  const dark = resolved === 'dark'
   return (
     <Select value={value} onChange={e => onChange(e.target.value)}
             aria-label={T.task.drawer.fieldTaskType}
-            className="w-28 shrink-0">
+            style={selectedColor ? { color: readableColor(selectedColor, dark) } : undefined}
+            className="w-28 shrink-0 font-medium">
       {options.map(t => (
-        <ColorOption key={t.key} value={t.key} color={t.color} dark={resolved === 'dark'}>
+        <ColorOption key={t.key} value={t.key} color={t.color} dark={dark}>
           {t.name}
         </ColorOption>
       ))}

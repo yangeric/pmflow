@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type LinkType, type ProjectParam, type Task, type TaskDetail, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
-import { Button, Input, Select, Field, Spinner, ColorOption, cx } from './ui'
+import { Button, Input, Select, Field, Spinner, ColorOption, readableColor, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
 import { useUnreadNotifications } from '../lib/useUnreadNotifications'
@@ -438,7 +438,8 @@ export function TaskDrawer({
                      */
                     <Select value={form.type}
                             onChange={e => edit({ type: e.target.value as TaskDetail['type'] })}
-                            className="w-full">
+                            style={typeChoices.find(t => t.key === form.type)?.color ? { color: readableColor(typeChoices.find(t => t.key === form.type)?.color, dark) } : undefined}
+                            className="w-full font-medium">
                       {typeChoices.map(t => (
                         <ColorOption key={t.key} value={t.key} color={t.color} dark={dark}>
                           {t.name}
