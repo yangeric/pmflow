@@ -309,7 +309,7 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
   const [resizable, setResizable] = useState(false)
   return (
     <>
-      {resizable && (
+      {data.isContainerMode && resizable && (
         <NodeResizer
           isVisible
           color={RESIZE_COLOR}
@@ -323,18 +323,9 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
         <div className="h-1 rounded-t-lg shrink-0" style={{ backgroundColor: data.color }} />
         
         <div className="p-3 flex-1 flex flex-col justify-between">
-          {/* 第一列：編號 ＋ 大項目徽章 ＋ 右側統一功能按鈕 */}
+          {/* 第一列：[收納按鈕] ＋ 編號 (MRG) ＋ 大項目徽章 ｜ 右側 [縮放按鈕 (僅收納開啟時才顯示)] */}
           <div className="flex items-center justify-between gap-1">
             <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
-              <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                {data.ref}
-              </span>
-              <span className={cx(BADGE, BADGE_VIOLET_SOFT)}>
-                {G.badge.epic}
-              </span>
-            </div>
-            
-            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 onClick={(e) => {
@@ -342,7 +333,7 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
                   data.onToggleContainer?.()
                 }}
                 className={cx(
-                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
                   data.isContainerMode
                     ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
                     : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
@@ -351,23 +342,34 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
               >
                 {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
               </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setResizable(r => !r)
-                }}
-                className={cx(
-                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
-                  resizable
-                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                )}
-                title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳邊角調整框大小'}
-              >
-                {resizable ? '📐 縮放中' : '📐 縮放'}
-              </button>
+              <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                {data.ref}
+              </span>
+              <span className={cx(BADGE, BADGE_VIOLET_SOFT)}>
+                {G.badge.epic}
+              </span>
             </div>
+            
+            {data.isContainerMode && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setResizable(r => !r)
+                  }}
+                  className={cx(
+                    'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                    resizable
+                      ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                  )}
+                  title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳邊角調整框大小'}
+                >
+                  {resizable ? '📐 縮放中' : '📐 縮放'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 第二列：標題 (位置完全統一在第二列) */}
@@ -397,7 +399,7 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const [resizable, setResizable] = useState(false)
   return (
     <>
-      {resizable && (
+      {data.isContainerMode && resizable && (
         <NodeResizer
           isVisible
           color={RESIZE_COLOR}
@@ -410,9 +412,25 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
         <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
 
         <div className="px-2.5 py-2">
-          {/* 第一列：編號 ＋ 類型徽章 ＋ 右側統一功能按鈕 */}
+          {/* 第一列：[收納按鈕] ＋ 編號 (MRG) ＋ 類型徽章 ｜ 右側 [縮放按鈕 (僅收納開啟時才顯示)] */}
           <div className="flex items-center justify-between gap-1">
             <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onToggleContainer?.()
+                }}
+                className={cx(
+                  'shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  data.isContainerMode
+                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                )}
+                title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
+              >
+                {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
+              </button>
               <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                 {data.ref}
               </span>
@@ -455,41 +473,26 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
               )}
             </div>
 
-            {/* 右側統一按鈕 (顏色與佈局保持一致) */}
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  data.onToggleContainer?.()
-                }}
-                className={cx(
-                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
-                  data.isContainerMode
-                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                )}
-                title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
-              >
-                {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setResizable(r => !r)
-                }}
-                className={cx(
-                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
-                  resizable
-                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
-                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-                )}
-                title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳卡片邊角改大小'}
-              >
-                {resizable ? '📐 縮放中' : '📐 縮放'}
-              </button>
-            </div>
+            {data.isContainerMode && (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setResizable(r => !r)
+                  }}
+                  className={cx(
+                    'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                    resizable
+                      ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                  )}
+                  title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳卡片邊角改大小'}
+                >
+                  {resizable ? '📐 縮放中' : '📐 縮放'}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 第二列：標題 (位置完全統一在第二列) */}
