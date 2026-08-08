@@ -49,12 +49,21 @@ export function UserMenu({
   pendingJoins?: number
 }) {
   const [open, setOpen] = useState(false)
+  const [showSwitchModal, setShowSwitchModal] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const { choice, setChoice } = useTheme()
+  const { switchUser } = useAuth()
 
   // 頭像與 email 都在這支查詢裡，而且帳號設定頁也用同一把 key，改完頭像這裡跟著換
   const { data } = useQuery({ queryKey: ['myProfile'], queryFn: () => Api.myProfile() })
   const me = data?.user
+
+  const currentWsId = data?.workspaces[0]?.id
+  const { data: adminUsersData } = useQuery({
+    queryKey: ['adminUsers', currentWsId],
+    queryFn: () => currentWsId ? Api.adminUsers(currentWsId) : Promise.resolve({ users: [], myRole: 'MEMBER' as const, roles: [] }),
+    enabled: !!currentWsId && showSwitchModal,
+  })
 
   // 點到外面、按 Esc 都要收起來 —— 選單蓋在內容上，關不掉會擋住畫面
   useEffect(() => {
@@ -174,6 +183,59 @@ export function UserMenu({
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
           <MenuItem onClick={go(onLogout)} danger>{T.account.menu.logout}</MenuItem>
+        </div>
+      )}
+
+      {showSwitchModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>🔀</span> 切換測試身份 (代理帳號)
+              </h3>
+              <button
+                onClick={() => setShowSwitchModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              做為擁有者/管理者，您可以免密碼直接代理切換為以下任一帳號進行權限與功能測試：
+            </p>
+            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+              {(adminUsersData?.users ?? []).map(u => (
+                <div
+                  key={u.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-200/60 dark:border-slate-600/40 transition">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar userId={u.id} name={u.displayName} size="md" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">
+                        {u.displayName} {u.id === me?.id && <span className="text-xs text-blue-500 font-normal">(目前帳號)</span>}
+                      </div>
+                      <div className="text-xs text-slate-400 truncate">{u.email}</div>
+                    </div>
+                  </div>
+                  {u.id !== me?.id && (
+                    <Button
+                      variant="primary"
+                      className="px-3 py-1 text-xs"
+                      onClick={async () => {
+                        setShowSwitchModal(false)
+                        await switchUser(u.id)
+                      }}>
+                      切換
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <Button variant="default" onClick={() => setShowSwitchModal(false)}>
+                取消
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
