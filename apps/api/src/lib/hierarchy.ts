@@ -57,40 +57,7 @@ interface Violation { title: string; detail: string }
  *
  * `parentType === null` 代表放在最上層。上層是自訂種類時一律放行。
  */
-function checkPlacement(type: string, parentType: string | null): Violation | null {
-  if (type === EPIC) {
-    if (parentType === null || parentType === EPIC) return null
-    if (!isBuiltin(parentType)) return null
-    return {
-      title: `${label(EPIC)}不能放在${label(parentType)}底下`,
-      detail: `${label(EPIC)}只能放在最上層，或放在另一個${label(EPIC)}底下。`,
-    }
-  }
-
-  if (type === BUG) {
-    if (parentType === TASK) return null
-    if (parentType !== null && !isBuiltin(parentType)) return null
-    if (parentType === null) {
-      return {
-        title: `${label(BUG)}一定要掛在一張${label(TASK)}底下`,
-        detail: `${label(BUG)}不能自己放在最上層，`
-          + `請先挑一張${label(TASK)}當它的上層。`,
-      }
-    }
-    return {
-      title: `${label(BUG)}不能放在${label(parentType)}底下`,
-      detail: `${label(BUG)}的上層一定要是一張${label(TASK)}。`,
-    }
-  }
-
-  /*
-   * 任務與里程碑允許放在最上層 (parentType === null)，也允許掛在其他任務或大項目底下。
-   */
-  if (type === TASK || type === MILESTONE) {
-    return null
-  }
-
-  // 專案自己新增的種類：不受限制
+function checkPlacement(_type: string, _parentType: string | null): Violation | null {
   return null
 }
 

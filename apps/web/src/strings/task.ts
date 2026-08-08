@@ -56,7 +56,7 @@ export const task = {
 
     /** 標題平常是一行字，點一下才變成輸入框 */
     editTitle: '點一下改標題',
-    fieldTaskType: '任務種類',
+    fieldTaskType: '事件種類',
     /**
      * 標題列上、種類徽章後面的對外詢問狀況。
      *
