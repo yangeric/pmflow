@@ -34,8 +34,8 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     }
   }
 
-  // 判斷事件是否屬於事件框（大項目或有包含子事件的框）
-  const isBoxedOrInBox = (t: Task) => t.type === 'EPIC' || !!t.parentId || hasKidsSet.has(t.id)
+  // 判斷是否為事件框或框內事件（僅以實際階層包含關係判定，不再依據「類型」欄位）
+  const isBoxedOrInBox = (t: Task) => !!t.parentId || hasKidsSet.has(t.id)
 
   const comparePriority = (a: Task, b: Task) => {
     // 事件框／大項目內的事件排序優於散落無框獨立事件
