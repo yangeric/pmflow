@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Api, ApiError, type LinkType, type Task, type TaskDetail, type TaskStatus } from '../lib/api'
+import { Api, ApiError, type LinkType, type ProjectParam, type Task, type TaskDetail, type TaskStatus } from '../lib/api'
 import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../lib/linkText'
 import { Button, Input, Select, Field, Spinner, ColorOption, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
@@ -786,7 +786,7 @@ export function TaskDrawer({
                         <span className="text-slate-600 dark:text-slate-300">
                           {a.actorName ?? T.task.drawer.systemActor}
                         </span>
-                        <span>{describeActivity(a.kind, a.body)}</span>
+                        <span>{describeActivity(a.kind, a.body, { statuses, priorities, types })}</span>
                       </div>
                       {/* 交接說明另起一行帶引號 —— 那是一句人講的話，
                           接在「把負責人從誰換成誰」後面會跟事實糊在一起 */}
@@ -964,7 +964,21 @@ function handoverNoteOf(body: Record<string, unknown> | null): string {
   return body?.reassign && body.note ? String(body.note) : ''
 }
 
-function describeActivity(kind: string, body: Record<string, unknown> | null): string {
+function describeActivity(
+  kind: string,
+  body: Record<string, unknown> | null,
+  meta?: {
+    statuses?: Array<{ key: string; name: string }>
+    priorities?: Array<{ key: string; name: string }>
+    types?: Array<{ key: string; name: string }>
+  }
+): string {
+  const nameOf = (key: unknown, list?: Array<{ key: string; name: string }>) => {
+    if (!key) return '（無）'
+    const kStr = String(key)
+    return list?.find(x => x.key === kStr)?.name ?? kStr
+  }
+
   switch (kind) {
     case 'CREATED': return T.task.activity.created
     case 'COMMENT': return T.task.activity.comment(String(body?.text ?? ''))
@@ -977,11 +991,6 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
         ? T.task.activity.inquiryAsk(String(body?.unit ?? ''))
         : T.task.activity.inquiryReply(body?.repliedByUnit ? String(body.repliedByUnit) : '')
     default:
-      /*
-       * 轉派也是 FIELD_CHANGE（負責人就是任務的一個欄位），靠 body 的
-       * reassign 認出來。四種情形各自成一句：沒有原負責人、收回不指派時
-       * 用同一句去填空的話，會拼出「把負責人從 （空白） 換成」。
-       */
       if (body?.reassign) {
         const from = body.previousAssigneeName ? String(body.previousAssigneeName) : ''
         const to = body.assigneeName ? String(body.assigneeName) : ''
@@ -996,19 +1005,23 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
           changes.push(`將標題由 ${from} 改為 ${to}`)
         }
         if ('statusKey' in body) {
-          const from = body.statusKeyBefore ? String(body.statusKeyBefore) : '（無）'
-          const to = String(body.statusKey)
-          changes.push(`將狀態由 ${from} 改為 ${to}`)
+          const from = nameOf(body.statusKeyBefore, meta?.statuses)
+          const to = nameOf(body.statusKey, meta?.statuses)
+          changes.push(`將狀態由「${from}」改為「${to}」`)
         }
         if ('problem' in body) {
           const from = body.problemBefore ? String(body.problemBefore) : ''
           changes.push(body.problem ? `記下遭遇問題：「${body.problem}」` : `已解決遭遇問題（原：${from}）`)
         }
         if ('priority' in body) {
-          changes.push(`將優先度由 ${body.priorityBefore ?? '無'} 改為 ${body.priority}`)
+          const from = nameOf(body.priorityBefore, meta?.priorities)
+          const to = nameOf(body.priority, meta?.priorities)
+          changes.push(`將優先度由「${from}」改為「${to}」`)
         }
         if ('type' in body) {
-          changes.push(`將種類由 ${body.typeBefore ?? '無'} 改為 ${body.type}`)
+          const from = nameOf(body.typeBefore, meta?.types)
+          const to = nameOf(body.type, meta?.types)
+          changes.push(`將種類由「${from}」改為「${to}」`)
         }
         if ('progress' in body) {
           changes.push(`將進度由 ${body.progressBefore ?? 0}% 改為 ${body.progress}%`)
