@@ -1936,7 +1936,7 @@ function GraphCanvas({
   }, [tasks, graph?.nodes])
 
   /**
-   * 建立關聯規則：大項目（EPIC）只能與大項目連結，不能與一般任務連結。
+   * 簡化拉線體驗：任意接點皆可自由拉線，完全不設限，拉線即完成連線。
    */
   const isValidConnection = useCallback((c: Connection | Edge) => {
     return !!c.source && !!c.target && c.source !== c.target
@@ -1944,20 +1944,10 @@ function GraphCanvas({
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
-    const sourceType = taskTypeMap.get(c.source)
-    const targetType = taskTypeMap.get(c.target)
     const viaRelation = c.sourceHandle === H_REL_OUT || c.targetHandle === H_REL_IN
-    
-    // 大項目與一般任務之間不能建「排程依賴 (FS)」，但可自動以「相關 (RELATES)」建立連結，體驗極致順暢
-    let linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
-    if (linkType === 'FS' && (sourceType === 'EPIC' || targetType === 'EPIC')) {
-      if (sourceType !== 'EPIC' || targetType !== 'EPIC') {
-        linkType = 'RELATES'
-      }
-    }
-
+    const linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
     addLink.mutate({ source: c.source, target: c.target, linkType })
-  }, [addLink, taskTypeMap])
+  }, [addLink])
 
   const parentOfMap = useMemo(() => new Map(shownNodes.map(n => [n.id, n.parentId ?? null])), [shownNodes])
 
