@@ -142,6 +142,9 @@ type TaskNodeData = {
   inquiryState: InquiryState
   isEpic: boolean
   isBug: boolean
+  isMilestone: boolean
+  isContainerMode: boolean
+  onToggleContainer?: () => void
   /** 框裡直接放著幾張任務。0＝不是框 */
   childCount: number
   /**
@@ -151,7 +154,6 @@ type TaskNodeData = {
    * 不標出來的話，框裡有好幾個起點時會看不出來要從哪裡下手。
    */
   isEntry: boolean
-  isMilestone: boolean
   dimmed: boolean
   focused: boolean
   hasUnread?: boolean
@@ -315,10 +317,48 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           minHeight={data.minSize?.h ?? NODE_H_FALLBACK}
         />
       )}
-      <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10')}>
+      <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10 rounded-lg overflow-hidden border')}>
         {/* 大項目框左右接點 100% 垂直置中於框體邊線中心 */}
         <NodeHandles />
         <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
+        
+        {/* 左上角容器模式開關 ＆ 右上角手動調整大小按鈕 */}
+        <div className="flex items-center justify-between border-b border-violet-100 dark:border-violet-900/40 bg-violet-100/50 dark:bg-violet-900/20 px-2 py-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              data.onToggleContainer?.()
+            }}
+            className={cx(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
+              data.isContainerMode
+                ? 'bg-violet-600 text-white ring-1 ring-violet-400 dark:bg-violet-500'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+            )}
+            title={data.isContainerMode ? '點擊關閉容器模式' : '點擊開啟容器模式 (允許其它事件放進內部)'}
+          >
+            <span>{data.isContainerMode ? '📦 容器開' : '📄 容器關'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setResizable(r => !r)
+            }}
+            className={cx(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
+              resizable
+                ? 'bg-amber-600 text-white ring-1 ring-amber-400 dark:bg-amber-500'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+            )}
+            title={resizable ? '點擊關閉右上角調整大小' : '點擊於右上角手動拖曳調整框大小'}
+          >
+            <span>📐 {resizable ? '縮放中' : '改大小'}</span>
+          </button>
+        </div>
+
         <div className="flex items-center gap-1.5 px-3 py-2">
           <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
             {data.ref}
@@ -334,22 +374,6 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
             <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
               {data.progress}%
             </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setResizable(r => !r)
-              }}
-              className={cx(
-                'ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all',
-                resizable
-                  ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-500'
-                  : 'bg-slate-200/80 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-              )}
-              title={resizable ? '關閉手動調整 (切換回預設連接點)' : '開啟右上角手動調整框大小'}
-            >
-              <span>{resizable ? '縮放中' : '調整大小'}</span>
-            </button>
           </span>
         </div>
       </div>
@@ -360,112 +384,161 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
 function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   const accentColor = getTypeColor(data.taskType, data.color)
+  const [resizable, setResizable] = useState(false)
   return (
-    <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900')}>
-      <NodeHandles />
-      <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
-      <div className="px-2.5 py-2">
-        {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
-            寧可字少一點也要留在同一行，完整說法在 title 上 */}
-        <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
-          <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
-            {data.ref}
-          </span>
-          {/* 先講「這張為什麼亮著」，再講它自己是什麼 */}
-          {data.showBadges && data.kin && (
-            <span className={cx(BADGE, BADGE_VIOLET)}
-                  title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
-              {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
-            </span>
-          )}
-          {data.showBadges && data.isEntry && (
-            <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
-              {G.badge.entry}
-            </span>
-          )}
-          {data.showBadges && data.isEpic && (
-            <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
-              {G.badge.epic}
-            </span>
-          )}
-          {data.showBadges && data.isBug && (
-            <span className={cx(BADGE, BADGE_ROSE_SOFT)} title="問題與缺陷">
-              問題
-            </span>
-          )}
-          {data.showBadges && data.isMilestone && (
-            <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
-          )}
-          {data.showBadges && !data.isEpic && !data.isBug && !data.isMilestone && (
-            <span className={cx(BADGE, BADGE_SKY_SOFT)}>
-              {data.taskType === 'TASK' ? '任務' : data.taskType}
-            </span>
-          )}
-          {/*
-           * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
-           * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
-           */}
-          {data.showBadges && data.blockedBy.length > 0 && (
-            <span className={cx(BADGE, BADGE_RED)}
-                  title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
-          )}
-          {data.showBadges && data.problem && (
-            <span className={cx(BADGE, BADGE_FUCHSIA)}
-                  title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
-          )}
-          {data.showBadges && data.parallel.sameStart.length > 0 && (
-            <span className={cx(BADGE, BADGE_AMBER)}
-                  title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
-              同時開始 ({data.parallel.sameStart[0]})
-            </span>
-          )}
-          {data.showBadges && data.parallel.sameFinish.length > 0 && (
-            <span className={cx(BADGE, BADGE_PURPLE)}
-                  title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
-              同時完成 ({data.parallel.sameFinish[0]})
-            </span>
-          )}
-          {data.showBadges && data.parallel.overlap.length > 0 && (
-            <span className={cx(BADGE, BADGE_TEAL)}
-                  title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
-              重疊 ({data.parallel.overlap[0]})
-            </span>
-          )}
-          {data.showBadges && data.inquiryState !== 'NONE' && (
-            <span className="ml-auto shrink-0 text-[11px]"
-                  title={meta.label} aria-label={meta.label}>
-              {meta.icon}
-            </span>
-          )}
+    <>
+      {resizable && (
+        <NodeResizer
+          isVisible
+          color={RESIZE_COLOR}
+          minWidth={data.minSize?.w ?? NODE_W}
+          minHeight={data.minSize?.h ?? NODE_H_FALLBACK}
+        />
+      )}
+      <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900 shadow-sm rounded-lg overflow-hidden border')}>
+        <NodeHandles />
+        <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
+
+        {/* 左上角容器模式開關 ＆ 右上角手動調整大小按鈕 */}
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-2 py-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              data.onToggleContainer?.()
+            }}
+            className={cx(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
+              data.isContainerMode
+                ? 'bg-violet-600 text-white ring-1 ring-violet-400 dark:bg-violet-500'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+            )}
+            title={data.isContainerMode ? '容器模式已開啟：其它事件可放進內部 (點擊切換為普通卡片)' : '點擊開啟容器模式：允許其它事件拖放進內部'}
+          >
+            <span>{data.isContainerMode ? '📦 容器開' : '📄 容器關'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              setResizable(r => !r)
+            }}
+            className={cx(
+              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
+              resizable
+                ? 'bg-amber-600 text-white ring-1 ring-amber-400 dark:bg-amber-500'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+            )}
+            title={resizable ? '點擊關閉右上角調整大小' : '點擊於右上角手動拖曳調整框大小'}
+          >
+            <span>📐 {resizable ? '縮放中' : '改大小'}</span>
+          </button>
         </div>
-        <div className="mt-0.5 line-clamp-2 text-xs font-medium leading-snug text-slate-800
-                        dark:text-slate-100">
-          {data.title}
-        </div>
-        <div className="mt-1.5 flex items-center gap-1.5">
-          <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
-            <div className={cx("h-1 rounded transition-all duration-300", data.progress === 0 && "opacity-40")}
-                 style={{
-                   width: `${Math.max(data.progress, data.progress === 0 ? 100 : data.progress)}%`,
-                   backgroundColor: data.progress === 0 ? '#cbd5e1' : accentColor
-                 }} />
+
+        <div className="px-2.5 py-2">
+          {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
+              寧可字少一點也要留在同一行，完整說法在 title 上 */}
+          <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
+            <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+              {data.ref}
+            </span>
+            {/* 先講「這張為什麼亮著」，再講它自己是什麼 */}
+            {data.showBadges && data.kin && (
+              <span className={cx(BADGE, BADGE_VIOLET)}
+                    title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
+                {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
+              </span>
+            )}
+            {data.showBadges && data.isEntry && (
+              <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
+                {G.badge.entry}
+              </span>
+            )}
+            {data.showBadges && data.isEpic && (
+              <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
+                {G.badge.epic}
+              </span>
+            )}
+            {data.showBadges && data.isBug && (
+              <span className={cx(BADGE, BADGE_ROSE_SOFT)} title="問題與缺陷">
+                問題
+              </span>
+            )}
+            {data.showBadges && data.isMilestone && (
+              <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
+            )}
+            {data.showBadges && !data.isEpic && !data.isBug && !data.isMilestone && (
+              <span className={cx(BADGE, BADGE_SKY_SOFT)}>
+                {data.taskType === 'TASK' ? '任務' : data.taskType}
+              </span>
+            )}
+            {/*
+             * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
+             * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
+             */}
+            {data.showBadges && data.blockedBy.length > 0 && (
+              <span className={cx(BADGE, BADGE_RED)}
+                    title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
+            )}
+            {data.showBadges && data.problem && (
+              <span className={cx(BADGE, BADGE_FUCHSIA)}
+                    title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
+            )}
+            {data.showBadges && data.parallel.sameStart.length > 0 && (
+              <span className={cx(BADGE, BADGE_AMBER)}
+                    title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
+                同時開始 ({data.parallel.sameStart[0]})
+              </span>
+            )}
+            {data.showBadges && data.parallel.sameFinish.length > 0 && (
+              <span className={cx(BADGE, BADGE_PURPLE)}
+                    title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
+                同時完成 ({data.parallel.sameFinish[0]})
+              </span>
+            )}
+            {data.showBadges && data.parallel.overlap.length > 0 && (
+              <span className={cx(BADGE, BADGE_TEAL)}
+                    title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
+                重疊 ({data.parallel.overlap[0]})
+              </span>
+            )}
+            {data.showBadges && data.inquiryState !== 'NONE' && (
+              <span className="ml-auto shrink-0 text-[11px]"
+                    title={meta.label} aria-label={meta.label}>
+                {meta.icon}
+              </span>
+            )}
           </div>
-          {data.progress === 100 ? (
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white shadow-sm" title="已完成">
-              ✓
-            </span>
-          ) : data.progress === 0 ? (
-            <span className="text-[10px] tabular-nums font-normal text-slate-400 dark:text-slate-500" title="未開始/無進度事件">
-              未開始 (0%)
-            </span>
-          ) : (
-            <span className="text-[10px] tabular-nums font-medium text-slate-600 dark:text-slate-300">
-              {data.progress}%
-            </span>
-          )}
+          <div className="mt-0.5 line-clamp-2 text-xs font-medium leading-snug text-slate-800
+                          dark:text-slate-100">
+            {data.title}
+          </div>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+              <div className={cx("h-1 rounded transition-all duration-300", data.progress === 0 && "opacity-40")}
+                   style={{
+                     width: `${Math.max(data.progress, data.progress === 0 ? 100 : data.progress)}%`,
+                     backgroundColor: data.progress === 0 ? '#cbd5e1' : accentColor
+                   }} />
+            </div>
+            {data.progress === 100 ? (
+              <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white shadow-sm" title="已完成">
+                ✓
+              </span>
+            ) : data.progress === 0 ? (
+              <span className="text-[10px] tabular-nums font-normal text-slate-400 dark:text-slate-500" title="未開始/無進度事件">
+                未開始 (0%)
+              </span>
+            ) : (
+              <span className="text-[10px] tabular-nums font-medium text-slate-600 dark:text-slate-300">
+                {data.progress}%
+              </span>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
 
@@ -585,7 +658,8 @@ function layout(
   schedEdges: Array<{ sourceId: string; targetId: string; linkType: LinkType }>,
   hubs: Hub[],
   measuredRects?: Record<string, { width: number; height: number }>,
-  allEdges?: Array<{ sourceId: string; targetId: string; linkType: LinkType }>
+  allEdges?: Array<{ sourceId: string; targetId: string; linkType: LinkType }>,
+  customBoxIds?: Set<string>
 ): LayoutResult {
   const present = new Set(ids)
   const usable = schedEdges.filter(e => present.has(e.sourceId) && present.has(e.targetId))
@@ -599,7 +673,10 @@ function layout(
     const key = p && present.has(p) ? p : null
     kidsOf.set(key, [...(kidsOf.get(key) ?? []), id])
   }
-  const boxes = new Set(ids.filter(id => (kidsOf.get(id) ?? []).length > 0))
+  const boxes = new Set([
+    ...ids.filter(id => (kidsOf.get(id) ?? []).length > 0),
+    ...Array.from(customBoxIds ?? []).filter(id => present.has(id))
+  ])
 
   /** 任務編號補零之後的完整路徑，同一個框底下的排在一起 */
   const sortKey = new Map<string, string>()
@@ -1250,6 +1327,29 @@ function GraphCanvas({
   /** 按「重新排列」時 +1，把拖亂的節點放回自動佈局的位置 */
   const [relayout, setRelayout] = useState(0)
   const [newLinkType, setNewLinkType] = useState<LinkType>('FS')
+  const [containerBoxIds, setContainerBoxIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('pmflow_graph_container_boxes')
+      return raw ? new Set(JSON.parse(raw)) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
+
+  const toggleContainerMode = useCallback((id: string) => {
+    setContainerBoxIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      try {
+        localStorage.setItem('pmflow_graph_container_boxes', JSON.stringify([...next]))
+      } catch {}
+      return next
+    })
+  }, [])
   const [error, setError] = useState<string | null>(null)
   /** 按過「全部顯示」或「重新排列」，要求即使節點沒變也重新框一次 */
   const fitPending = useRef(false)
@@ -1367,7 +1467,7 @@ function GraphCanvas({
     const present = new Set(shownNodes.map(n => n.id))
     const parentOf = new Map(shownNodes.map(n => [n.id, n.parentId]))
     const refOf = new Map(shownNodes.map(n => [n.id, n.ref]))
-    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges, simul.hubs, measured, graph?.edges)
+    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges, simul.hubs, measured, graph?.edges, containerBoxIds)
 
     const nodes: TaskNode[] = shownNodes.map(n => {
       const isBox = L.boxes.has(n.id)
@@ -1395,6 +1495,8 @@ function GraphCanvas({
           progress: n.progress ?? 0,
           inquiryState: n.inquiryState,
           isEpic: isBox || n.type === 'EPIC',
+          isContainerMode: isBox || containerBoxIds.has(n.id),
+          onToggleContainer: () => toggleContainerMode(n.id),
           childCount: L.childCount.get(n.id) ?? 0,
           isEntry: L.entries.has(n.id),
           isBug: n.type === 'BUG',
