@@ -988,15 +988,35 @@ function describeActivity(kind: string, body: Record<string, unknown> | null): s
         if (to) return from ? T.task.activity.reassigned(from, to) : T.task.activity.assigned(to)
         return from ? T.task.activity.unassignedFrom(from) : T.task.activity.unassignedNobody
       }
-      /*
-       * 問題被清空之後，任務上就沒有它了 —— 這一行是唯一查得回「當初卡在哪」
-       * 的地方，所以把清掉之前那段字一起寫出來，而不是只說「更新了欄位」。
-       */
-      if (body && 'problem' in body) {
-        const before = body.problemBefore ? String(body.problemBefore) : ''
-        return body.problem
-          ? T.task.activity.problemSet(String(body.problem))
-          : T.task.activity.problemCleared(before)
+      if (body) {
+        const changes: string[] = []
+        if ('title' in body) {
+          const from = body.titleBefore ? `「${body.titleBefore}」` : '（無）'
+          const to = body.title ? `「${body.title}」` : '（無）'
+          changes.push(`將標題由 ${from} 改為 ${to}`)
+        }
+        if ('statusKey' in body) {
+          const from = body.statusKeyBefore ? String(body.statusKeyBefore) : '（無）'
+          const to = String(body.statusKey)
+          changes.push(`將狀態由 ${from} 改為 ${to}`)
+        }
+        if ('problem' in body) {
+          const from = body.problemBefore ? String(body.problemBefore) : ''
+          changes.push(body.problem ? `記下遭遇問題：「${body.problem}」` : `已解決遭遇問題（原：${from}）`)
+        }
+        if ('priority' in body) {
+          changes.push(`將優先度由 ${body.priorityBefore ?? '無'} 改為 ${body.priority}`)
+        }
+        if ('type' in body) {
+          changes.push(`將種類由 ${body.typeBefore ?? '無'} 改為 ${body.type}`)
+        }
+        if ('progress' in body) {
+          changes.push(`將進度由 ${body.progressBefore ?? 0}% 改為 ${body.progress}%`)
+        }
+        if ('startDate' in body || 'dueDate' in body) {
+          changes.push('調整了計畫日期')
+        }
+        if (changes.length > 0) return changes.join('；')
       }
       return T.task.activity.fieldUpdated
   }
