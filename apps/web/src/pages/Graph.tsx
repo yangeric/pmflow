@@ -1923,18 +1923,11 @@ function GraphCanvas({
   })
 
   /**
-   * 拉線時只讓「跟選的關聯種類對得上的那一對接點」吃得下。
-   *
-   * 排程類走左右（右側的圓點 → 下一張的左側），任務相關走上下
-   * （下緣的圓點 → 另一張的上緣）。不擋的話，選了「相關」卻從右邊拉出去，
-   * 線會被畫成左右，看起來就跟排程依賴一樣有先後 —— 那正是這次要修掉的誤讀。
+   * 簡化拉線體驗：任意接點皆可自由拉線，完全不設限，拉線即完成連線。
    */
   const isValidConnection = useCallback((c: Connection | Edge) => {
-    if (!c.source || !c.target || c.source === c.target) return false
-    const viaRelation = c.sourceHandle === H_REL_OUT && c.targetHandle === H_REL_IN
-    const viaScheduling = c.sourceHandle === H_OUT && c.targetHandle === H_IN
-    return isScheduling(newLinkType) ? viaScheduling : viaRelation
-  }, [newLinkType])
+    return !!c.source && !!c.target && c.source !== c.target
+  }, [])
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
