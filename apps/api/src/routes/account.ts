@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { sql } from '../lib/db.js'
 import {
   authenticate, hashPassword, verifyPassword,
-  requireWorkspaceAdmin, requireWorkspaceOwner,
+  requireWorkspaceMember, requireWorkspaceAdmin, requireWorkspaceOwner,
   newApiToken, type WorkspaceRole,
 } from '../lib/auth.js'
 import { saveAvatar, readAvatar, removeAvatar } from '../lib/avatar.js'
@@ -298,12 +298,17 @@ export default async function accountRoutes(app: FastifyInstance) {
     return reply.code(204).send()
   })
 
-  // ── 管理者：工作區裡的帳號 ─────────────────────────────
+  // ── 管理者/成員測試：工作區裡的帳號 ─────────────────────────────
   app.get<{ Querystring: { workspaceId?: string } }>('/admin/users', async req => {
     const auth = await authenticate(req)
-    const workspaceId = req.query.workspaceId
-    if (!workspaceId) throw badRequest('缺少 workspaceId')
-    const { role } = await requireWorkspaceAdmin(auth.id, workspaceId)
+    let workspaceId = req.query.workspaceId
+    if (!workspaceId) {
+      const [firstWs] = await sql<{ workspace_id: string }[]>`
+        SELECT workspace_id FROM workspace_member WHERE user_id = ${auth.id} LIMIT 1`
+      if (!firstWs) throw badRequest('缺少 workspaceId')
+      workspaceId = firstWs.workspace_id
+    }
+    const { role } = await requireWorkspaceMember(auth.id, workspaceId)
 
     const users = await sql`
       SELECT u.id, u.email, u.display_name AS "displayName", u.status,

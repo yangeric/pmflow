@@ -61,8 +61,8 @@ export function UserMenu({
   const currentWsId = data?.workspaces[0]?.id
   const { data: adminUsersData } = useQuery({
     queryKey: ['adminUsers', currentWsId],
-    queryFn: () => currentWsId ? Api.adminUsers(currentWsId) : Promise.resolve({ users: [], myRole: 'MEMBER' as const, roles: [] }),
-    enabled: !!currentWsId && showSwitchModal,
+    queryFn: () => Api.adminUsers(currentWsId ?? ''),
+    enabled: showSwitchModal,
   })
 
   // 點到外面、按 Esc 都要收起來 —— 選單蓋在內容上，關不掉會擋住畫面
@@ -147,14 +147,12 @@ export function UserMenu({
           <MenuItem onClick={go(onAccount)}>{T.account.menu.account}</MenuItem>
           {isWorkspaceAdmin && <MenuItem onClick={go(onAdmin)}>{T.account.menu.admin}</MenuItem>}
 
-          {/* 擁有者/管理者專屬：測試代理切換身份 */}
-          {isWorkspaceAdmin && (
-            <MenuItem onClick={go(() => setShowSwitchModal(true))}>
-              <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
-                <span>🔀</span> 測試身份與代理切換
-              </span>
-            </MenuItem>
-          )}
+          {/* 測試身份與代理切換：隨時可無縫切換帳號 */}
+          <MenuItem onClick={go(() => setShowSwitchModal(true))}>
+            <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+              <span>🔀</span> 測試身份與代理切換
+            </span>
+          </MenuItem>
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 
