@@ -1672,34 +1672,63 @@ function GraphCanvas({
   // 顏色、淡出、拖曳位移與量到的尺寸都在這裡疊上去。自動佈局的結果（baseNodes）
   // 保持不變，所以狀態改色、切換聚焦都不會把使用者拖好的版面弄亂。
   const styledNodes = useMemo(
-    () => baseNodes.map(n => {
-      // 使用者自己拉過的框，尺寸以他拉的為準；沒拉過的照佈局算出來的
-      const size = resized[n.id]
-      const isBox = n.type === 'box'
-      return {
-        ...n,
-        zIndex: isBox ? -1 : 10,
-        position: dragged[n.id] ?? n.position,
-        selected: !!selectedIds[n.id],
-        ...(size ? { style: { ...n.style, width: size.width, height: size.height } } : {}),
-        // 框的尺寸是我們自己算的（見 layout），量到的值不要蓋掉它 ——
-        // 蓋成 undefined 的話 React Flow 會認為它還沒量好，整張圖停在 visibility:hidden
-        measured: size ?? n.measured ?? measured[n.id],
-        data: {
-          ...n.data,
-          color: statusColor(n.data.statusKey),
-          dimmed: !!neighbours && !neighbours.has(n.id),
-          focused: n.id === focusId,
-          hasUnread: unreadTaskIds.has(n.id),
-          kin: kin.get(n.id) ?? null,
-          blockedBy: blockedBy.get(n.id) ?? [],
-          parallel: parallelWith.get(n.id) ?? NO_PARALLEL,
-          showBadges,
-        },
+    () => {
+      // 建立父子關係與子節點動態邊界界限
+      const kidsMap = new Map<string, typeof baseNodes>()
+      for (const node of baseNodes) {
+        if (node.parentId) {
+          kidsMap.set(node.parentId, [...(kidsMap.get(node.parentId) ?? []), node])
+        }
       }
-    }),
+
+      return baseNodes.map(n => {
+        const isBox = n.type === 'box'
+        const userSize = resized[n.id]
+        let width = userSize?.width ?? layoutSize.get(n.id)?.w
+        let height = userSize?.height ?? layoutSize.get(n.id)?.h
+
+        // 若為大項目框：當事件被拖拽至框邊緣或超出框時，自動擴大框的寬與高以容納內部事件
+        if (isBox) {
+          const kids = kidsMap.get(n.id) ?? []
+          let maxRight = 0
+          let maxBottom = 0
+          for (const k of kids) {
+            const kPos = dragged[k.id] ?? k.position
+            const kW = measured[k.id]?.width ?? layoutSize.get(k.id)?.w ?? NODE_W
+            const kH = measured[k.id]?.height ?? layoutSize.get(k.id)?.h ?? NODE_H_FALLBACK
+            maxRight = Math.max(maxRight, kPos.x + kW + 32)
+            maxBottom = Math.max(maxBottom, kPos.y + kH + 32)
+          }
+          if (maxRight > 0) width = Math.max(width ?? 384, maxRight)
+          if (maxBottom > 0) height = Math.max(height ?? 288, maxBottom)
+        }
+
+        const sizeStyle = width && height ? { width, height } : {}
+
+        return {
+          ...n,
+          zIndex: isBox ? -1 : 10,
+          position: dragged[n.id] ?? n.position,
+          selected: !!selectedIds[n.id],
+          style: { ...n.style, ...sizeStyle },
+          measured: (width && height ? { width, height } : undefined) ?? n.measured ?? measured[n.id],
+          data: {
+            ...n.data,
+            color: statusColor(n.data.statusKey),
+            dimmed: !!neighbours && !neighbours.has(n.id),
+            focused: n.id === focusId,
+            hasUnread: unreadTaskIds.has(n.id),
+            kin: kin.get(n.id) ?? null,
+            blockedBy: blockedBy.get(n.id) ?? [],
+            parallel: parallelWith.get(n.id) ?? NO_PARALLEL,
+            showBadges,
+            minSize: isBox && width && height ? { w: width, h: height } : n.data.minSize,
+          },
+        }
+      })
+    },
     [baseNodes, dragged, resized, measured, selectedIds, neighbours, kin, focusId, statusColor,
-     blockedBy, parallelWith, unreadTaskIds, showBadges]
+     blockedBy, parallelWith, unreadTaskIds, showBadges, layoutSize]
   )
 
   const junctionNodes = useMemo<JunctionNode[]>(() => {
@@ -1809,8 +1838,8 @@ function GraphCanvas({
       if (!visibleIds.has(e.sourceId) || !visibleIds.has(e.targetId)) continue
       const type = e.linkType
       const scheduling = isScheduling(type)
-      if (scheduling && !showSchedLines) continue
-      if (!scheduling && !showRelated) continue
+      if (!scheduling) continue // 只保留 FS, SS, FF, SF 四項核心排程關聯，無視一般非排程關聯
+      if (!showSchedLines) continue
 
       /**
        * 同時開始／同時完成：收成圓點的那幾群這裡不畫（扇形上面畫過了）；
