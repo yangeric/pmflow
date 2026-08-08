@@ -24,10 +24,29 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
 
   // 建立所有任務的父子關係映射
   const parentOfMap = new Map<string, string>()
+  const hasKidsSet = new Set<string>()
   if (allTasks) {
     for (const t of allTasks) {
-      if (t.parentId) parentOfMap.set(t.id, t.parentId)
+      if (t.parentId) {
+        parentOfMap.set(t.id, t.parentId)
+        hasKidsSet.add(t.parentId)
+      }
     }
+  }
+
+  // 判斷事件是否屬於事件框（大項目或有包含子事件的框）
+  const isBoxedOrInBox = (t: Task) => t.type === 'EPIC' || !!t.parentId || hasKidsSet.has(t.id)
+
+  const comparePriority = (a: Task, b: Task) => {
+    // 事件框／大項目內的事件排序優於散落無框獨立事件
+    const boxA = isBoxedOrInBox(a) ? 1 : 0
+    const boxB = isBoxedOrInBox(b) ? 1 : 0
+    if (boxA !== boxB) return boxB - boxA
+
+    const ra = Number(a.rank) || 0
+    const rb = Number(b.rank) || 0
+    if (ra !== rb) return ra - rb
+    return a.ref.localeCompare(b.ref, undefined, { numeric: true })
   }
 
   // 將子任務的連線向上映射至頂層大項目，確保跨子任務連線能正確影響大項目的先後排序
@@ -55,15 +74,10 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
 
   // 分離出「有關聯」與「無關聯」兩群
   const connectedTasks = taskList.filter(t => connectedIds.has(t.id))
-  const unconnectedTasks = taskList.filter(t => !connectedIds.has(t.id)).sort((a, b) => {
-    const ra = Number(a.rank) || 0
-    const rb = Number(b.rank) || 0
-    if (ra !== rb) return ra - rb
-    return a.ref.localeCompare(b.ref, undefined, { numeric: true })
-  })
+  const unconnectedTasks = taskList.filter(t => !connectedIds.has(t.id)).sort(comparePriority)
 
-  // 如果全都沒有關聯，直接回傳原預設排序
-  if (connectedTasks.length === 0) return taskList
+  // 如果全都沒有關聯，依據「事件框優先」與 rank/ref 排序後回傳
+  if (connectedTasks.length === 0) return [...taskList].sort(comparePriority)
 
   const inDegree = new Map<string, number>()
   const childrenMap = new Map<string, string[]>()
@@ -78,13 +92,8 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
   }
 
-  // 根節點（沒有入度的事件），依據原 rank / ref 排序
-  const roots = connectedTasks.filter(t => (inDegree.get(t.id) ?? 0) === 0).sort((a, b) => {
-    const ra = Number(a.rank) || 0
-    const rb = Number(b.rank) || 0
-    if (ra !== rb) return ra - rb
-    return a.ref.localeCompare(b.ref, undefined, { numeric: true })
-  })
+  // 根節點（沒有入度的事件），依據事件框優先度與 rank/ref 排序
+  const roots = connectedTasks.filter(t => (inDegree.get(t.id) ?? 0) === 0).sort(comparePriority)
 
   const connectedResult: Task[] = []
   const visited = new Set<string>()
@@ -99,12 +108,7 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     const nextTasks = (childrenMap.get(id) ?? [])
       .map(nid => itemMap.get(nid))
       .filter((t): t is Task => !!t && !visited.has(t.id))
-      .sort((a, b) => {
-        const ra = Number(a.rank) || 0
-        const rb = Number(b.rank) || 0
-        if (ra !== rb) return ra - rb
-        return a.ref.localeCompare(b.ref, undefined, { numeric: true })
-      })
+      .sort(comparePriority)
 
     for (const next of nextTasks) {
       dfs(next.id)
