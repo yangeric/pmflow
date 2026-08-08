@@ -136,10 +136,12 @@ type TaskNodeData = {
   title: string
   /** 顏色不存在節點裡，每次算 —— 見下面建立節點那段的說明 */
   statusKey: string
+  taskType: string
   color: string
   progress: number
   inquiryState: InquiryState
   isEpic: boolean
+  isBug: boolean
   /** 框裡直接放著幾張任務。0＝不是框 */
   childCount: number
   /**
@@ -234,6 +236,16 @@ const BADGE_AMBER_SOFT = 'bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:t
 const BADGE_PURPLE = 'bg-purple-50 font-medium text-purple-700 '
   + 'dark:bg-purple-500/15 dark:text-purple-300'
 const BADGE_TEAL = 'bg-teal-50 font-medium text-teal-700 dark:bg-teal-500/15 dark:text-teal-300'
+const BADGE_ROSE_SOFT = 'bg-rose-50 font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
+const BADGE_SKY_SOFT = 'bg-sky-50 font-medium text-sky-700 dark:bg-sky-500/15 dark:text-sky-300'
+
+function getTypeColor(taskType: string, defaultColor?: string): string {
+  if (taskType === 'EPIC') return '#8b5cf6'
+  if (taskType === 'BUG') return '#f43f5e'
+  if (taskType === 'MILESTONE') return '#f59e0b'
+  if (taskType === 'TASK') return '#0284c7'
+  return defaultColor ?? '#64748b'
+}
 
 // ── 節點 ────────────────────────────────────────────────
 
@@ -347,10 +359,11 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
 
 function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
+  const accentColor = getTypeColor(data.taskType, data.color)
   return (
     <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900')}>
       <NodeHandles />
-      <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
+      <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
       <div className="px-2.5 py-2">
         {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
             寧可字少一點也要留在同一行，完整說法在 title 上 */}
@@ -375,8 +388,18 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
               {G.badge.epic}
             </span>
           )}
+          {data.showBadges && data.isBug && (
+            <span className={cx(BADGE, BADGE_ROSE_SOFT)} title="問題與缺陷">
+              問題
+            </span>
+          )}
           {data.showBadges && data.isMilestone && (
             <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
+          )}
+          {data.showBadges && !data.isEpic && !data.isBug && !data.isMilestone && (
+            <span className={cx(BADGE, BADGE_SKY_SOFT)}>
+              {data.taskType === 'TASK' ? '任務' : data.taskType}
+            </span>
           )}
           {/*
            * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
@@ -421,17 +444,25 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
         </div>
         <div className="mt-1.5 flex items-center gap-1.5">
           <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
-            <div className="h-1 rounded"
-                 style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+            <div className={cx("h-1 rounded transition-all duration-300", data.progress === 0 && "opacity-40")}
+                 style={{
+                   width: `${Math.max(data.progress, data.progress === 0 ? 100 : data.progress)}%`,
+                   backgroundColor: data.progress === 0 ? '#cbd5e1' : accentColor
+                 }} />
           </div>
-          {data.progress === 100 && (
+          {data.progress === 100 ? (
             <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white shadow-sm" title="已完成">
               ✓
             </span>
+          ) : data.progress === 0 ? (
+            <span className="text-[10px] tabular-nums font-normal text-slate-400 dark:text-slate-500" title="未開始/無進度事件">
+              未開始 (0%)
+            </span>
+          ) : (
+            <span className="text-[10px] tabular-nums font-medium text-slate-600 dark:text-slate-300">
+              {data.progress}%
+            </span>
           )}
-          <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
-            {data.progress}%
-          </span>
         </div>
       </div>
     </div>
@@ -1359,12 +1390,14 @@ function GraphCanvas({
           ref: n.ref,
           title: n.title,
           statusKey: n.statusKey,
+          taskType: n.type ?? 'TASK',
           color: '#94a3b8',        // 佔位，實際顏色在 styledNodes 補
           progress: n.progress ?? 0,
           inquiryState: n.inquiryState,
-          isEpic: isBox,
+          isEpic: isBox || n.type === 'EPIC',
           childCount: L.childCount.get(n.id) ?? 0,
           isEntry: L.entries.has(n.id),
+          isBug: n.type === 'BUG',
           isMilestone: n.type === 'MILESTONE',
           dimmed: false,
           focused: false,
