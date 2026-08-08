@@ -317,59 +317,74 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           minHeight={data.minSize?.h ?? NODE_H_FALLBACK}
         />
       )}
-      <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10 rounded-lg overflow-hidden border')}>
+      <div className={cx(frameClass(data), 'h-full w-full bg-white dark:bg-slate-900 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between')}>
         {/* 大項目框左右接點 100% 垂直置中於框體邊線中心 */}
         <NodeHandles />
-        <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
+        <div className="h-1 rounded-t-lg shrink-0" style={{ backgroundColor: data.color }} />
         
-        <div className="flex items-center gap-1.5 px-3 py-1.5">
-          <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-            {data.ref}
-          </span>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              data.onToggleContainer?.()
-            }}
-            className={cx(
-              'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
-              data.isContainerMode
-                ? 'bg-violet-600 text-white border-violet-500 shadow-2xs'
-                : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-            )}
-            title={data.isContainerMode ? '【收納模式開】允許其它事件卡片拖放進入內部' : '點擊開啟【收納模式】：允許其它事件卡片拖放進入內部'}
-          >
-            {data.isContainerMode ? '📦 可收納' : '📦 獨立'}
-          </button>
-          <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <div className="p-3 flex-1 flex flex-col justify-between">
+          {/* 第一列：編號 ＋ 大項目徽章 ＋ 右側統一功能按鈕 */}
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+              <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                {data.ref}
+              </span>
+              <span className={cx(BADGE, BADGE_VIOLET_SOFT)}>
+                {G.badge.epic}
+              </span>
+            </div>
+            
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onToggleContainer?.()
+                }}
+                className={cx(
+                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  data.isContainerMode
+                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                )}
+                title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
+              >
+                {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setResizable(r => !r)
+                }}
+                className={cx(
+                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  resizable
+                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                )}
+                title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳邊角調整框大小'}
+              >
+                {resizable ? '📐 縮放中' : '📐 縮放'}
+              </button>
+            </div>
+          </div>
+
+          {/* 第二列：標題 (位置完全統一在第二列) */}
+          <div className="mt-1 line-clamp-2 text-xs font-medium leading-snug text-slate-800 dark:text-slate-100" title={data.title}>
             {data.title}
-          </span>
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            <span className="h-1 w-12 overflow-hidden rounded bg-white dark:bg-slate-700">
-              <span className="block h-1 rounded"
-                    style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
-            </span>
-            <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+          </div>
+
+          {/* 第三列：進度條 (滿寬適配，框變大時自動伸縮填滿) */}
+          <div className="mt-2 flex items-center gap-2 w-full">
+            <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+              <div className="h-1 rounded transition-all duration-300"
+                   style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+            </div>
+            <span className="text-[10px] tabular-nums font-medium text-slate-500 dark:text-slate-400">
               {data.progress}%
             </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setResizable(r => !r)
-              }}
-              className={cx(
-                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border ml-1',
-                resizable
-                  ? 'bg-amber-600 text-white border-amber-500 shadow-2xs'
-                  : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-              )}
-              title={resizable ? '點擊關閉尺寸調整' : '點擊開啟【調整尺寸】：可手動拖曳卡片邊角改大小'}
-            >
-              {resizable ? '📐 縮放中' : '📐 尺寸'}
-            </button>
-          </span>
+          </div>
         </div>
       </div>
     </>
@@ -390,120 +405,100 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
           minHeight={data.minSize?.h ?? NODE_H_FALLBACK}
         />
       )}
-      <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900 shadow-sm rounded-lg overflow-hidden border')}>
+      <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900 shadow-sm rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800')}>
         <NodeHandles />
         <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
 
-        <div className="px-2.5 py-1.5">
-          {/* 微型頂列：事件編號 ＋ 允許收納開關 ＋ 尺寸調整 ＋ 狀態徽章 */}
-          <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
-            <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-              {data.ref}
-            </span>
-
-            {/* 功能 1：允許收納子事件開關 */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                data.onToggleContainer?.()
-              }}
-              className={cx(
-                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
-                data.isContainerMode
-                  ? 'bg-violet-600 text-white border-violet-500 shadow-2xs'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+        <div className="px-2.5 py-2">
+          {/* 第一列：編號 ＋ 類型徽章 ＋ 右側統一功能按鈕 */}
+          <div className="flex items-center justify-between gap-1">
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+                {data.ref}
+              </span>
+              {data.showBadges && data.kin && (
+                <span className={cx(BADGE, BADGE_VIOLET)}
+                      title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
+                  {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
+                </span>
               )}
-              title={data.isContainerMode ? '【收納模式開】允許其它事件卡片拖放進入內部' : '點擊開啟【收納模式】：允許其它事件卡片拖放進入內部'}
-            >
-              {data.isContainerMode ? '📦 可收納' : '📦 獨立'}
-            </button>
-
-            {/* 功能 2：手動調整卡片尺寸 */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                setResizable(r => !r)
-              }}
-              className={cx(
-                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
-                resizable
-                  ? 'bg-amber-600 text-white border-amber-500 shadow-2xs'
-                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+              {data.showBadges && data.isEntry && (
+                <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
+                  {G.badge.entry}
+                </span>
               )}
-              title={resizable ? '點擊關閉尺寸調整' : '點擊開啟【調整尺寸】：可手動拖曳卡片邊角改大小'}
-            >
-              {resizable ? '📐 縮放中' : '📐 尺寸'}
-            </button>
+              {data.showBadges && data.isEpic && (
+                <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
+                  {G.badge.epic}
+                </span>
+              )}
+              {data.showBadges && data.isBug && (
+                <span className={cx(BADGE, BADGE_ROSE_SOFT)} title="問題與缺陷">
+                  問題
+                </span>
+              )}
+              {data.showBadges && data.isMilestone && (
+                <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
+              )}
+              {data.showBadges && !data.isEpic && !data.isBug && !data.isMilestone && (
+                <span className={cx(BADGE, BADGE_SKY_SOFT)}>
+                  {data.taskType === 'TASK' ? '任務' : data.taskType}
+                </span>
+              )}
+              {data.showBadges && data.blockedBy.length > 0 && (
+                <span className={cx(BADGE, BADGE_RED)}
+                      title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
+              )}
+              {data.showBadges && data.problem && (
+                <span className={cx(BADGE, BADGE_FUCHSIA)}
+                      title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
+              )}
+            </div>
 
-            {data.showBadges && data.kin && (
-              <span className={cx(BADGE, BADGE_VIOLET)}
-                    title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
-                {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
-              </span>
-            )}
-            {data.showBadges && data.isEntry && (
-              <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
-                {G.badge.entry}
-              </span>
-            )}
-            {data.showBadges && data.isEpic && (
-              <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
-                {G.badge.epic}
-              </span>
-            )}
-            {data.showBadges && data.isBug && (
-              <span className={cx(BADGE, BADGE_ROSE_SOFT)} title="問題與缺陷">
-                問題
-              </span>
-            )}
-            {data.showBadges && data.isMilestone && (
-              <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
-            )}
-            {data.showBadges && !data.isEpic && !data.isBug && !data.isMilestone && (
-              <span className={cx(BADGE, BADGE_SKY_SOFT)}>
-                {data.taskType === 'TASK' ? '任務' : data.taskType}
-              </span>
-            )}
-            {data.showBadges && data.blockedBy.length > 0 && (
-              <span className={cx(BADGE, BADGE_RED)}
-                    title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
-            )}
-            {data.showBadges && data.problem && (
-              <span className={cx(BADGE, BADGE_FUCHSIA)}
-                    title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
-            )}
-            {data.showBadges && data.parallel.sameStart.length > 0 && (
-              <span className={cx(BADGE, BADGE_AMBER)}
-                    title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
-                同時開始 ({data.parallel.sameStart[0]})
-              </span>
-            )}
-            {data.showBadges && data.parallel.sameFinish.length > 0 && (
-              <span className={cx(BADGE, BADGE_PURPLE)}
-                    title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
-                同時完成 ({data.parallel.sameFinish[0]})
-              </span>
-            )}
-            {data.showBadges && data.parallel.overlap.length > 0 && (
-              <span className={cx(BADGE, BADGE_TEAL)}
-                    title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
-                重疊 ({data.parallel.overlap[0]})
-              </span>
-            )}
-            {data.showBadges && data.inquiryState !== 'NONE' && (
-              <span className="ml-auto shrink-0 text-[11px]"
-                    title={meta.label} aria-label={meta.label}>
-                {meta.icon}
-              </span>
-            )}
+            {/* 右側統一按鈕 (顏色與佈局保持一致) */}
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onToggleContainer?.()
+                }}
+                className={cx(
+                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  data.isContainerMode
+                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                )}
+                title={data.isContainerMode ? '【收納模式：開】允許其它事件卡片拖放進入內部 (點擊關閉收納模式)' : '【收納模式：關】(點擊開啟收納模式，允許其它事件卡片拖放進入內部)'}
+              >
+                {data.isContainerMode ? '📦 收納(開)' : '📦 收納(關)'}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setResizable(r => !r)
+                }}
+                className={cx(
+                  'rounded px-1.5 py-0.5 text-[9px] font-medium transition-all cursor-pointer border',
+                  resizable
+                    ? 'bg-slate-100 text-slate-800 border-slate-400 dark:bg-slate-800 dark:text-slate-100 dark:border-slate-500 font-semibold'
+                    : 'bg-white text-slate-600 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                )}
+                title={resizable ? '點擊關閉縮放調整' : '點擊開啟【縮放調整】：可手動拖曳卡片邊角改大小'}
+              >
+                {resizable ? '📐 縮放中' : '📐 縮放'}
+              </button>
+            </div>
           </div>
-          <div className="mt-0.5 line-clamp-2 text-xs font-medium leading-snug text-slate-800
-                          dark:text-slate-100">
+
+          {/* 第二列：標題 (位置完全統一在第二列) */}
+          <div className="mt-1 line-clamp-2 text-xs font-medium leading-snug text-slate-800 dark:text-slate-100" title={data.title}>
             {data.title}
           </div>
-          <div className="mt-1 flex items-center gap-1.5">
+
+          {/* 第三列：進度條 (滿寬適配，框變大時自動伸縮填滿) */}
+          <div className="mt-1.5 flex items-center gap-1.5 w-full">
             <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
               <div className={cx("h-1 rounded transition-all duration-300", data.progress === 0 && "opacity-40")}
                    style={{
@@ -1273,13 +1268,65 @@ function GraphCanvas({
   // 背景點陣的顏色是 SVG 屬性，吃不到 CSS 變數，只能自己看現在是哪一個主題
   const dark = useTheme().resolved === 'dark'
 
-  /** 使用者拖過的節點位置。只存被動過的那幾個，其餘照自動佈局 */
-  const [dragged, setDragged] = useState<Record<string, { x: number; y: number }>>({})
-  /**
-   * 使用者自己拉過大小的框。跟 dragged 同一套路：只存被拉過的那幾個，
-   * 其餘仍然用佈局算出來的尺寸，按「重新排列」一起清掉。
-   */
-  const [resized, setResized] = useState<Record<string, { width: number; height: number }>>({})
+  /** 使用者拖過的節點位置。按專案 projectId 持久化於 localStorage */
+  const [dragged, setDragged] = useState<Record<string, { x: number; y: number }>>(() => {
+    try {
+      const saved = localStorage.getItem(`pmflow_graph_dragged_${projectId}`)
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+  /** 使用者手動調整大小的框。按專案 projectId 持久化於 localStorage */
+  const [resized, setResized] = useState<Record<string, { width: number; height: number }>>(() => {
+    try {
+      const saved = localStorage.getItem(`pmflow_graph_resized_${projectId}`)
+      return saved ? JSON.parse(saved) : {}
+    } catch {
+      return {}
+    }
+  })
+
+  // 切換專案時自動載入該專案的持久化位置
+  useEffect(() => {
+    try {
+      const savedD = localStorage.getItem(`pmflow_graph_dragged_${projectId}`)
+      setDragged(savedD ? JSON.parse(savedD) : {})
+      const savedR = localStorage.getItem(`pmflow_graph_resized_${projectId}`)
+      setResized(savedR ? JSON.parse(savedR) : {})
+    } catch {
+      setDragged({})
+      setResized({})
+    }
+  }, [projectId])
+
+  // 每次拖曳移位自動寫入 localStorage 保存
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      if (Object.keys(dragged).length > 0) {
+        localStorage.setItem(`pmflow_graph_dragged_${projectId}`, JSON.stringify(dragged))
+      } else {
+        localStorage.removeItem(`pmflow_graph_dragged_${projectId}`)
+      }
+    } catch {
+      // ignore
+    }
+  }, [dragged, projectId])
+
+  // 每次調整大小自動寫入 localStorage 保存
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      if (Object.keys(resized).length > 0) {
+        localStorage.setItem(`pmflow_graph_resized_${projectId}`, JSON.stringify(resized))
+      } else {
+        localStorage.removeItem(`pmflow_graph_resized_${projectId}`)
+      }
+    } catch {
+      // ignore
+    }
+  }, [resized, projectId])
   /**
    * React Flow 量到的節點尺寸。這個一定要自己收好再疊回節點上。
    *
@@ -1325,20 +1372,7 @@ function GraphCanvas({
     }
   })
 
-  const toggleContainerMode = useCallback((id: string) => {
-    setContainerBoxIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      try {
-        localStorage.setItem('pmflow_graph_container_boxes', JSON.stringify([...next]))
-      } catch {}
-      return next
-    })
-  }, [])
+
   const [error, setError] = useState<string | null>(null)
   /** 按過「全部顯示」或「重新排列」，要求即使節點沒變也重新框一次 */
   const fitPending = useRef(false)
@@ -1514,7 +1548,7 @@ function GraphCanvas({
     nodes.sort((a, b) => depth(a.id) - depth(b.id))
 
     return { baseNodes: nodes, layoutAbs: L.abs, layoutSize: L.size }
-  }, [shownNodes, schedEdges, simul, measured, graph])
+  }, [shownNodes, schedEdges, simul, measured, graph, containerBoxIds])
 
   const nodeKey = useMemo(() => baseNodes.map(n => n.id).join(','), [baseNodes])
 
@@ -1558,17 +1592,39 @@ function GraphCanvas({
   useEffect(() => {
     if (!nodesInitialized || !baseNodes.length) return
     const fresh = fittedProject.current !== projectId
-    const changed = lastFitKey.current !== nodeKey
     const asked = fitPending.current
-    if (!fresh && !changed && !asked) return
+
     fittedProject.current = projectId
     lastFitKey.current = nodeKey
-    fitPending.current = false
-    if (fresh) userAdjusted.current = false
-    if (!fresh && !asked && userAdjusted.current) return
-    fitView(FIT_OPTIONS)
+
+    if (asked) {
+      fitPending.current = false
+      userAdjusted.current = false
+      try {
+        localStorage.removeItem(`pmflow_graph_viewport_${projectId}`)
+      } catch {}
+      fitView(FIT_OPTIONS)
+      return
+    }
+
+    // 嘗試還原使用者上次離開關聯圖時的焦點位置與縮放比率 (x, y, zoom)
+    try {
+      const savedV = localStorage.getItem(`pmflow_graph_viewport_${projectId}`)
+      if (savedV) {
+        const vp = JSON.parse(savedV)
+        if (vp && typeof vp.x === 'number' && typeof vp.y === 'number' && typeof vp.zoom === 'number') {
+          setViewport(vp, { duration: 0 })
+          userAdjusted.current = true
+          return
+        }
+      }
+    } catch {}
+
+    if (fresh || !userAdjusted.current) {
+      fitView(FIT_OPTIONS)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodesInitialized, nodeKey, baseNodes.length, projectId, fitView, relayout])
+  }, [nodesInitialized, nodeKey, baseNodes.length, projectId, fitView, setViewport])
 
   const zoomBy = useCallback((factor: number) => {
     const el = wrapperRef.current
@@ -1578,23 +1634,29 @@ function GraphCanvas({
     userAdjusted.current = true
     const cx = (el?.clientWidth ?? 0) / 2
     const cy = (el?.clientHeight ?? 0) / 2
-    setViewport(
-      { x: cx - ((cx - x) / zoom) * next, y: cy - ((cy - y) / zoom) * next, zoom: next },
-      { duration: 150 }
-    )
-  }, [getViewport, setViewport])
+    const newVp = { x: cx - ((cx - x) / zoom) * next, y: cy - ((cy - y) / zoom) * next, zoom: next }
+    setViewport(newVp, { duration: 150 })
+    if (projectId) {
+      try {
+        localStorage.setItem(`pmflow_graph_viewport_${projectId}`, JSON.stringify(newVp))
+      } catch {}
+    }
+  }, [getViewport, setViewport, projectId])
 
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
       if (userAdjusted.current) return
+      try {
+        if (localStorage.getItem(`pmflow_graph_viewport_${projectId}`)) return
+      } catch {}
       if (el.clientWidth === 0 || el.clientHeight === 0) return
       fitView(FIT_OPTIONS)
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [fitView])
+  }, [fitView, projectId])
 
   const statusCatKey = statuses.map(s => `${s.key}:${s.category}`).join('|')
   const categoryOf = useMemo(() => {
@@ -2070,6 +2132,36 @@ function GraphCanvas({
   })
 
   /**
+   * 切換容器收納模式：
+   * 1. 點擊開啟 (📦 收納(開))：允許其它事件卡片拖放進內部。
+   * 2. 點擊關閉 (📦 收納(關))：取消容器模式，並自動將內部所有子事件推回外部畫布 (parentId = null)，更新樹狀圖與畫布。
+   */
+  const toggleContainerMode = useCallback((id: string) => {
+    setContainerBoxIds(prev => {
+      const next = new Set(prev)
+      const isTurningOff = next.has(id)
+      if (isTurningOff) {
+        next.delete(id)
+        // 點擊關閉容器模式：將所有原隸屬於該容器的子事件推出外面 (parentId = null)
+        const kids = shownNodes.filter(n => n.parentId === id)
+        if (kids.length > 0) {
+          Promise.all(kids.map(k => Api.patchTask(k.id, { parentId: null })))
+            .then(() => invalidate())
+            .catch(e => {
+              setError(e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : G.link.addFailed)
+            })
+        }
+      } else {
+        next.add(id)
+      }
+      try {
+        localStorage.setItem('pmflow_graph_container_boxes', JSON.stringify([...next]))
+      } catch {}
+      return next
+    })
+  }, [shownNodes, invalidate])
+
+  /**
    * 空間拖曳動態階層管理 (Spatial Drag-and-Drop Hierarchy Engine)：
    * 1. 當任務拖移出大項目框外 -> 自動解除隸屬關係 (parentId = null)，同步左側 Menu！
    * 2. 當任務拖移進母任務/大項目框內 -> 自動建立父子隸屬關係 (parentId = box.id)，同步左側 Menu！
@@ -2165,16 +2257,35 @@ function GraphCanvas({
         <Button variant="ghost" onClick={() => zoomBy(1 / 1.25)}
                 aria-label={G.toolbar.zoomOut}>－</Button>
         {/* 他親口要全景，視角的主導權就還給自動佈局 */}
-        <Button onClick={() => { userAdjusted.current = false; fitView(FIT_OPTIONS) }}
-                title={G.toolbar.fitAllTip}>{G.toolbar.fitAll}</Button>
         <Button onClick={() => {
-                  setDragged({})
-                  setResized({})
                   userAdjusted.current = false
-                  fitPending.current = true
-                  setRelayout(n => n + 1)
+                  try {
+                    localStorage.removeItem(`pmflow_graph_viewport_${projectId}`)
+                  } catch {}
+                  fitView(FIT_OPTIONS)
                 }}
-                title={G.toolbar.relayoutTip}>{G.toolbar.relayout}</Button>
+                title={G.toolbar.fitAllTip}>{G.toolbar.fitAll}</Button>
+        {/* 提示新增功能的文字佔位符 */}
+        <span className="inline-flex items-center rounded border border-dashed border-blue-300 bg-blue-50/50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+          📍【預留功能位置：可在此提示要加入的功能】
+        </span>
+        <Button
+          onClick={() => {
+            setDragged({})
+            setResized({})
+            try {
+              localStorage.removeItem(`pmflow_graph_dragged_${projectId}`)
+              localStorage.removeItem(`pmflow_graph_resized_${projectId}`)
+              localStorage.removeItem(`pmflow_graph_viewport_${projectId}`)
+            } catch {}
+            userAdjusted.current = false
+            fitPending.current = true
+            fitView(FIT_OPTIONS)
+          }}
+          title="清空已儲存的拖曳位置、尺寸與視角，還原為初始自動排版"
+        >
+          ↺ 重置位置
+        </Button>
         {/* 框選本來按住 Shift 拉框就有，但沒有人看得出來。給它一顆按鈕，
             開著的時候左鍵直接拉框、右鍵平移 */}
         <Button
@@ -2234,6 +2345,14 @@ function GraphCanvas({
           onPaneClick={() => setFocusId(null)}
           // event 為 null 代表是程式呼叫的（fitView 自己），只有真人拖曳縮放才算
           onMoveStart={(e) => { if (e) userAdjusted.current = true }}
+          onMoveEnd={(_, vp) => {
+            userAdjusted.current = true
+            if (projectId) {
+              try {
+                localStorage.setItem(`pmflow_graph_viewport_${projectId}`, JSON.stringify(vp))
+              } catch {}
+            }
+          }}
           nodesConnectable
           elevateEdgesOnSelect
           /*
