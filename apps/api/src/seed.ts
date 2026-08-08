@@ -132,6 +132,11 @@ export async function seedDemo(): Promise<boolean> {
          * 有了它，畫面上才會出現「兩張任務 → 匯合點 → 一張任務」的完整形狀。
          */
         { n: 18, title: '切換後驗收',   type: 'TASK',      st: 'todo',  s: 39, d: 42, parent: 8,    prog: 0, c: -28 },
+        // 大項目四：資安與合規
+        { n: 19, title: '資安與合規',   type: 'EPIC',      st: 'doing', s: 5,  d: 36, parent: null, prog: 40, c: -28 },
+        { n: 20, title: '資安架構複審', type: 'TASK',      st: 'doing', s: 5,  d: 20, parent: 19,   prog: 50, c: -28, mine: true },
+        { n: 21, title: '防火牆規則套用', type: 'TASK',    st: 'todo',  s: 15, d: 25, parent: 19,   prog: 0, c: -28 },
+        { n: 22, title: '資安合規稽核', type: 'MILESTONE', st: 'todo',  s: 34, d: 34, parent: 19,   prog: 0, c: -28 },
       ]
 
       const ids = new Map<number, string>()
@@ -187,15 +192,17 @@ export async function seedDemo(): Promise<boolean> {
                                   note, created_by)
         VALUES (${ws.id}, ${user.id}, 'ANNUAL', ${day(4)}, ${day(5)}, '家庭旅遊', ${user.id})`
 
-      // 四種依賴各示範一條
+      // 四種依賴各示範一條 + 豐富匯合點範例
       const links: Array<[number, number, string, number]> = [
         [2, 6, 'FS', 2],        // 需求確認完成 2 天後才採購（等待任務完成，才能開始）
         [6, 7, 'FS', 0],        // 到貨後施工
-        [7, 9, 'SS', 0],        // 施工與測試同時起跑（等待任務開始，才能開始）
-        [9, 10, 'FF', 0],       // 測試與切換同時收尾（等待任務完成，才能完成）
-        // 同時收尾的那兩張，後面接驗收 —— 關聯圖上就會畫成
-        // 「兩張任務 → 同時完成的匯合點 → 一張任務」
-        [10, 18, 'FS', 0],
+        [7, 9, 'SS', 0],        // 施工與測試同時起跑（1對2黃色 SS 匯合點起點 1）
+        [7, 20, 'SS', 0],       // 施工與資安複審同時起跑（1對2黃色 SS 匯合點起點 2）
+        [9, 10, 'FF', 0],       // 測試與切換同時收尾
+        [20, 22, 'FF', 0],      // 資安複審與資安合規稽核同時收尾（2對1紫色 FF 匯合點）
+        [9, 22, 'FF', 0],       // 系統測試與資安合規稽核同時收尾
+        [10, 18, 'FS', 0],      // 同時收尾後接驗收
+        [4, 21, 'FS', 1],       // 網路架構確認完成後 1 天套用防火牆規則
         [3, 4, 'RELATES', 0],   // 語意關聯，不影響排程
       ]
       for (const [s, t, type, lag] of links) {
