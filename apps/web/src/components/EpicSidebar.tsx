@@ -630,6 +630,25 @@ function TreeNode({
   const [childTitle, setChildTitle] = useState('')
   const kids = childrenOf.get(task.id) ?? []
   const open = expanded.has(task.id)
+
+  const showDivider = useMemo(() => {
+    if (!dividerAfterTaskIdSet) return false
+    if (dividerAfterTaskIdSet.has(task.id) && (!open || kids.length === 0)) {
+      return true
+    }
+    if (!open && kids.length > 0) {
+      const hasHiddenTarget = (tList: Task[]): boolean => {
+        for (const k of tList) {
+          if (dividerAfterTaskIdSet.has(k.id)) return true
+          const subK = childrenOf.get(k.id) ?? []
+          if (subK.length > 0 && hasHiddenTarget(subK)) return true
+        }
+        return false
+      }
+      return hasHiddenTarget(kids)
+    }
+    return false
+  }, [dividerAfterTaskIdSet, task.id, open, kids, childrenOf])
   const kind = types.find(t => t.key === task.type)
   const kindName = kind?.name ?? task.type
   const kindColor = kind?.color ?? '#94a3b8'
