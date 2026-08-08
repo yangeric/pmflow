@@ -274,12 +274,11 @@ export default async function taskRoutes(app: FastifyInstance) {
     const user = await authenticate(req)
     const b = patchBody.parse(req.body)
     // 只填「目前遇到的問題」的話，專案裡的任何人都可以 —— 那是「我卡在這裡」，
-    // 不是在改別人的任務。其他欄位一律要編輯者，而且還要過 assertCanEditTask
-    // 任何人（專案成員）皆可修改「標題」與「目前遇到的問題」
-    const onlyTitleOrProblem = Object.keys(b).length > 0 && Object.keys(b).every(k => k === 'title' || k === 'problem')
+    // 不是在改別人的任務。其他欄位 (如標題、描述、狀態等) 一律要過 assertCanEditTask 權限檢查
+    const onlyProblem = Object.keys(b).length > 0 && Object.keys(b).every(k => k === 'problem')
     const { workspaceId, projectId, role } = await requireTaskAccess(
-      user.id, req.params.id, onlyTitleOrProblem ? 'VIEWER' : 'EDITOR')
-    if (!onlyTitleOrProblem) await assertCanEditTask(req.params.id, user.id, role)
+      user.id, req.params.id, onlyProblem ? 'VIEWER' : 'EDITOR')
+    if (!onlyProblem) await assertCanEditTask(req.params.id, user.id, role)
 
     if (b.type) await assertParamKey(sql, projectId, 'type', b.type)
     if (b.priority) await assertParamKey(sql, projectId, 'priority', b.priority)
