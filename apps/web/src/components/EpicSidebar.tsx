@@ -194,7 +194,7 @@ export function EpicSidebar({
     enabled: !!project?.id,
   })
 
-  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn, dividerAfterEpics } = useMemo(() => {
+  const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn, dividerAfterTaskIdSet } = useMemo(() => {
     const edges = graphData?.edges ?? []
     const ids = new Set(tasks.map(t => t.id))
     const rawEpics = tasks.filter(t => !t.parentId)
@@ -287,61 +287,80 @@ export function EpicSidebar({
 
     const looseCount = tasks.filter(t => t.parentId && !ids.has(t.parentId)).length
 
-    // 找出頂層大項目/事件框之間的連線群組與包含關係，判定何時需要在整個關聯的最後一個事件後面加分隔線
-    const parentOfMap = new Map<string, string>()
-    const hasKidsSet = new Set<string>()
+    // 找出每個事件框及其向下衍生關聯在 Menu 中最後出現的任務 ID
+    const dividerAfterTaskIdSet = new Set<string>()
+
+    const childrenMap = new Map<string, string[]>()
     for (const t of tasks) {
       if (t.parentId) {
-        parentOfMap.set(t.id, t.parentId)
-        hasKidsSet.add(t.parentId)
+        const list = childrenMap.get(t.parentId) ?? []
+        list.push(t.id)
+        childrenMap.set(t.parentId, list)
       }
     }
 
-    const epicIdSet = new Set(epics.map(e => e.id))
-
-    // 連通分量 (Union-Find)
-    const parentUF = new Map<string, string>()
-    const findUF = (i: string): string => {
-      if (!parentUF.has(i)) parentUF.set(i, i)
-      if (parentUF.get(i) !== i) parentUF.set(i, findUF(parentUF.get(i)!))
-      return parentUF.get(i)!
-    }
-    const unionUF = (i: string, j: string) => {
-      const ri = findUF(i)
-      const rj = findUF(j)
-      if (ri !== rj) parentUF.set(ri, rj)
-    }
-
-    // 將跨任務/大項目的連線向上映射至頂層大項目
+    const outEdgesMap = new Map<string, string[]>()
     for (const e of edges) {
-      let src = e.sourceId
-      let tgt = e.targetId
-      while (parentOfMap.has(src) && !epicIdSet.has(src)) src = parentOfMap.get(src)!
-      while (parentOfMap.has(tgt) && !epicIdSet.has(tgt)) tgt = parentOfMap.get(tgt)!
-      if (epicIdSet.has(src) && epicIdSet.has(tgt) && src !== tgt) {
-        unionUF(src, tgt)
+      const list = outEdgesMap.get(e.sourceId) ?? []
+      list.push(e.targetId)
+      outEdgesMap.set(e.sourceId, list)
+    }
+
+    // 將所有 Menu 中呈現的任務依深層順序展平，求得在 Menu 上的精確列數索引
+    const flatMenuTasks: Task[] = []
+    function flattenMenu(tList: Task[]) {
+      for (const t of tList) {
+        flatMenuTasks.push(t)
+        const subKids = kids.get(t.id) ?? []
+        if (subKids.length > 0) {
+          flattenMenu(subKids)
+        }
+      }
+    }
+    flattenMenu(epics)
+
+    const flatOrderMap = new Map<string, number>()
+    flatMenuTasks.forEach((t, index) => flatOrderMap.set(t.id, index))
+
+    // 針對每一個事件框（包含子事件的大項目），搜尋其本體與子任務所衍生出的所有關聯項目
+    for (const epic of epics) {
+      if (!childrenMap.has(epic.id)) continue
+
+      const relSet = new Set<string>()
+      const queue: string[] = [epic.id]
+      while (queue.length > 0) {
+        const curr = queue.shift()!
+        if (relSet.has(curr)) continue
+        relSet.add(curr)
+
+        // 加入子任務
+        for (const kId of childrenMap.get(curr) ?? []) {
+          if (!relSet.has(kId)) queue.push(kId)
+        }
+
+        // 加入出度連線 (source -> target)
+        for (const tId of outEdgesMap.get(curr) ?? []) {
+          if (!relSet.has(tId)) queue.push(tId)
+        }
+      }
+
+      // 在 flatMenuTasks 中找出屬於 relSet 且在 Menu 中最靠後的任務
+      let maxIdx = -1
+      let lastTaskIdInRel = ''
+      for (const id of relSet) {
+        const idx = flatOrderMap.get(id)
+        if (idx !== undefined && idx > maxIdx) {
+          maxIdx = idx
+          lastTaskIdInRel = id
+        }
+      }
+
+      if (lastTaskIdInRel) {
+        dividerAfterTaskIdSet.add(lastTaskIdInRel)
       }
     }
 
-    const componentLastEpicMap = new Map<string, string>()
-    const componentHasBoxMap = new Map<string, boolean>()
-
-    for (const e of epics) {
-      const root = findUF(e.id)
-      componentLastEpicMap.set(root, e.id)
-      if (hasKidsSet.has(e.id)) {
-        componentHasBoxMap.set(root, true)
-      }
-    }
-
-    const dividerAfterEpics = new Set<string>()
-    for (const [root, lastEpicId] of componentLastEpicMap.entries()) {
-      if (componentHasBoxMap.get(root)) {
-        dividerAfterEpics.add(lastEpicId)
-      }
-    }
-
-    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn, inquiriesIn, dividerAfterEpics }
+    return { epics, stat, looseCount, childrenOf: kids, bugsUnder, overdueIn, inquiriesIn, dividerAfterTaskIdSet }
   }, [tasks])
 
   /** 一列任務的問題數：底下的，加上自己（如果它本身就是一張問題） */
@@ -512,7 +531,7 @@ export function EpicSidebar({
             expand={expand}
             selectedEpicId={selectedEpicId}
             selectedTaskId={selectedTaskId}
-            showDivider={dividerAfterEpics.has(epic.id)}
+            dividerAfterTaskIdSet={dividerAfterTaskIdSet}
             onSelectEpic={onSelectEpic}
             onOpenTask={onOpenTask}
           />
@@ -582,7 +601,7 @@ export function EpicSidebar({
  */
 function TreeNode({
   task, depth, projectId, childrenOf, stat, bugsUnder, overdueIn, inquiriesIn, types,
-  expanded, autoOpen, toggle, expand, selectedEpicId, selectedTaskId, showDivider, onSelectEpic, onOpenTask,
+  expanded, autoOpen, toggle, expand, selectedEpicId, selectedTaskId, dividerAfterTaskIdSet, onSelectEpic, onOpenTask,
 }: {
   task: Task
   depth: number
@@ -602,7 +621,7 @@ function TreeNode({
   expand: (id: string) => void
   selectedEpicId: string | null
   selectedTaskId: string | null
-  showDivider?: boolean
+  dividerAfterTaskIdSet?: Set<string>
   onSelectEpic: (id: string) => void
   onOpenTask: (id: string) => void
 }) {
@@ -855,13 +874,14 @@ function TreeNode({
           expand={expand}
           selectedEpicId={selectedEpicId}
           selectedTaskId={selectedTaskId}
+          dividerAfterTaskIdSet={dividerAfterTaskIdSet}
           onSelectEpic={onSelectEpic}
           onOpenTask={onOpenTask}
         />
       ))}
 
-      {/* 整個關聯群組（大項目與連線事件）的最後一個事件後面加上分隔線 */}
-      {showDivider && (
+      {/* 整個關聯群組的最後一個任務列後面加上分隔線 */}
+      {dividerAfterTaskIdSet?.has(task.id) && (
         <div className="my-2 border-b border-slate-200 dark:border-slate-700/60" />
       )}
     </div>
