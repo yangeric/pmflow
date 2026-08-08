@@ -5,7 +5,7 @@ import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
 import { rollup } from '../lib/rollup'
 import { T } from '../strings'
 import { useUnreadNotifications } from '../lib/useUnreadNotifications'
-import { Button, Input, cx } from './ui'
+import { Button, Input, Select, cx } from './ui'
 
 /**
  * Ref: CR-006 (專案樹狀側欄架構與折疊狀態持久化，詳見 CHANGELOG.md)
@@ -204,8 +204,11 @@ export function EpicSidebar({
     rememberCollapsed(v)
   }
 
+  const [createType, setCreateType] = useState<string>('EPIC')
+
   const create = useMutation({
-    mutationFn: (t: string) => Api.createTask(project!.id, { title: t, type: 'EPIC' }),
+    mutationFn: (v: { title: string; type: string }) =>
+      Api.createTask(project!.id, { title: v.title, type: v.type }),
     onSuccess: () => {
       setTitle(''); setAdding(false)
       qc.invalidateQueries({ queryKey: ['tasks', project!.id] })
@@ -330,16 +333,33 @@ export function EpicSidebar({
 
         {adding ? (
           <div className="mt-2 space-y-1.5 rounded-md bg-slate-50 p-2 dark:bg-slate-800">
+            <div className="flex gap-1.5 items-center">
+              <span className="text-xs text-slate-500 shrink-0">類型：</span>
+              <Select
+                value={createType}
+                onChange={e => setCreateType(e.target.value)}
+                className="text-xs py-1 flex-1"
+              >
+                {(types.length ? types : [
+                  { key: 'EPIC', name: '大項目' },
+                  { key: 'TASK', name: '任務' },
+                  { key: 'BUG', name: '問題' },
+                  { key: 'MILESTONE', name: '里程碑' }
+                ]).map(t => (
+                  <option key={t.key} value={t.key}>{t.name}</option>
+                ))}
+              </Select>
+            </div>
             <Input value={title} onChange={e => setTitle(e.target.value)}
-                   placeholder={T.nav.sidebar.epicNamePlaceholder} autoFocus
+                   placeholder="事件名稱" autoFocus
                    onKeyDown={e => {
-                     if (e.key === 'Enter' && title.trim()) create.mutate(title.trim())
+                     if (e.key === 'Enter' && title.trim()) create.mutate({ title: title.trim(), type: createType })
                      if (e.key === 'Escape') { setAdding(false); setTitle('') }
                    }} />
             <div className="flex gap-1">
               <Button variant="primary" className="flex-1 justify-center text-xs"
                       disabled={!title.trim() || create.isPending}
-                      onClick={() => create.mutate(title.trim())}>{T.common.create}</Button>
+                      onClick={() => create.mutate({ title: title.trim(), type: createType })}>{T.common.create}</Button>
               <Button className="text-xs" onClick={() => { setAdding(false); setTitle('') }}>
                 {T.common.cancel}
               </Button>
@@ -350,7 +370,7 @@ export function EpicSidebar({
                   className="mt-1 w-full rounded-md px-2.5 py-2 text-left text-sm text-slate-400
                              hover:bg-slate-50 disabled:opacity-50
                              dark:text-slate-400 dark:hover:bg-slate-800">
-            ＋ {T.nav.sidebar.addEpic}
+            ＋ 新增事件
           </button>
         )}
       </nav>
