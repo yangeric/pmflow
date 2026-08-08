@@ -192,8 +192,14 @@ export async function seedDemo(): Promise<boolean> {
                                   note, created_by)
         VALUES (${ws.id}, ${user.id}, 'ANNUAL', ${day(4)}, ${day(5)}, '家庭旅遊', ${user.id})`
 
-      // 預設拔掉所有初始連線，讓使用者開關聯圖時可從頭自由拉線
-      const links: Array<[number, number, string, number]> = []
+      // 預設基礎連線（包含 E2E 測試 17 所需的連動依賴 6 -> 7）
+      const links: Array<[number, number, string, number]> = [
+        [2, 6, 'FS', 2],        // 需求確認完成 2 天後才採購
+        [6, 7, 'FS', 0],        // 到貨後施工（E2E 連動測試依賴）
+        [7, 9, 'SS', 0],        // 施工與測試同時起跑
+        [9, 10, 'FF', 0],       // 測試與切換同時收尾
+        [3, 4, 'RELATES', 0],   // 語意關聯
+      ]
       for (const [s, t, type, lag] of links) {
         await tx`INSERT INTO task_link (workspace_id, source_id, target_id, link_type, lag_days, created_by)
                  VALUES (${ws.id}, ${ids.get(s)!}, ${ids.get(t)!}, ${type}, ${lag}, ${user.id})`
