@@ -1908,8 +1908,8 @@ function GraphCanvas({
   }
 
   const addLink = useMutation({
-    mutationFn: (v: { source: string; target: string }) =>
-      Api.addLink(v.source, { targetId: v.target, linkType: newLinkType }),
+    mutationFn: (v: { source: string; target: string; linkType: LinkType }) =>
+      Api.addLink(v.source, { targetId: v.target, linkType: v.linkType }),
     onSuccess: () => { setError(null); invalidate() },
     // 後端擋下循環依賴／父子衝突時，把它的中文理由原封不動顯示出來
     onError: (e: unknown) => setError(
@@ -1931,14 +1931,16 @@ function GraphCanvas({
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
-    addLink.mutate({ source: c.source, target: c.target })
+    const viaRelation = c.sourceHandle === H_REL_OUT || c.targetHandle === H_REL_IN
+    const linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
+    addLink.mutate({ source: c.source, target: c.target, linkType })
   }, [addLink])
 
+  const [deleteTargetEdge, setDeleteTargetEdge] = useState<{ id: string; label: string } | null>(null)
+
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
-    if (window.confirm(G.link.deleteConfirm(String(edge.label ?? '')))) {
-      delLink.mutate(edge.id)
-    }
-  }, [delLink])
+    setDeleteTargetEdge({ id: edge.id, label: String(edge.label ?? '') })
+  }, [])
 
   const focused = focusId ? shownNodes.find(n => n.id === focusId) : undefined
   const focusedLinks = useMemo(() => {
@@ -1990,24 +1992,7 @@ function GraphCanvas({
           {boxSelect ? G.toolbar.boxSelectOn : G.toolbar.boxSelect}
         </Button>
 
-        {/* 兩類要從不同的圓點拉，選了哪一類就把該從哪拉寫在 title 上 */}
-        <label className="ml-3 flex items-center gap-1.5 text-sm text-slate-600
-                          dark:text-slate-300"
-               title={isScheduling(newLinkType)
-                 ? G.toolbar.newLinkTipScheduling
-                 : G.toolbar.newLinkTipRelated}>
-          {G.toolbar.newLink}
-          <Select value={newLinkType} className="py-1"
-                  onChange={e => setNewLinkType(e.target.value as LinkType)}>
-            <optgroup label={G.toolbar.groupScheduling}>
-              {SCHEDULING.map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
-            </optgroup>
-            <optgroup label={G.toolbar.groupRelated}>
-              {(['RELATES', 'BLOCKS', 'DUPLICATES', 'REQUIRES'] as LinkType[])
-                .map(t => <option key={t} value={t}>{LINK_LABEL[t]}</option>)}
-            </optgroup>
-          </Select>
-        </label>
+
 
         {/* 說明整包收在畫布左下角的「線條說明」裡，工具列不佔位 */}
       </div>
@@ -2149,6 +2134,40 @@ function GraphCanvas({
           )}
         </ReactFlow>
       </div>
+
+      {deleteTargetEdge && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+            <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-500/20">
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                刪除連線確認
+              </h3>
+            </div>
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+              確定要刪除連線「<span className="font-semibold text-slate-900 dark:text-slate-100">{deleteTargetEdge.label || '無標籤連線'}</span>」嗎？
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2.5">
+              <Button variant="ghost" onClick={() => setDeleteTargetEdge(null)}>
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  delLink.mutate(deleteTargetEdge.id)
+                  setDeleteTargetEdge(null)
+                }}
+              >
+                確定刪除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <LegendBar
         showEdgeLabels={showEdgeLabels} setShowEdgeLabels={setShowEdgeLabels}
