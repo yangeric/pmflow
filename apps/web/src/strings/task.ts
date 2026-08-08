@@ -19,7 +19,7 @@ export const task = {
   type: {
     EPIC: '大項目',
     MILESTONE: '里程碑',
-    BUG: '錯誤',
+    BUG: '問題',
   },
   priority: {
     LOW: '低',

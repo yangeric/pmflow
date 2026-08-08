@@ -40,7 +40,7 @@ const MILESTONE = 'MILESTONE'
 const LABEL: Record<string, string> = {
   [EPIC]: '大項目',
   [TASK]: '任務',
-  [BUG]: '錯誤',
+  [BUG]: '問題',
   [MILESTONE]: '里程碑',
 }
 

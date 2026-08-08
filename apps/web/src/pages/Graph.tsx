@@ -1974,7 +1974,7 @@ function GraphCanvas({
     const getAbs = (id: string, nObj?: Node) => {
       const baseAbs = layoutAbs.get(id) ?? { x: 0, y: 0 }
       const pId = parentOfMap.get(id)
-      const d = dragged[id] ?? nObj?.position
+      const d = (nObj && id === nObj.id ? nObj.position : undefined) ?? dragged[id]
       if (!d) return baseAbs
       if (pId && parentOfMap.has(pId)) {
         const pAbs = layoutAbs.get(pId) ?? { x: 0, y: 0 }
@@ -1996,7 +1996,7 @@ function GraphCanvas({
     let newParentId: string | null = null
 
     for (const bNode of boxes) {
-      const bAbs = getAbs(bNode.id, bNode)
+      const bAbs = getAbs(bNode.id)
       const bW = layoutSize.get(bNode.id)?.w ?? 240
       const bH = layoutSize.get(bNode.id)?.h ?? 160
 

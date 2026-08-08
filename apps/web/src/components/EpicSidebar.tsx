@@ -480,7 +480,7 @@ function TreeNode({
           onClick={() => {
             if (hasUnread) markTaskRead(task.id)
             if (isRoot) onSelectEpic(task.id)
-            else onOpenTask(task.id)
+            onOpenTask(task.id)
           }}
           title={isRoot && stat?.hasChildren
             ? T.nav.sidebar.epicSummary(task.title, stat.done, stat.total)
@@ -581,6 +581,16 @@ function TreeNode({
           * `focus:opacity-100` 不能省：只認 hover 的話，用鍵盤 Tab 過來的人
           * 會停在一顆看不見的按鈕上，永遠不知道它在那裡。
           */}
+        <button
+          onClick={e => { e.stopPropagation(); onOpenTask(task.id) }}
+          title="編輯詳細內容"
+          aria-label="編輯詳細內容"
+          className={cx('w-6 shrink-0 rounded text-xs opacity-0 transition-opacity',
+            'group-hover/row:opacity-100 focus:opacity-100',
+            isRoot ? 'py-2.5' : 'py-1.5',
+            'text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300')}>
+          ✏️
+        </button>
         {addType && projectId && !addingChild && (
           <button
             onClick={e => { e.stopPropagation(); expand(task.id); setAddingChild(true) }}
