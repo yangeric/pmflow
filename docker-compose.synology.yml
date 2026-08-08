@@ -4,12 +4,8 @@
 # Container Manager 的專案介面沒辦法建立 .env 這種點開頭的隱藏檔，
 # 原本那份 docker-compose.yml 用了大量 ${變數}，在這裡會全部讀不到而失敗。
 #
-# 使用前要改四個地方，都用「改我」標示了：
-#   1. 兩行 image: 的帳號與版本號
-#   2. POSTGRES_PASSWORD（出現三次，必須一字不差）
-#   3. PMFLOW_JWT_SECRET
-#
-# ⚠️ 版本號沒有開頭的 v。git tag 打 v0.1.1，映像標籤是 0.1.1。
+# 密碼與金鑰已經幫你產生好並填進去了，可以直接用，不用改任何東西。
+# （想自己換的話：資料庫密碼出現在三個地方，三處必須一字不差。）
 #
 # Container Manager → 專案 → 新增 → 路徑選 /docker/pmflow
 # → 來源選「建立 docker-compose.yml」→ 把這整份貼進去
@@ -20,7 +16,7 @@ services:
 
   # 唯一對外的容器：靜態檔 + 把 /api 轉給後端
   web:
-    image: ghcr.io/你的GitHub帳號/pmflow-web:0.1.1
+    image: ghcr.io/yangeric/pmflow-web:latest
     container_name: pmflow-web
     restart: unless-stopped
     environment:
@@ -38,7 +34,7 @@ services:
       options: { max-size: "10m", max-file: "3" }
 
   api:
-    image: ghcr.io/你的GitHub帳號/pmflow-api:0.1.1
+    image: ghcr.io/yangeric/pmflow-api:latest
     container_name: pmflow-api
     restart: unless-stopped
     # 刻意不設 user:。映像內建以 uid 10001 的非 root 帳號執行，
@@ -47,14 +43,11 @@ services:
       TZ: Asia/Taipei
       NODE_ENV: production
 
-      # ── 改我 1／2 ─────────────────────────────────────
-      # 下面這行的密碼要跟 db 服務那邊「一字不差」，改一個就要兩個都改
-      DATABASE_URL: postgres://pmflow:改成你的資料庫密碼@db:5432/pmflow
+      # 這行的密碼跟下面 db／backup 兩個服務的密碼是同一組，改一個就要三個都改
+      DATABASE_URL: postgres://pmflow:54x4NSyKVU8kkO6ZmQq55Bpzv9cKn3Zt@db:5432/pmflow
 
-      # ── 改我 2／2 ─────────────────────────────────────
-      # 至少 32 字元的隨機字串。產生方法見檔案最下方。
-      # 這串換掉的話，所有人的登入狀態會全部失效（要重新登入），資料不受影響。
-      PMFLOW_JWT_SECRET: 改成一長串隨機字串至少32字元
+      # 這串換掉的話，所有人的登入狀態會全部失效（要重新登入），資料本身不受影響
+      PMFLOW_JWT_SECRET: EI5pgkqTf426WCwsvkSwlczHi1EKn8yDrZZG8BoLvjO7qjNLlqNuokhPoRM2L5Hr
 
       PMFLOW_ACCESS_TTL_SEC: "900"        # access token 15 分鐘
       PMFLOW_REFRESH_TTL_SEC: "604800"    # refresh token 7 天
@@ -86,8 +79,7 @@ services:
       POSTGRES_DB: pmflow
       POSTGRES_USER: pmflow
 
-      # ── 改我 1／2（跟上面 DATABASE_URL 裡那段要一模一樣）──
-      POSTGRES_PASSWORD: 改成你的資料庫密碼
+      POSTGRES_PASSWORD: 54x4NSyKVU8kkO6ZmQq55Bpzv9cKn3Zt
 
       POSTGRES_INITDB_ARGS: "--data-checksums"
       PGDATA: /var/lib/postgresql/data/pgdata
@@ -126,8 +118,7 @@ services:
       PGDATABASE: pmflow
       PGUSER: pmflow
 
-      # ── 改我 1／2（同上，三個地方的密碼要一致）──
-      PGPASSWORD: 改成你的資料庫密碼
+      PGPASSWORD: 54x4NSyKVU8kkO6ZmQq55Bpzv9cKn3Zt
 
       BACKUP_KEEP_DAYS: "30"
       BACKUP_AT_HOUR: "3"
@@ -170,12 +161,14 @@ volumes:
   backups:     { name: pmflow-backups }
 
 # ══════════════════════════════════════════════════════════
-# 產生隨機字串（在你的 Windows PowerShell 打，跑兩次拿兩串）
+# 關於裡面那兩串密碼
 # ══════════════════════════════════════════════════════════
 #
-#   [Convert]::ToBase64String((1..48|%{Get-Random -Max 256}))
+# 已經產生好填進去了。資料庫密碼刻意只用英數字 —— 它被嵌在
+# DATABASE_URL 這個網址裡，出現 / + @ : 這些字元會讓網址解析錯亂。
 #
-# 一串給 POSTGRES_PASSWORD（三個地方都要貼），一串給 PMFLOW_JWT_SECRET。
+# 想自己換一組（在 Windows PowerShell 打）：
+#   -join ((1..32) | %{ (48..57+65..90+97..122 | Get-Random) -as [char] })
 #
 # ══════════════════════════════════════════════════════════
 # 使用步驟
@@ -187,6 +180,7 @@ volumes:
 #    路徑：/docker/pmflow
 #    來源：建立 docker-compose.yml → 貼上這份（記得先改好那兩個值）
 # 3) 下一步 → 下一步 → 完成。它會自動拉映像並啟動，第一次約 2～5 分鐘
+#    （這份已經填好密碼，貼上就能直接用）
 # 4) 看 api 容器的日誌，出現「migration 已套用」就成功了
 # 5) 瀏覽 http://你的NAS_IP:8480
 #    示範帳號 demo@pmflow.local ／ demo1234
@@ -196,19 +190,27 @@ volumes:
 # ══════════════════════════════════════════════════════════
 #
 # 拉映像失敗：manifest unknown / unauthorized / not found
-#   → 先確認版本號沒有多寫 v（0.1.1 而不是 v0.1.1）。
-#   → 再確認 GHCR 的 package 是不是還私有 —— 預設就是私有，repo 公開也一樣。
-#     GHCR 對看不到的 package 一律回 manifest unknown（不回「沒有權限」，
-#     免得洩漏 package 是否存在），所以症狀跟版本號寫錯一模一樣。
-#     github.com/<你的帳號>?tab=packages → pmflow-api → Package settings
+#   → 九成是 GHCR 的 package 還是私有的。GHCR 對「看不到的」package
+#     一律回 manifest unknown（不回「沒權限」，免得洩漏 package 是否存在），
+#     所以這個訊息看起來像映像不存在，實際上是權限問題。
+#     github.com/yangeric?tab=packages → pmflow-api → Package settings
 #     → Danger Zone → Change visibility → Public。pmflow-web 也做一次。
+#
+#   → 改成 Public 後還是不行，就改用 Docker Hub。把上面兩行 image: 換成：
+#       image: yangeric/pmflow-web:0.1.1
+#       image: yangeric/pmflow-api:0.1.1
+#     Docker Hub 推上去預設就是公開的，不用另外設定。
 #
 # 想用網域 + HTTPS
 #   → DSM 控制台 → 登入入口 → 進階 → 反向代理伺服器
 #     來源 pm.yourdomain.com:443 → 目的地 localhost:8480
 #
+# 版本標籤沒有 v
+#   → git tag 打的是 v0.1.1，但 docker/metadata-action 的 semver 樣板會把
+#     開頭的 v 去掉，registry 上的標籤是 0.1.1。寫成 v0.1.1 會 manifest unknown。
+#
 # 升級版本
-#   → 把上面兩行 image: 的 v0.1.1 改成新版號，專案按「建置」。
+#   → 把上面兩行 image: 的 0.1.1 改成新版號（一樣不加 v），專案按「建置」。
 #     不要裝 Watchtower 自動更新 —— 半夜自動升級遇到 migration 失敗很難救。
 #
 # 備份
