@@ -313,9 +313,11 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           </span>
           {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
               這裡改成講數量，一眼知道這一包有多大 */}
-          <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
-            {G.badge.childCount(data.childCount)}
-          </span>
+          {data.showBadges && (
+            <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
+              {G.badge.childCount(data.childCount)}
+            </span>
+          )}
           {data.showBadges && data.isEntry && (
             <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
               {G.badge.entry}
@@ -339,7 +341,7 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
             {data.title}
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {data.inquiryState !== 'NONE' && (
+            {data.showBadges && data.inquiryState !== 'NONE' && (
               <span className="text-[11px]" title={meta.label} aria-label={meta.label}>
                 {meta.icon}
               </span>
@@ -406,45 +408,45 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
               {G.badge.entry}
             </span>
           )}
-          {data.isEpic && (
+          {data.showBadges && data.isEpic && (
             <span className={cx(BADGE, BADGE_VIOLET_SOFT)} title={G.badge.epicTip}>
               {G.badge.epic}
             </span>
           )}
-          {data.isMilestone && (
+          {data.showBadges && data.isMilestone && (
             <span className={cx(BADGE, BADGE_AMBER_SOFT)}>{G.badge.milestone}</span>
           )}
           {/*
            * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
            * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
            */}
-          {data.showBadges !== false && data.blockedBy.length > 0 && (
+          {data.showBadges && data.blockedBy.length > 0 && (
             <span className={cx(BADGE, BADGE_RED)}
                   title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
           )}
-          {data.showBadges !== false && data.problem && (
+          {data.showBadges && data.problem && (
             <span className={cx(BADGE, BADGE_FUCHSIA)}
                   title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
           )}
-          {data.showBadges !== false && data.parallel.sameStart.length > 0 && (
+          {data.showBadges && data.parallel.sameStart.length > 0 && (
             <span className={cx(BADGE, BADGE_AMBER)}
                   title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
               同時開始 ({data.parallel.sameStart[0]})
             </span>
           )}
-          {data.showBadges !== false && data.parallel.sameFinish.length > 0 && (
+          {data.showBadges && data.parallel.sameFinish.length > 0 && (
             <span className={cx(BADGE, BADGE_PURPLE)}
                   title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
               同時完成 ({data.parallel.sameFinish[0]})
             </span>
           )}
-          {data.showBadges !== false && data.parallel.overlap.length > 0 && (
+          {data.showBadges && data.parallel.overlap.length > 0 && (
             <span className={cx(BADGE, BADGE_TEAL)}
                   title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
               重疊 ({data.parallel.overlap[0]})
             </span>
           )}
-          {data.showBadges !== false && data.inquiryState !== 'NONE' && (
+          {data.showBadges && data.inquiryState !== 'NONE' && (
             <span className="ml-auto shrink-0 text-[11px]"
                   title={meta.label} aria-label={meta.label}>
               {meta.icon}
