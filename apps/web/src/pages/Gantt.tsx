@@ -4,6 +4,7 @@ import { Gantt as DhtmlxGantt } from 'dhtmlx-gantt'
 import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
 import { Api, type Task, type LinkType } from '../lib/api'
 import { rollup } from '../lib/rollup'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { T } from '../strings'
 
 /**
@@ -41,6 +42,8 @@ export default function GanttView({
     queryKey: ['graph', projectId],
     queryFn: () => Api.graph(projectId),
   })
+
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
 
   // ── 掛載一次，之後只餵資料 ──
   useEffect(() => {
@@ -93,11 +96,12 @@ export default function GanttView({
     g.i18n.setLocale('zh-TW')
 
     // 關鍵路徑與對外詢問的狀態上色
-    g.templates.task_class = (_s: Date, _e: Date, t: { critical?: boolean; inquiry?: string; type?: string }) => {
+    g.templates.task_class = (_s: Date, _e: Date, t: { id?: string | number; critical?: boolean; inquiry?: string; type?: string }) => {
       const cls: string[] = []
       if (t.critical) cls.push('critical')
       if (t.inquiry === 'OVERDUE') cls.push('inq-overdue')
       else if (t.inquiry === 'AWAITING' || t.inquiry === 'PARTIAL') cls.push('inq-awaiting')
+      if (t.id && unreadTaskIds.has(String(t.id))) cls.push('pmflow-flash')
       return cls.join(' ')
     }
 
@@ -142,7 +146,11 @@ export default function GanttView({
       return true
     }, {})
 
-    g.attachEvent('onTaskDblClick', (id: string | number) => { onOpen(String(id)); return false }, {})
+    g.attachEvent('onTaskDblClick', (id: string | number) => {
+      if (unreadTaskIds.has(String(id))) markTaskRead(String(id))
+      onOpen(String(id))
+      return false
+    }, {})
 
     return () => { g.destructor(); ganttRef.current = null }
     // eslint-disable-next-line react-hooks/exhaustive-deps

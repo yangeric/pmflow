@@ -181,7 +181,7 @@ body {
 }
 .pmflow-flash {
   box-shadow: inset 0 0 0 3px rgba(220, 38, 38, 0.9);
-  animation: pmflow-flash 0.7s ease-in-out 3;
+  animation: pmflow-flash 0.8s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .pmflow-flash { animation: none; }

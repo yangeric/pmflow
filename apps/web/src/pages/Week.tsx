@@ -4,6 +4,7 @@ import { Button, Empty, InquiryBadge, ProblemBadge, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { parseYmd, shiftYmd, shortDate, todayYmd, toYmd, WEEKDAY_LABELS } from '../lib/date'
 import { useRemembered } from '../lib/remember'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { week } from '../strings/week'
 
 /**
@@ -470,14 +471,21 @@ function TaskRow({ row, onOpen, typeName, typeColor }: {
   typeColor: string
 }) {
   const t = row.task
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = unreadTaskIds.has(t.id)
+
   return (
     <div
-      onClick={() => onOpen(t.id)}
+      onClick={() => {
+        if (hasUnread) markTaskRead(t.id)
+        onOpen(t.id)
+      }}
       title={W.rowTooltip(t.ref, t.title)}
       className={cx(
         GRID,
         'cursor-pointer border-t border-slate-100 px-3 py-2 text-sm transition-colors',
-        'hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800'
+        'hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800',
+        hasUnread && 'pmflow-flash'
       )}
     >
       {/* 類型、任務編號與標題。

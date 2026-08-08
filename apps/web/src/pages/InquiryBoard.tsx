@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Api } from '../lib/api'
 import { Spinner, Empty, cx } from '../components/ui'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { T } from '../strings'
 
 /**
@@ -177,18 +178,22 @@ function InquiryCard({ item, onOpen }: {
   item: BoardItem
   onOpen: (taskId: string) => void
 }) {
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = unreadTaskIds.has(item.taskId)
   const transferred = item.repliedByUnit && item.repliedByUnit !== item.askedToUnit
   const replyDays = daysToReply(item)
   return (
     <button
       type="button"
-      onClick={() => onOpen(item.taskId)}
+      onClick={() => {
+        if (hasUnread) markTaskRead(item.taskId)
+        onOpen(item.taskId)
+      }}
       title={T.inquiry.board.card.open(item.taskRef, item.taskTitle)}
-      className="w-full cursor-pointer rounded-lg bg-white p-2.5 text-left ring-1 ring-slate-200
-                 transition hover:ring-2 hover:ring-slate-400
-                 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900
-                 dark:bg-slate-900 dark:ring-slate-700 dark:hover:ring-slate-500
-                 dark:focus-visible:ring-slate-100"
+      className={cx(
+        'w-full cursor-pointer rounded-lg bg-white p-2.5 text-left ring-1 ring-slate-200 transition hover:ring-2 hover:ring-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:bg-slate-900 dark:ring-slate-700 dark:hover:ring-slate-500 dark:focus-visible:ring-slate-100',
+        hasUnread && 'pmflow-flash'
+      )}
     >
       {/* 同一個專案裡才看得到這張看板，所以卡片上不再重複專案名稱與顏色 */}
       <div className="mb-1 flex items-center gap-1.5">

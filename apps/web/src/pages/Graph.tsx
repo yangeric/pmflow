@@ -15,6 +15,7 @@ import {
 import { Button, Empty, INQUIRY_META, Select, Spinner, cx } from '../components/ui'
 import { LINK_CHIP, LINK_LABEL } from '../lib/linkText'
 import { useTheme } from '../lib/theme'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { T } from '../strings'
 
 /**
@@ -114,29 +115,20 @@ const FIT_OPTIONS: FitViewOptions = {
 }
 
 // ── 佈局參數 ────────────────────────────────────────────
-/** 欄距要留得下匯合點加它前後的兩段線與標籤，見 JUNCTION_GAP */
-const COL_GAP = 340
+/** 欄距要留得下匯合點加它前後的兩段線與標籤，見 JUNCTION_GAP (384 = 16 * 24) */
+const COL_GAP = 384
 const ROW_GAP = 96
 /** 一層塞不下就折成下一個子欄，不然會拉成一條看不完的長條 */
 const MAX_PER_COL = 10
-/**
- * 節點寬度＝Tailwind 的 w-64。算匯合點的位置要用，所以寫成常數。
- * 從 w-56（224）加寬過一次：一張任務同時「卡住」又「同時開始」時，
- * 兩個徽章擠不進 224px，會折到第二行去。
- */
-const NODE_W = 256
-/** 節點還沒量到高度前的估計值，只影響匯合點第一幀的垂直位置 */
-const NODE_H_FALLBACK = 76
-/** 匯合點是一個小圓點 —— 它只是個時間點，不佔垂直空間 */
-const JUNCTION_SIZE = 10
-/** 匯合點離任務節點多遠。剩下的欄距要放得下進來（或出去）的那條線的標籤 */
-const JUNCTION_GAP = 46
-/**
- * 從任務的外緣算起，一個匯合點總共要吃掉多寬。
- *
- * 佈局要照這個寬度在框裡留白 —— 成員剛好排在框的最左（或最右）那一欄時，
- * 圓點會掉到框外面去，看起來就像它不屬於任何一包。
- */
+/** 節點寬度 (288 = 12 * 24px 網點) */
+const NODE_W = 288
+/** 節點預設高度 (96 = 4 * 24px 網點，中心 Handle 落在 48px = 2 * 24px 網點橫線上) */
+const NODE_H_FALLBACK = 96
+/** 匯合點是一個小圓點 (24px 網點) */
+const JUNCTION_SIZE = 24
+/** 匯合點離任務節點多遠 (48 = 2 * 24px 網點) */
+const JUNCTION_GAP = 48
+/** 從任務的外緣算起，一個匯合點總共要吃掉多寬 (72 = 3 * 24px 網點) */
 const JUNCTION_SPAN = JUNCTION_GAP + JUNCTION_SIZE
 
 type TaskNodeData = {
@@ -160,6 +152,7 @@ type TaskNodeData = {
   isMilestone: boolean
   dimmed: boolean
   focused: boolean
+  hasUnread?: boolean
   /**
    * 只因為「階層」而被留亮的鄰居 —— 選中任務的上層或下層，兩者之間**沒有依賴**。
    * null＝不是這種情況（沒在聚焦、或它跟選中的那張真的有關聯線）。
@@ -181,6 +174,7 @@ type TaskNodeData = {
    * 三者互斥：同一對任務只會落在其中一類，先判同時開始／同時完成，都不是才算單純重疊。
    */
   parallel: ParallelPeers
+  showBadges?: boolean
   /**
    * 框自動算出來的大小 —— 同時也是使用者往內縮的下限：再小就會蓋掉裡面的任務。
    * 不是框的節點就是 null。
@@ -250,6 +244,7 @@ const BADGE_TEAL = 'bg-teal-50 font-medium text-teal-700 dark:bg-teal-500/15 dar
 function frameClass(data: TaskNodeData): string {
   return cx(
     'rounded-lg border shadow-sm transition-opacity',
+    data.hasUnread && 'pmflow-flash',
     data.focused ? 'border-blue-500 ring-2 ring-blue-500/30'
       // 卡住＝現在動不了，是圖上最該被看到的狀態，給整圈紅框加紅暈
       : data.blockedBy.length ? 'border-red-500 ring-2 ring-red-500/25'
@@ -271,11 +266,11 @@ const HANDLE_DOT_REL = '!h-2 !w-2 !border !border-white !bg-slate-300 '
   + 'dark:!border-slate-900 dark:!bg-slate-600'
 
 /** 四個接點。任務與框都要有，相關類的線才有地方接上下 */
-function NodeHandles() {
+function NodeHandles({ sideYStyle }: { sideYStyle?: React.CSSProperties }) {
   return (
     <>
-      <Handle id={H_IN} type="target" position={Position.Left} className={HANDLE_DOT} />
-      <Handle id={H_OUT} type="source" position={Position.Right} className={HANDLE_DOT} />
+      <Handle id={H_IN} type="target" position={Position.Left} className={HANDLE_DOT} style={sideYStyle} />
+      <Handle id={H_OUT} type="source" position={Position.Right} className={HANDLE_DOT} style={sideYStyle} />
       <Handle id={H_REL_IN} type="target" position={Position.Top} className={HANDLE_DOT_REL} />
       <Handle id={H_REL_OUT} type="source" position={Position.Bottom} className={HANDLE_DOT_REL} />
     </>
@@ -295,63 +290,93 @@ const RESIZE_COLOR = '#8b5cf6'
  * 把手只在框被選起來時出現 —— 常駐的話每個框的四角都多四顆點，圖會很吵。
  * 下限是自動佈局算出來的尺寸：再小就會把裡面的任務蓋掉。
  */
-function BoxNodeView({ data, selected }: NodeProps<TaskNode>) {
+function BoxNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
+  const [resizable, setResizable] = useState(false)
   return (
     <>
-    <NodeResizer isVisible={!!selected} color={RESIZE_COLOR}
-                 minWidth={data.minSize?.w ?? NODE_W}
-                 minHeight={data.minSize?.h ?? NODE_H_FALLBACK} />
-    <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10')}>
-      <NodeHandles />
-      <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
-      <div className="flex items-center gap-1.5 px-3 py-2">
-        <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
-          {data.ref}
-        </span>
-        {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
-            這裡改成講數量，一眼知道這一包有多大 */}
-        <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
-          {G.badge.childCount(data.childCount)}
-        </span>
-        {data.isEntry && (
-          <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
-            {G.badge.entry}
+      {resizable && (
+        <NodeResizer
+          isVisible
+          color={RESIZE_COLOR}
+          minWidth={data.minSize?.w ?? NODE_W}
+          minHeight={data.minSize?.h ?? NODE_H_FALLBACK}
+        />
+      )}
+      <div className={cx(frameClass(data), 'h-full w-full bg-violet-50/40 dark:bg-violet-500/10')}>
+        {/* 大項目框左右接點 100% 垂直置中於框體邊線中心 */}
+        <NodeHandles />
+        <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
+        <div className="flex items-center gap-1.5 px-3 py-2">
+          <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+            {data.ref}
           </span>
-        )}
-        {data.kin && (
-          <span className={cx(BADGE, BADGE_VIOLET)}
-                title={data.kin === 'parent' ? G.badge.kinParentBoxTip : G.badge.kinChildTip}>
-            {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
+          {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
+              這裡改成講數量，一眼知道這一包有多大 */}
+          <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
+            {G.badge.childCount(data.childCount)}
           </span>
-        )}
-        {data.blockedBy.length > 0 && (
-          <span className={cx(BADGE, BADGE_RED)}
-                title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
-        )}
-        {data.problem && (
-          <span className={cx(BADGE, BADGE_FUCHSIA)}
-                title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
-        )}
-        <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
-          {data.title}
-        </span>
-        <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {data.inquiryState !== 'NONE' && (
-            <span className="text-[11px]" title={meta.label} aria-label={meta.label}>
-              {meta.icon}
+          {data.isEntry && (
+            <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
+              {G.badge.entry}
             </span>
           )}
-          <span className="h-1 w-14 overflow-hidden rounded bg-white dark:bg-slate-700">
-            <span className="block h-1 rounded"
-                  style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+          {data.kin && (
+            <span className={cx(BADGE, BADGE_VIOLET)}
+                  title={data.kin === 'parent' ? G.badge.kinParentBoxTip : G.badge.kinChildTip}>
+              {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
+            </span>
+          )}
+          {data.blockedBy.length > 0 && (
+            <span className={cx(BADGE, BADGE_RED)}
+                  title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
+          )}
+          {data.problem && (
+            <span className={cx(BADGE, BADGE_FUCHSIA)}
+                  title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
+          )}
+          <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+            {data.title}
           </span>
-          <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
-            {data.progress}%
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            {data.inquiryState !== 'NONE' && (
+              <span className="text-[11px]" title={meta.label} aria-label={meta.label}>
+                {meta.icon}
+              </span>
+            )}
+            <span className="h-1 w-14 overflow-hidden rounded bg-white dark:bg-slate-700">
+              <span className="block h-1 rounded"
+                    style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+            </span>
+            <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+              {data.progress}%
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setResizable(r => !r)
+              }}
+              className={cx(
+                'ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all',
+                resizable
+                  ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-500'
+                  : 'bg-slate-200/80 text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+              )}
+              title={resizable ? '關閉手動調整 (切換回預設連接點)' : '開啟右上角手動調整框大小'}
+            >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                {resizable ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                )}
+              </svg>
+              <span>{resizable ? '縮放中' : '調整大小'}</span>
+            </button>
           </span>
-        </span>
+        </div>
       </div>
-    </div>
     </>
   )
 }
@@ -359,7 +384,7 @@ function BoxNodeView({ data, selected }: NodeProps<TaskNode>) {
 function TaskNodeView({ data }: NodeProps<TaskNode>) {
   const meta = INQUIRY_META[data.inquiryState]
   return (
-    <div className={cx(frameClass(data), 'w-64 bg-white dark:bg-slate-900')}>
+    <div className={cx(frameClass(data), 'w-[288px] bg-white dark:bg-slate-900')}>
       <NodeHandles />
       <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
       <div className="px-2.5 py-2">
@@ -393,40 +418,33 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
            * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
            * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
            */}
-          {data.blockedBy.length > 0 && (
+          {data.showBadges !== false && data.blockedBy.length > 0 && (
             <span className={cx(BADGE, BADGE_RED)}
                   title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
           )}
-          {/* 刻意就排在「卡住」旁邊，而且刻意長得不一樣：兩個常常同時出現，
-              紅色的是圖自己算出來的，這個紫紅色旗子是人打字寫下的。
-              同色同形的話，使用者會以為系統知道他遇到什麼事 */}
-          {data.problem && (
+          {data.showBadges !== false && data.problem && (
             <span className={cx(BADGE, BADGE_FUCHSIA)}
                   title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
           )}
-          {/* 同一張任務可能同時掛「卡住」與「同時開始」，那不是矛盾：
-              上游還沒開始所以現在動不了，它一開始，兩張就並肩跑。
-              分得出來的關鍵是上面那句「要等 ⋯ 開始」還是「要等 ⋯ 完成」。
-              徽章顏色跟圖上的匯合點同一組：橘＝同時開始、紫＝同時完成 */}
-          {data.parallel.sameStart.length > 0 && (
+          {data.showBadges !== false && data.parallel.sameStart.length > 0 && (
             <span className={cx(BADGE, BADGE_AMBER)}
                   title={G.badge.sameStartTip(data.parallel.sameStart.join('、'))}>
-              {G.badge.sameStart(data.parallel.sameStart.length)}
+              同時開始 ({data.parallel.sameStart[0]})
             </span>
           )}
-          {data.parallel.sameFinish.length > 0 && (
+          {data.showBadges !== false && data.parallel.sameFinish.length > 0 && (
             <span className={cx(BADGE, BADGE_PURPLE)}
                   title={G.badge.sameFinishTip(data.parallel.sameFinish.join('、'))}>
-              {G.badge.sameFinish(data.parallel.sameFinish.length)}
+              同時完成 ({data.parallel.sameFinish[0]})
             </span>
           )}
-          {data.parallel.overlap.length > 0 && (
+          {data.showBadges !== false && data.parallel.overlap.length > 0 && (
             <span className={cx(BADGE, BADGE_TEAL)}
                   title={G.badge.overlapTip(data.parallel.overlap.join('、'))}>
-              {G.badge.overlap(data.parallel.overlap.length)}
+              重疊 ({data.parallel.overlap[0]})
             </span>
           )}
-          {data.inquiryState !== 'NONE' && (
+          {data.showBadges !== false && data.inquiryState !== 'NONE' && (
             <span className="ml-auto shrink-0 text-[11px]"
                   title={meta.label} aria-label={meta.label}>
               {meta.icon}
@@ -437,9 +455,19 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
                         dark:text-slate-100">
           {data.title}
         </div>
-        <div className="mt-1.5 h-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
-          <div className="h-1 rounded"
-               style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
+            <div className="h-1 rounded"
+                 style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
+          </div>
+          {data.progress === 100 && (
+            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white shadow-sm" title="已完成">
+              ✓
+            </span>
+          )}
+          <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
+            {data.progress}%
+          </span>
         </div>
       </div>
     </div>
@@ -525,12 +553,12 @@ function pad(ref: string): string {
  * React Flow 的邊本來就跨得過父子邊界。
  */
 
-/** 一般任務的尺寸。高度用固定值而不是量到的，量到的值會讓版面在第一次繪製後跳一下 */
+/** 一般任務的尺寸 (288x96px，四個接點 100% 精確壓在 24px 背景網點陣列上) */
 const LEAF_W = NODE_W
-const LEAF_H = 92
-/** 框的內距與標題列高度 */
-const BOX_PAD = 18
-const BOX_HEADER = 52
+const LEAF_H = 96
+/** 框的內距 (24px) 與標題列高度 (48px) */
+const BOX_PAD = 24
+const BOX_HEADER = 48
 
 type Box = { w: number; h: number }
 
@@ -560,10 +588,13 @@ function layout(
   parentOf: Map<string, string | null>,
   refOf: Map<string, string>,
   schedEdges: Array<{ sourceId: string; targetId: string; linkType: LinkType }>,
-  hubs: Hub[]
+  hubs: Hub[],
+  measuredRects?: Record<string, { width: number; height: number }>,
+  allEdges?: Array<{ sourceId: string; targetId: string; linkType: LinkType }>
 ): LayoutResult {
   const present = new Set(ids)
   const usable = schedEdges.filter(e => present.has(e.sourceId) && present.has(e.targetId))
+  const allUsableEdges = (allEdges ?? schedEdges).filter(e => present.has(e.sourceId) && present.has(e.targetId))
   const isSimultaneous = (t: LinkType) => t === 'SS' || t === 'FF'
 
   /** 每個框底下有哪些任務。父層不在畫面上的（被篩掉了）算最外層 */
@@ -590,17 +621,32 @@ function layout(
   const rel = new Map<string, { x: number; y: number }>()
   const size = new Map<string, Box>()
 
-  /** 這個節點多大：一般任務是固定尺寸，框要先把裡面排完才知道 */
+  const getNodeH = (id: string) => Math.max(measuredRects?.[id]?.height ?? 0, measure(id).h)
+  const getNodeW = (id: string) => Math.max(measuredRects?.[id]?.width ?? 0, measure(id).w)
+  /** 實體 Handle 接點相對於節點左上角的垂直偏移量 (100% 垂直置中於節點邊線中心，且貼合 24px 網點) */
+  const getHandleOffsetY = (id: string): number => getNodeH(id) / 2
+
+  /** 這個節點多大：一般任務是固定尺寸，框要先把裡面排完才知道，若不夠大則自動放大最外框 */
   const measure = (id: string): Box => {
     const cached = size.get(id)
     if (cached) return cached
     const kids = kidsOf.get(id) ?? []
     let box: Box
+    const snap48 = (v: number) => Math.ceil(v / 48) * 48
     if (kids.length) {
       const inner = place(kids)
+      let maxRight = inner.w
+      let maxBottom = inner.h
+      for (const k of kids) {
+        const r = rel.get(k)
+        if (r) {
+          maxRight = Math.max(maxRight, r.x + getNodeW(k))
+          maxBottom = Math.max(maxBottom, r.y + getNodeH(k))
+        }
+      }
       box = {
-        w: Math.max(inner.w + BOX_PAD * 2, LEAF_W),
-        h: inner.h + BOX_HEADER + BOX_PAD,
+        w: Math.max(snap48(maxRight + BOX_PAD * 2), LEAF_W + BOX_PAD * 2),
+        h: Math.max(snap48(maxBottom + BOX_HEADER + BOX_PAD * 2), LEAF_H + BOX_HEADER),
       }
     } else {
       box = { w: LEAF_W, h: LEAF_H }
@@ -611,7 +657,7 @@ function layout(
 
   /** 一個子欄裡最寬的那個 */
   const colWidth = (col: string[]) =>
-    col.reduce((w, id) => Math.max(w, measure(id).w), LEAF_W)
+    col.reduce((w, id) => Math.max(w, getNodeW(id)), LEAF_W)
 
   /**
    * 把一組同層的任務排好，回傳它們佔掉的範圍。
@@ -652,7 +698,7 @@ function layout(
       const from = find(e.sourceId)
       const to = find(e.targetId)
       // 併欄之後兩端落在同一欄（A 同時開始 B、又 B 完成後開始 A）——
-      // 這種矛盾後端擋環時擋不掉，畫面上就當它沒有先後
+      // 這種矛盾後端擋環時擋不點，畫面上就當它沒有先後
       if (from === to) continue
       next.get(from)!.push(to)
       indeg.set(to, indeg.get(to)! + 1)
@@ -696,15 +742,56 @@ function layout(
       byLayer.set(l, [...(byLayer.get(l) ?? []), id])
     }
 
+    const NODE_V_GAP = 24 // 節點與框之間的垂直留白距離，確保 100% 貼合 24px 網點
+
+    /** 計算任意節點在畫布上的絕對 Y 座標（包含跨層框體與內部任務位移） */
+    const getAbsCanvasY = (id: string): number | null => {
+      const r = rel.get(id)
+      if (!r) return null
+      let p = parentOf.get(id)
+      let py = 0
+      while (p && present.has(p)) {
+        const pr = rel.get(p)
+        if (pr) {
+          py += pr.y + BOX_HEADER
+          p = parentOf.get(p) ?? null
+        } else {
+          break
+        }
+      }
+      return py + r.y
+    }
+
     let x = 0
     let maxBottom = 0
     for (const l of [...byLayer.keys()].sort((a, b) => a - b)) {
-      // 算出每一個節點的上游首選 Y 座標 (計算點對點水平齊平對齊依據)
+      // 算出每一個節點對應已有位置之關聯節點的首選 Y 座標 (精確支援跨大項目框與單一任務點對點對齊)
       const getUpstreamY = (id: string): number | null => {
-        const upstreams = usable.filter(e => e.targetId === id && rel.has(e.sourceId))
-        if (upstreams.length === 0) return null
-        const srcYs = upstreams.map(e => rel.get(e.sourceId)!.y)
-        return Math.min(...srcYs)
+        const connectedEdges = allUsableEdges.filter(
+          e => (e.targetId === id && getAbsCanvasY(e.sourceId) !== null) ||
+               (e.sourceId === id && getAbsCanvasY(e.targetId) !== null)
+        )
+        if (connectedEdges.length === 0) return null
+        const candidateYs = connectedEdges.map(e => {
+          const otherId = e.targetId === id ? e.sourceId : e.targetId
+          const otherAbsY = getAbsCanvasY(otherId)!
+          const otherHandleY = otherAbsY + getHandleOffsetY(otherId)
+          const idealAbsY = otherHandleY - getHandleOffsetY(id)
+
+          let p = parentOf.get(id)
+          let py = 0
+          while (p && present.has(p)) {
+            const pr = rel.get(p)
+            if (pr) {
+              py += pr.y + BOX_HEADER
+              p = parentOf.get(p) ?? null
+            } else {
+              break
+            }
+          }
+          return idealAbsY - py
+        })
+        return Math.min(...candidateYs)
       }
 
       // 將 bucket 裡的節點照併欄 (find(id)) 分群
@@ -746,18 +833,55 @@ function layout(
           : (sortKey.get(grpA[0]) ?? '').localeCompare(sortKey.get(grpB[0]) ?? '')
       })
 
-      // 這一層折成幾個子欄。框比一般任務高很多，所以按高度收
+      // 這一層折成幾個子欄。按 idealY 點對點對齊，任何在當前欄位會與現有節點重疊的 group，自動向右開啟新子欄
       const columns: string[][][] = [[]]
-      let used = 0
+
       for (const grp of groupsInLayer) {
-        const totalH = grp.reduce((acc, id) => acc + measure(id).h + (ROW_GAP - LEAF_H), 0)
-        const cur = columns[columns.length - 1]
-        if (cur.length >= MAX_PER_COL || (used > 0 && used + totalH > MAX_PER_COL * ROW_GAP)) {
-          columns.push([])
-          used = 0
+        let idealY: number | null = null
+        for (const id of grp) {
+          const uy = getUpstreamY(id)
+          if (uy !== null && (idealY === null || uy < idealY)) idealY = uy
         }
-        columns[columns.length - 1].push(grp)
-        used += totalH
+
+        let assignedColIndex = -1
+        if (idealY !== null) {
+          const grpH = grp.reduce((acc, id) => acc + getNodeH(id) + NODE_V_GAP, 0)
+          for (let c = 0; c < columns.length; c++) {
+            let colOverlaps = false
+            for (const existingGrp of columns[c]) {
+              for (const exId of existingGrp) {
+                const exY = rel.get(exId)?.y
+                if (exY !== undefined) {
+                  const exH = getNodeH(exId)
+                  if (
+                    idealY! < exY + exH + NODE_V_GAP &&
+                    idealY! + grpH + NODE_V_GAP > exY
+                  ) {
+                    colOverlaps = true
+                    break
+                  }
+                }
+              }
+              if (colOverlaps) break
+            }
+            if (!colOverlaps) {
+              assignedColIndex = c
+              break
+            }
+          }
+        }
+
+        if (assignedColIndex >= 0) {
+          columns[assignedColIndex].push(grp)
+        } else {
+          if (columns[columns.length - 1].length === 0) {
+            columns[columns.length - 1].push(grp)
+          } else if (idealY !== null) {
+            columns.push([grp])
+          } else {
+            columns[columns.length - 1].push(grp)
+          }
+        }
       }
 
       let widest = 0
@@ -779,29 +903,30 @@ function layout(
           const overlaps = (candidateY: number) => {
             let yCursor = candidateY
             for (const id of grp) {
-              const h = measure(id).h
-              for (let checkY = yCursor; checkY < yCursor + h; checkY += 24) {
+              const h = getNodeH(id)
+              for (let checkY = Math.floor(yCursor); checkY < Math.ceil(yCursor + h + NODE_V_GAP); checkY += 8) {
                 if (usedYInCol.has(checkY)) return true
               }
-              yCursor += h + (ROW_GAP - LEAF_H)
+              yCursor += h + NODE_V_GAP
             }
             return false
           }
 
           while (overlaps(startY)) {
-            startY += ROW_GAP
+            startY += 24
           }
 
           let yCursor = startY
           for (const id of grp) {
-            rel.set(id, { x: colX, y: yCursor })
-            const h = measure(id).h
-            for (let markY = yCursor; markY < yCursor + h; markY += 24) {
+            const snappedY = Math.round(yCursor / 24) * 24
+            rel.set(id, { x: Math.round(colX / 24) * 24, y: snappedY })
+            const h = getNodeH(id)
+            for (let markY = Math.floor(yCursor); markY < Math.ceil(yCursor + h + NODE_V_GAP); markY += 8) {
               usedYInCol.add(markY)
             }
-            yCursor += h + (ROW_GAP - LEAF_H)
+            yCursor += h + NODE_V_GAP
           }
-          maxBottom = Math.max(maxBottom, yCursor - (ROW_GAP - LEAF_H))
+          maxBottom = Math.max(maxBottom, yCursor - NODE_V_GAP)
         }
 
         const w = colWidth(col.flat())
@@ -810,6 +935,48 @@ function layout(
       }
 
       x += Math.max(widest, LEAF_W) + (COL_GAP - LEAF_W)
+    }
+
+    // ── 水平 Y 軸對齊校正 (在 100% 絕不重疊前提下對齊中心 Y 軸) ──
+    for (let pass = 0; pass < 3; pass++) {
+      for (const e of allUsableEdges) {
+        if (!inLevel.has(e.sourceId) || !inLevel.has(e.targetId)) continue
+        const srcPos = rel.get(e.sourceId)
+        const tgtPos = rel.get(e.targetId)
+        if (!srcPos || !tgtPos) continue
+
+        const srcHandleY = srcPos.y + getHandleOffsetY(e.sourceId)
+        const tgtHandleY = tgtPos.y + getHandleOffsetY(e.targetId)
+
+        if (Math.abs(srcHandleY - tgtHandleY) > 0.5) {
+          const alignedTgtY = Math.round((srcHandleY - getHandleOffsetY(e.targetId)) / 24) * 24
+          
+          // 檢查改至 alignedTgtY 是否會跟同層/同欄的其他節點重疊遮擋 (採用真實 2D AABB 矩形防撞檢測)
+          let collides = false
+          const tgtW = getNodeW(e.targetId)
+          const tgtH = getNodeH(e.targetId)
+
+          for (const otherId of members) {
+            if (otherId === e.targetId) continue
+            const otherPos = rel.get(otherId)
+            if (!otherPos) continue
+            const otherW = getNodeW(otherId)
+            const otherH = getNodeH(otherId)
+
+            const xOverlap = tgtPos.x < otherPos.x + otherW && tgtPos.x + tgtW > otherPos.x
+            const yOverlap = alignedTgtY < otherPos.y + otherH + NODE_V_GAP && alignedTgtY + tgtH + NODE_V_GAP > otherPos.y
+
+            if (xOverlap && yOverlap) {
+              collides = true
+              break
+            }
+          }
+
+          if (!collides) {
+            rel.set(e.targetId, { x: tgtPos.x, y: alignedTgtY })
+          }
+        }
+      }
     }
 
     /**
@@ -833,11 +1000,12 @@ function layout(
       }
     }
     if (lead > 0) {
+      const leadSnap = Math.ceil(lead / 24) * 24
       for (const id of members) {
         const r = rel.get(id)!
-        rel.set(id, { x: r.x + lead, y: r.y })
+        rel.set(id, { x: r.x + leadSnap, y: r.y })
       }
-      tail += lead
+      tail += leadSnap
     }
 
     return { w: Math.max(x - (COL_GAP - LEAF_W) + lead, tail, 0), h: maxBottom }
@@ -865,7 +1033,131 @@ function layout(
     abs.set(id, { x, y })
     for (const k of kidsOf.get(id) ?? []) walk(k, x, y)
   }
-  for (const id of kidsOf.get(null) ?? []) walk(id, 0, 0)
+  const refreshAbs = () => {
+    abs.clear()
+    for (const id of kidsOf.get(null) ?? []) walk(id, 0, 0)
+  }
+  refreshAbs()
+
+  const getRootParent = (id: string): string => {
+    let root = id
+    let p = parentOf.get(root)
+    while (p && present.has(p)) {
+      root = p
+      p = parentOf.get(root)
+    }
+    return root
+  }
+
+  // ── 全局畫布階層對齊校正 (Global Grid-First Handle Y-Center Alignment Pass) ──
+  // 確保無論是框對框、框對任務、還是跨大項目框/子功能任務之間的連結點，100% 處於同一條水平 Y 軸線上，且在不碰撞前提下對齊
+  for (let pass = 0; pass < 5; pass++) {
+    for (const e of allUsableEdges) {
+      const srcAbs = abs.get(e.sourceId)
+      const tgtAbs = abs.get(e.targetId)
+      if (!srcAbs || !tgtAbs) continue
+
+      const srcHandleY = srcAbs.y + getHandleOffsetY(e.sourceId)
+      const tgtHandleY = tgtAbs.y + getHandleOffsetY(e.targetId)
+      const rawDiffY = srcHandleY - tgtHandleY
+
+      if (Math.abs(rawDiffY) > 0.5) {
+        const diffY = Math.round(rawDiffY / 24) * 24
+        if (diffY !== 0) {
+          const rootSourceId = getRootParent(e.sourceId)
+          const rootTargetId = getRootParent(e.targetId)
+
+          if (rootSourceId !== rootTargetId) {
+            // 跨根框連線：移動目標的根外框，前提是絕對不與畫布上其他根節點 (Root Nodes) 重疊遮擋
+            const tgtRel = rel.get(rootTargetId)
+            if (tgtRel) {
+              const newRootY = tgtRel.y + diffY
+              const rootW = getNodeW(rootTargetId)
+              const rootH = getNodeH(rootTargetId)
+
+              let collides = false
+              const rootNodes = kidsOf.get(null) ?? []
+              for (const otherRootId of rootNodes) {
+                if (otherRootId === rootTargetId) continue
+                const otherRel = rel.get(otherRootId)
+                if (!otherRel) continue
+                const otherW = getNodeW(otherRootId)
+                const otherH = getNodeH(otherRootId)
+
+                const xOverlap = tgtRel.x < otherRel.x + otherW && tgtRel.x + rootW > otherRel.x
+                const yOverlap = newRootY < otherRel.y + otherH + BOX_PAD && newRootY + rootH + BOX_PAD > otherRel.y
+
+                if (xOverlap && yOverlap) {
+                  collides = true
+                  break
+                }
+              }
+
+              if (!collides) {
+                rel.set(rootTargetId, { x: tgtRel.x, y: newRootY })
+                refreshAbs()
+              }
+            }
+          } else {
+            // 同根框內外連線：不移動最外框，僅在不與框內同層夥伴碰撞的前提下微調 target
+            const tgtRel = rel.get(e.targetId)
+            if (tgtRel && parentOf.get(e.targetId) != null) {
+              const parentId = parentOf.get(e.targetId)!
+              const siblings = kidsOf.get(parentId) ?? []
+              const newY = tgtRel.y + diffY
+              const tgtW = getNodeW(e.targetId)
+              const tgtH = getNodeH(e.targetId)
+
+              let collides = false
+              for (const sibId of siblings) {
+                if (sibId === e.targetId) continue
+                const sibRel = rel.get(sibId)
+                if (!sibRel) continue
+                const sibW = getNodeW(sibId)
+                const sibH = getNodeH(sibId)
+
+                const xOverlap = tgtRel.x < sibRel.x + sibW && tgtRel.x + tgtW > sibRel.x
+                const yOverlap = newY < sibRel.y + sibH + 24 && newY + tgtH + 24 > sibRel.y
+
+                if (xOverlap && yOverlap) {
+                  collides = true
+                  break
+                }
+              }
+
+              if (!collides) {
+                rel.set(e.targetId, { x: tgtRel.x, y: newY })
+                refreshAbs()
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── 依據內部對齊後的節點位置，外框僅動態重新計算並擴充框體大小 (`size`) ──
+  // 座標 100% 以底圖網點為主，外框僅改變寬高以包覆內部所有對齊後的節點
+  for (const bId of boxes) {
+    const kids = kidsOf.get(bId) ?? []
+    if (!kids.length) continue
+    let maxRight = 0
+    let maxBottom = 0
+    for (const k of kids) {
+      const r = rel.get(k)
+      if (r) {
+        maxRight = Math.max(maxRight, r.x + getNodeW(k))
+        maxBottom = Math.max(maxBottom, r.y + getNodeH(k))
+      }
+    }
+    const snap48 = (v: number) => Math.ceil(v / 48) * 48
+    size.set(bId, {
+      w: Math.max(snap48(maxRight + BOX_PAD), LEAF_W + BOX_PAD * 2),
+      h: Math.max(snap48(maxBottom + BOX_PAD), LEAF_H + BOX_HEADER + BOX_PAD),
+    })
+  }
+
+  refreshAbs()
 
   const childCount = new Map<string, number>()
   for (const id of boxes) childCount.set(id, (kidsOf.get(id) ?? []).length)
@@ -882,8 +1174,7 @@ function layout(
     }
     for (const k of kids) if (!hasUpstream.has(k)) entries.add(k)
   }
-
-  return { rel, size, abs, boxes, childCount, entries }
+return { rel, size, abs, boxes, childCount, entries }
 }
 
 export default function GraphView(props: {
@@ -909,6 +1200,7 @@ function GraphCanvas({
   onOpen: (id: string) => void
 }) {
   const qc = useQueryClient()
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
   const { fitView, getViewport, setViewport } = useReactFlow()
   const nodesInitialized = useNodesInitialized()
   // 背景點陣的顏色是 SVG 屬性，吃不到 CSS 變數，只能自己看現在是哪一個主題
@@ -931,19 +1223,30 @@ function GraphCanvas({
    * fitView 也就永遠等不到。
    */
   const [measured, setMeasured] = useState<Record<string, { width: number; height: number }>>({})
-  /**
-   * 現在被點選的節點。同樣得自己記：節點是每次 render 重算的，
-   * React Flow 內部記的「選了誰」會被我們送進去的新陣列蓋掉，
-   * 框上的四個把手（NodeResizer 只在 selected 時出現）就永遠不會現身。
-   */
   const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({})
   const [focusId, setFocusId] = useState<string | null>(null)
+  /** 排程依賴（FS / SS / FF / SF 實線）要不要畫 */
+  const [showSchedLines, setShowSchedLines] = useState(true)
   /** 任務相關（相關／阻擋／重複於／需要）那幾條線要不要畫 */
   const [showRelated, setShowRelated] = useState(true)
-  /** 標出「還不能動手」的任務。預設開著 —— 這是進來最想先看到的一件事 */
-  const [showBlocked, setShowBlocked] = useState(true)
-  /** 標出「可以同時做」的任務。預設關著，因為它是排人力時才會用的分析視角 */
-  const [showParallel, setShowParallel] = useState(false)
+  /** 連線上的標籤文字要不要顯示 (持久化於 localStorage) */
+  const [showEdgeLabels, setShowEdgeLabels] = useState(() => {
+    const saved = localStorage.getItem('pmflow_graph_show_edge_labels')
+    return saved !== null ? saved === 'true' : true
+  })
+  /** 任務卡片內部的警示與圖示徽章要不要顯示 (持久化於 localStorage) */
+  const [showBadges, setShowBadges] = useState(() => {
+    const saved = localStorage.getItem('pmflow_graph_show_badges')
+    return saved !== null ? saved === 'true' : true
+  })
+
+  useEffect(() => {
+    localStorage.setItem('pmflow_graph_show_edge_labels', String(showEdgeLabels))
+  }, [showEdgeLabels])
+
+  useEffect(() => {
+    localStorage.setItem('pmflow_graph_show_badges', String(showBadges))
+  }, [showBadges])
   /** 開著時左鍵是拉框選取，不是平移畫面 */
   const [boxSelect, setBoxSelect] = useState(false)
   /** 按「重新排列」時 +1，把拖亂的節點放回自動佈局的位置 */
@@ -1015,45 +1318,42 @@ function GraphCanvas({
     const forkOf = new Map<string, (typeof groups)[number]>()
     const joinOf = new Map<string, (typeof groups)[number]>()
 
-    const build = (kind: 'fork' | 'join', linkType: LinkType) => {
-      const uf = new Map<string, string>()
-      const find = (x: string): string => {
-        let root = x
-        while (uf.get(root) !== root) root = uf.get(root)!
-        for (let cur = x; uf.get(cur) !== root;) {
-          const nx = uf.get(cur)!
-          uf.set(cur, root)
-          cur = nx
-        }
-        return root
-      }
-      for (const e of schedEdges) {
-        if (e.linkType !== linkType) continue
-        for (const id of [e.sourceId, e.targetId]) if (!uf.has(id)) uf.set(id, id)
-        const a = find(e.sourceId)
-        const b = find(e.targetId)
-        if (a !== b) uf.set(a, b)
-      }
-      const bucket = new Map<string, string[]>()
-      for (const id of uf.keys()) {
-        const r = find(id)
-        bucket.set(r, [...(bucket.get(r) ?? []), id])
-      }
-      for (const [root, members] of bucket) {
-        if (members.length < 2) continue
-        const ms = new Set(members)
-        // 外側那一頭接不接得到任務。同時開始／同時完成的線兩端都在群裡，
-        // 所以剩下的一定是「完成後開始」這類真的有先後的依賴
-        const hub = schedEdges.some(e => kind === 'fork'
-          ? ms.has(e.targetId) && !ms.has(e.sourceId)
-          : ms.has(e.sourceId) && !ms.has(e.targetId))
-        const g = { id: `${kind}:${root}`, kind, members, hub }
-        groups.push(g)
-        for (const m of members) (kind === 'fork' ? forkOf : joinOf).set(m, g)
+    // 1. 同時開始 (Fork / SS): 必須是「一個任務 (source) 指向 2 個 (含) 以上的任務 (targets.length >= 2)」
+    const ssBySource = new Map<string, string[]>()
+    for (const e of schedEdges) {
+      if (e.linkType === 'SS') {
+        ssBySource.set(e.sourceId, [...(ssBySource.get(e.sourceId) ?? []), e.targetId])
       }
     }
-    build('fork', 'SS')
-    build('join', 'FF')
+    for (const [sourceId, targets] of ssBySource) {
+      if (targets.length >= 2) {
+        const members = [sourceId, ...targets]
+        const ms = new Set(members)
+        const hub = schedEdges.some(e => ms.has(e.targetId) && !ms.has(e.sourceId))
+        const g = { id: `fork:${sourceId}`, kind: 'fork' as const, members, hub }
+        groups.push(g)
+        for (const m of members) forkOf.set(m, g)
+      }
+    }
+
+    // 2. 同時結束 (Join / FF): 必須是「2 個 (含) 以上的任務 (sources) 指向一個任務 (sources.length >= 2)」
+    const ffByTarget = new Map<string, string[]>()
+    for (const e of schedEdges) {
+      if (e.linkType === 'FF') {
+        ffByTarget.set(e.targetId, [...(ffByTarget.get(e.targetId) ?? []), e.sourceId])
+      }
+    }
+    for (const [targetId, sources] of ffByTarget) {
+      if (sources.length >= 2) {
+        const members = [...sources, targetId]
+        const ms = new Set(members)
+        const hub = schedEdges.some(e => ms.has(e.sourceId) && !ms.has(e.targetId))
+        const g = { id: `join:${targetId}`, kind: 'join' as const, members, hub }
+        groups.push(g)
+        for (const m of members) joinOf.set(m, g)
+      }
+    }
+
     return { groups, hubs: groups.filter(g => g.hub), forkOf, joinOf }
   }, [schedEdges])
 
@@ -1069,7 +1369,7 @@ function GraphCanvas({
     const present = new Set(shownNodes.map(n => n.id))
     const parentOf = new Map(shownNodes.map(n => [n.id, n.parentId]))
     const refOf = new Map(shownNodes.map(n => [n.id, n.ref]))
-    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges, simul.hubs)
+    const L = layout(shownNodes.map(n => n.id), parentOf, refOf, schedEdges, simul.hubs, measured, graph?.edges)
 
     const nodes: TaskNode[] = shownNodes.map(n => {
       const isBox = L.boxes.has(n.id)
@@ -1123,7 +1423,7 @@ function GraphCanvas({
     nodes.sort((a, b) => depth(a.id) - depth(b.id))
 
     return { baseNodes: nodes, layoutAbs: L.abs, layoutSize: L.size }
-  }, [shownNodes, schedEdges, simul])
+  }, [shownNodes, schedEdges, simul, measured, graph])
 
   const nodeKey = useMemo(() => baseNodes.map(n => n.id).join(','), [baseNodes])
 
@@ -1133,13 +1433,14 @@ function GraphCanvas({
     const sizes: Record<string, { width: number; height: number }> = {}
     const picks: Record<string, boolean> = {}
     for (const c of changes) {
-      if (c.type === 'position' && c.position) moves[c.id] = c.position
+      if (c.type === 'position' && c.position) {
+        moves[c.id] = {
+          x: Math.round(c.position.x / 24) * 24,
+          y: Math.round(c.position.y / 24) * 24,
+        }
+      }
       else if (c.type === 'select') picks[c.id] = c.selected
       else if (c.type === 'dimensions' && c.dimensions) {
-        // resizing 有值＝使用者正在拉 NodeResizer 的把手（拉的過程 true、放手 false）；
-        // 完全沒有這個欄位才是 React Flow 自己量出來的尺寸。
-        // 兩者一定要分開收：混在一起的話，量測會把使用者拉的大小蓋掉，
-        // 使用者拉的大小又會被當成「量到的」而在下一次佈局被抹掉。
         if (c.resizing === undefined) dims[c.id] = c.dimensions
         else sizes[c.id] = c.dimensions
       }
@@ -1153,8 +1454,6 @@ function GraphCanvas({
       setResized(r => ({ ...r, ...sizes }))
     }
     if (Object.keys(picks).length) setSelectedIds(s => ({ ...s, ...picks }))
-    // 尺寸沒真的變就不要換物件 —— 平移縮放時 ResizeObserver 會重送同樣的值，
-    // 每次都 setState 會讓整張圖白白重畫
     if (Object.keys(dims).length) {
       setMeasured(m => {
         const changed = Object.entries(dims).some(
@@ -1165,26 +1464,6 @@ function GraphCanvas({
     }
   }, [])
 
-  /**
-   * 把視野拉回全景：節點集合換掉時，以及按過「重新排列」時。
-   *
-   * 掛載那一次由 ReactFlow 的 fitView prop 負責 —— 但那個 prop 只在初始化時
-   * 生效一次，所以節點**必須在第一次 render 就存在**。這正是上面把節點改成
-   * useMemo 算、不再用 useNodesState + useEffect 的原因：effect 跑在首次繪製
-   * 之後，ReactFlow 掛載當下拿到的是空陣列，對著 0 個節點 fit 等於沒做，
-   * 之後不會再試，畫面就永遠停在 scale(1) 的左上角。（這個 bug 追了很久。）
-   *
-   * 代價是節點物件每次 render 都是新的，量到的尺寸得自己收好再疊回去 ——
-   * 見上面 measured 的說明，那是同一件事的另一半。
-   *
-   * **使用者自己縮放平移之後就不再自動框**。這裡曾經無條件把 userAdjusted 歸零，
-   * 於是每次重新佈局都等於「他沒動過」——背景重抓資料、側欄換篩選、甚至建立一條
-   * 關聯之後，畫面都會把他放大看的地方硬拉回全景。現在分成三種情況：
-   *
-   *   換專案（新的一張圖）  → 框，而且把視角的主導權收回來
-   *   節點集合變了          → 只有在他還沒動過視角時才框
-   *   按了全部顯示／重新排列 → 一定框（那是他自己要的）
-   */
   useEffect(() => {
     if (!nodesInitialized || !baseNodes.length) return
     const fresh = fittedProject.current !== projectId
@@ -1195,24 +1474,11 @@ function GraphCanvas({
     lastFitKey.current = nodeKey
     fitPending.current = false
     if (fresh) userAdjusted.current = false
-    // 只是換了一批節點而已，他已經自己選好要看哪裡的話就別搶
     if (!fresh && !asked && userAdjusted.current) return
     fitView(FIT_OPTIONS)
-    // relayout 只是「按過重新排列」的觸發器，effect 裡不會讀它的值 ——
-    // 但少了它，按鈕設好的 fitPending 要等到下次換資料才會被消化，
-    // 表現成「節點歸位了，視野卻沒跟著框回去」
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodesInitialized, nodeKey, baseNodes.length, projectId, fitView, relayout])
 
-  /**
-   * ＋／－ 的縮放。
-   *
-   * 沒有用 useReactFlow 的 zoomIn／zoomOut —— 實測那兩支在這個畫面上是靜悄悄的
-   * 沒有作用（滾輪縮放正常，所以 d3 那一層是通的），按了完全不動。
-   * 自己讀 viewport 再寫回去，走的是同一條 setViewport，行為確定。
-   *
-   * 以畫布中心為錨點放大縮小，不然按一次就會把畫面往左上角推。
-   */
   const zoomBy = useCallback((factor: number) => {
     const el = wrapperRef.current
     const { x, y, zoom } = getViewport()
@@ -1221,24 +1487,12 @@ function GraphCanvas({
     userAdjusted.current = true
     const cx = (el?.clientWidth ?? 0) / 2
     const cy = (el?.clientHeight ?? 0) / 2
-    // 讓畫布中心那一點在縮放前後對到同一個圖上座標
     setViewport(
       { x: cx - ((cx - x) / zoom) * next, y: cy - ((cy - y) / zoom) * next, zoom: next },
       { duration: 150 }
     )
   }, [getViewport, setViewport])
 
-  /**
-   * 畫布尺寸一變就重框，除非使用者已經自己動過視角。
-   *
-   * 少了這一段，初次進入會間歇性停在 scale(1) 把右邊的節點切掉：畫布是
-   * lazy load 進來的，ReactFlow 初始化那一刻容器可能還沒拿到最終寬高，
-   * 這種時候 fitView 算出來的結果沒有意義，而它不會自己重試。
-   * 用尺寸當觸發條件比追時間點可靠，順便也把「視窗縮放」「側欄展開」
-   * 這些情況一併處理掉。
-   *
-   * userAdjusted 是唯一的煞車：他自己動過視角之後，連視窗改大小都不該把他拉回全景。
-   */
   useEffect(() => {
     const el = wrapperRef.current
     if (!el) return
@@ -1251,17 +1505,6 @@ function GraphCanvas({
     return () => ro.disconnect()
   }, [fitView])
 
-  // ── 卡住：這張任務還不能動手，因為上游還沒到位 ────────────────
-  /**
-   * 「被上一個任務影響、無法處理」。判斷完全看關聯 ＋ 上游目前的狀態分類：
-   *
-   * - 完成後開始（FS）／阻擋（BLOCKS）／需要（REQUIRES）：上游沒**完成**就卡住
-   * - 同時開始（SS）：上游連**開始**都還沒，下游自然也開不了
-   * - 同時完成（FF）與開始後完成（SF）不算 —— 它們約束的是收尾的時間點，
-   *   不影響「現在能不能動手」，標成卡住只會讓紅字失去意義
-   *
-   * 自己已經完成的任務不標（做完了就無所謂上游），也才不會整張圖都是紅的。
-   */
   const statusCatKey = statuses.map(s => `${s.key}:${s.category}`).join('|')
   const categoryOf = useMemo(() => {
     const m = new Map(statuses.map(s => [s.key, s.category]))
@@ -1271,15 +1514,9 @@ function GraphCanvas({
 
   const { blockedBy, blockerIds } = useMemo(() => {
     const out = new Map<string, string[]>()
-    /** 卡住每張任務的源頭是誰（任務 id）。聚焦時要把源頭一起留亮 */
     const ids = new Map<string, string[]>()
-    if (!showBlocked) return { blockedBy: out, blockerIds: ids }
     const byId = new Map(shownNodes.map(n => [n.id, n]))
-
-    // 直接卡住：上游還沒完成，這張就開不了工。
-    // 除了給人看的句子，也留著 id —— 聚焦時要把源頭一起留亮
     const direct = new Map<string, Array<{ id: string; label: string }>>()
-    // 同時開始的另一端：它還沒開始，這張也開不了
     const startsWith = new Map<string, string[]>()
     for (const e of graph?.edges ?? []) {
       const src = byId.get(e.sourceId)
@@ -1296,14 +1533,6 @@ function GraphCanvas({
       }
     }
 
-    /**
-     * 同時開始的那一端如果自己也被卡住，要往上追到真正的源頭。
-     *
-     * 例：MRG-5 完成後才能做 MRG-6，而 MRG-7 跟 MRG-6 同時開始。
-     * 這時候在 MRG-7 上寫「要等 MRG-6 開始」是對的但沒有用 ——
-     * 真正擋著的是 MRG-5，而使用者要知道的是「去推哪一張」。
-     * 只有當同時開始的對方自己沒被卡住（單純還沒有人動手）時，才寫它。
-     */
     const resolve = (id: string, seen: Set<string>): Array<{ id: string; label: string }> => {
       if (seen.has(id)) return []
       seen.add(id)
@@ -1326,7 +1555,7 @@ function GraphCanvas({
       ids.set(n.id, uniq.map(r => r.id))
     }
     return { blockedBy: out, blockerIds: ids }
-  }, [graph, shownNodes, categoryOf, showBlocked])
+  }, [graph, shownNodes, categoryOf])
 
   // ── 聚焦子圖：選中的節點與它的鄰居留亮，其餘淡出 ──
   /**
@@ -1378,7 +1607,6 @@ function GraphCanvas({
    */
   const parallelWith = useMemo(() => {
     const out = new Map<string, ParallelPeers>()
-    if (!showParallel) return out
 
     const ids = shownNodes.map(n => n.id)
     const nextOf = new Map<string, string[]>(ids.map(id => [id, []]))
@@ -1450,7 +1678,7 @@ function GraphCanvas({
       }
     }
     return out
-  }, [shownNodes, schedEdges, tasks, showParallel, simul])
+  }, [shownNodes, schedEdges, tasks, simul])
 
   // 顏色、淡出、拖曳位移與量到的尺寸都在這裡疊上去。自動佈局的結果（baseNodes）
   // 保持不變，所以狀態改色、切換聚焦都不會把使用者拖好的版面弄亂。
@@ -1458,8 +1686,10 @@ function GraphCanvas({
     () => baseNodes.map(n => {
       // 使用者自己拉過的框，尺寸以他拉的為準；沒拉過的照佈局算出來的
       const size = resized[n.id]
+      const isBox = n.type === 'box'
       return {
         ...n,
+        zIndex: isBox ? -1 : 10,
         position: dragged[n.id] ?? n.position,
         selected: !!selectedIds[n.id],
         ...(size ? { style: { ...n.style, width: size.width, height: size.height } } : {}),
@@ -1471,34 +1701,18 @@ function GraphCanvas({
           color: statusColor(n.data.statusKey),
           dimmed: !!neighbours && !neighbours.has(n.id),
           focused: n.id === focusId,
+          hasUnread: unreadTaskIds.has(n.id),
           kin: kin.get(n.id) ?? null,
           blockedBy: blockedBy.get(n.id) ?? [],
           parallel: parallelWith.get(n.id) ?? NO_PARALLEL,
+          showBadges,
         },
       }
     }),
     [baseNodes, dragged, resized, measured, selectedIds, neighbours, kin, focusId, statusColor,
-     blockedBy, parallelWith]
+     blockedBy, parallelWith, unreadTaskIds, showBadges]
   )
 
-  /**
-   * 匯合點的位置是算出來的，不進自動佈局。
-   *
-   * **圓點貼著「最外側」的那一張成員任務**：分岔看最左邊那張、合流看最右邊那張，
-   * 而且住進那張任務所在的框（parentId），高度取同一欄成員的中線。
-   *
-   * 以前是拿整群的最小 x 配上整群的垂直中點，成員分散在兩個框裡時，
-   * 那個座標會落在框與框之間的空白、甚至壓在別人的標題列上 ——
-   * 使用者看到的就是那顆壓在方塊上的橘點。改成貼著錨點之後，圓點一定落在
-   * 佈局替它留出來的那段空白裡（見 place 裡的 JUNCTION_SPAN），
-   * 那段空白本來就沒有任何節點，壓不到東西。
-   *
-   * 因為它跟著任務走，使用者拖動任務時圓點也會跟著移動 ——
-   * 所以這裡讀的是拖過之後的位置。
-   *
-   * 尺寸是我們自己決定的，直接把 measured 填好交給 React Flow，
-   * 省掉「先量再顯示」那一輪（見上面 measured 的說明）。
-   */
   const junctionNodes = useMemo<JunctionNode[]>(() => {
     // 先一律換算成畫布座標：框裡的任務位置是相對的，成員又可能分在不同的框裡。
     // 使用者拖過的位置同樣是相對的，所以只把差值疊上去。
@@ -1526,9 +1740,8 @@ function GraphCanvas({
       const anchor = ms.reduce((best, m) => (outer(m, best) ? m : best), ms[0])
       // 只拿跟錨點同一欄的成員算高度：它們上下相鄰，中線落在兩張之間的空隙，
       // 壓不到任何一張。別欄（別的框裡）的成員由扇形的線自己拉過去
-      const column = ms.filter(m => pos.get(m)!.x === pos.get(anchor)!.x)
-      const centres = column.map(m => pos.get(m)!.y + heightOf(m) / 2)
-      const mid = (Math.min(...centres) + Math.max(...centres)) / 2
+      const anchorCenterY = pos.get(anchor)!.y + heightOf(anchor) / 2
+      const mid = Math.round(anchorCenterY / 24) * 24
       const x = g.kind === 'fork'
         ? pos.get(anchor)!.x - JUNCTION_SPAN
         : pos.get(anchor)!.x + widthOf(anchor) + JUNCTION_GAP
@@ -1579,39 +1792,35 @@ function GraphCanvas({
 
     // ── 匯合點的扇形：分岔點射向群裡每一張，群裡每一張射進合流點 ──
     // 只有外側接得到任務的那幾群才有圓點（見 simul），其餘在下面畫成直線
-    for (const g of simul.hubs) {
-      const color = SCHEDULING_COLOR[g.kind === 'fork' ? 'SS' : 'FF']
-      const faded = !!neighbours && !g.members.some(m => neighbours.has(m))
-      for (const m of g.members) {
-        if (!visibleIds.has(m)) continue
-        out.push({
-          id: `${g.id}~${m}`,
-          source: g.kind === 'fork' ? g.id : m,
-          target: g.kind === 'fork' ? m : g.id,
-          sourceHandle: H_OUT,
-          targetHandle: H_IN,
-          type: 'straight',
-          selectable: false,
-          // 這幾支箭頭不掛字：字寫在棒子上，一群有幾張就重複幾次會太吵
-          style: { stroke: color, strokeWidth: 1.8, opacity: faded ? 0.15 : 1 },
-          markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
-        })
+    if (showSchedLines) {
+      for (const g of simul.hubs) {
+        const color = SCHEDULING_COLOR[g.kind === 'fork' ? 'SS' : 'FF']
+        const faded = !!neighbours && !g.members.some(m => neighbours.has(m))
+        for (const m of g.members) {
+          if (!visibleIds.has(m)) continue
+          out.push({
+            id: `${g.id}~${m}`,
+            source: g.kind === 'fork' ? g.id : m,
+            target: g.kind === 'fork' ? m : g.id,
+            sourceHandle: H_OUT,
+            targetHandle: H_IN,
+            type: 'straight',
+            selectable: false,
+            // 這幾支箭頭不掛字：字寫在棒子上，一群有幾張就重複幾次會太吵
+            style: { stroke: color, strokeWidth: 1.8, opacity: faded ? 0.15 : 1 },
+            markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+          })
+        }
       }
     }
 
-    /**
-     * 進出匯合點的那一支。
-     *
-     * 群裡的任務日期是綁在一起的，所以上游進來的線接在棒子上（而不是接在
-     * 其中一張任務上）不但畫得對，講的也是實話：卡住其中一張就是卡住整群。
-     * 同一個上游同時指向群裡兩張時會併成同一條線，否則會有兩條完全重疊的線。
-     */
     const seen = new Set<string>()
 
     for (const e of graph?.edges ?? []) {
       if (!visibleIds.has(e.sourceId) || !visibleIds.has(e.targetId)) continue
       const type = e.linkType
       const scheduling = isScheduling(type)
+      if (scheduling && !showSchedLines) continue
       if (!scheduling && !showRelated) continue
 
       /**
@@ -1657,10 +1866,25 @@ function GraphCanvas({
          */
         sourceHandle: scheduling && !simultaneous ? H_OUT : H_REL_OUT,
         targetHandle: scheduling && !simultaneous ? H_IN : H_REL_IN,
-        type: scheduling && !simultaneous ? 'straight' : 'smoothstep',
-        label: LINK_CHIP[e.linkType] + lag,
-        labelShowBg: false,
-        labelStyle: labelText(color, faded),
+        type: 'straight',
+        label: showEdgeLabels ? (LINK_CHIP[e.linkType] + lag) : undefined,
+        labelShowBg: showEdgeLabels,
+        labelBgStyle: {
+          fill: dark ? '#090d16' : '#ffffff',
+          stroke: color,
+          strokeWidth: 1,
+          rx: 4,
+          ry: 4,
+          opacity: faded ? 0.25 : 1,
+        },
+        labelBgPadding: [6, 3],
+        labelBgBorderRadius: 4,
+        labelStyle: {
+          fontSize: 10,
+          fontWeight: 600,
+          fill: color,
+          opacity: faded ? 0.25 : 1,
+        },
         style: {
           stroke: color,
           strokeWidth: scheduling ? 1.8 : 1.2,
@@ -1674,7 +1898,7 @@ function GraphCanvas({
       })
     }
     return out
-  }, [graph, shownNodes, visibleIds, showRelated, neighbours, simul])
+  }, [graph, shownNodes, visibleIds, showRelated, neighbours, simul, showEdgeLabels, dark])
 
   // ── 建立 / 刪除關聯 ──────────────────────────────────────
   const invalidate = () => {
@@ -1773,15 +1997,6 @@ function GraphCanvas({
           {boxSelect ? G.toolbar.boxSelectOn : G.toolbar.boxSelect}
         </Button>
 
-        <div className="ml-3 flex items-center gap-3 text-sm">
-          <GraphToggle checked={showRelated} onChange={setShowRelated}
-                       label={G.toolbar.showRelated} />
-          <GraphToggle checked={showBlocked} onChange={setShowBlocked}
-                       label={G.toolbar.showBlocked} />
-          <GraphToggle checked={showParallel} onChange={setShowParallel}
-                       label={G.toolbar.showParallel} />
-        </div>
-
         {/* 兩類要從不同的圓點拉，選了哪一類就把該從哪拉寫在 title 上 */}
         <label className="ml-3 flex items-center gap-1.5 text-sm text-slate-600
                           dark:text-slate-300"
@@ -1824,10 +2039,16 @@ function GraphCanvas({
           onEdgeClick={onEdgeClick}
           // 匯合點不是任務，點它不該聚焦、雙擊也開不出東西
           onNodeClick={(_, n) => {
-            if (n.type !== 'task') return
+            if (n.type !== 'task' && n.type !== 'box') return
+            if (unreadTaskIds.has(n.id)) markTaskRead(n.id)
             setFocusId(id => (id === n.id ? null : n.id))
           }}
-          onNodeDoubleClick={(_, n) => { if (n.type === 'task') onOpen(n.id) }}
+          onNodeDoubleClick={(_, n) => {
+            if (n.type === 'task' || n.type === 'box') {
+              if (unreadTaskIds.has(n.id)) markTaskRead(n.id)
+              onOpen(n.id)
+            }
+          }}
           onPaneClick={() => setFocusId(null)}
           // event 為 null 代表是程式呼叫的（fitView 自己），只有真人拖曳縮放才算
           onMoveStart={(e) => { if (e) userAdjusted.current = true }}
@@ -1845,6 +2066,8 @@ function GraphCanvas({
            * 按住 Shift 一樣拉得出框。選起來的節點拖一張就一起動 ——
            * onNodesChange 本來就會收到每一個被移動節點的 position。
            */
+          snapToGrid
+          snapGrid={[24, 24]}
           selectionOnDrag={boxSelect}
           panOnDrag={boxSelect ? [1, 2] : true}
           selectionKeyCode="Shift"
@@ -1855,9 +2078,9 @@ function GraphCanvas({
           fitViewOptions={FIT_OPTIONS}
           className="bg-slate-50 dark:bg-slate-950"
         >
-          {/* 點陣的顏色是屬性不是樣式，CSS 變數在這裡不會被解析，只能自己分兩色 */}
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1}
-                      color={dark ? '#334155' : '#cbd5e1'} />
+          {/* 網點背景與網格點陣對齊 (24px 網點對齊) */}
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1.5}
+                      color={dark ? '#475569' : '#94a3b8'} />
 
 
           {/* ── 聚焦面板 ── */}
@@ -1934,50 +2157,33 @@ function GraphCanvas({
         </ReactFlow>
       </div>
 
-      <LegendBar />
+      <LegendBar
+        showEdgeLabels={showEdgeLabels} setShowEdgeLabels={setShowEdgeLabels}
+        showBadges={showBadges} setShowBadges={setShowBadges}
+      />
     </div>
   )
 }
 
 /**
- * 說明列 —— 固定在畫面最下面，兩排：線的意思在上，節點上的圖示在下。
- *
- * 原本線的說明是左下角一個會展開的浮層，展開後蓋掉半張圖，還要特地回去關。
- * 改成常駐在圖的下面：它跟圖不重疊，看一眼就走，不用開關。
- *
- * 每一項的完整說法掛在 title 上（游標停著就會出現），列上只留短標籤 ——
- * 一排放得下的字數有限，而且大部分時候使用者只是要確認「這條線是哪一種」。
+ * 說明與控制整合面板 —— 固定在畫面最下面，將原頂部勾選開關與圖示說明一體化。
  */
-function LegendBar() {
-  /**
-   * 滑到哪一項就顯示哪一項的說明，移開就收。
-   *
-   * 不用瀏覽器原生的 `title`：它要停住不動一秒才出現、樣子不能控制。
-   * 自己畫一個深色小方框，貼在那一項的正上方 —— 刻意不做成橫跨整列的長條，
-   * 那看起來像另一塊面板，不像「這一項的說明」。
-   */
+function LegendBar({
+  showEdgeLabels, setShowEdgeLabels,
+  showBadges, setShowBadges,
+}: {
+  showEdgeLabels: boolean; setShowEdgeLabels: React.Dispatch<React.SetStateAction<boolean>>
+  showBadges: boolean; setShowBadges: React.Dispatch<React.SetStateAction<boolean>>
+}) {
   const [tip, setTip] = useState<{ label: string; text: string; x: number } | null>(null)
   const barRef = useRef<HTMLDivElement>(null)
 
-
-  /**
-   * 提示框對齊被指到的那一項，所以要記下它在列上的水平位置。
-   *
-   * 滑過去就顯示、移開就收；點一下則「釘住」，移開也不收，
-   * 要再點一次或點別的地方才關。同一個框兩種用法，不用瀏覽器原生的 title ——
-   * 原生的要停住不動一秒才出現，而且觸控螢幕根本叫不出來。
-   */
-  /** 提示框最寬到這裡。要先知道寬度才算得出「貼齊邊界」該放哪 */
   const TIP_W = 560
 
   const hover = (label: string, text: string) => (e: ReactMouseEvent<HTMLElement>) => {
-    // 位置要在呼叫 setTip 之前算好。放進 updater 裡的話 React 可能晚一點才執行它，
-    // 那時 event.currentTarget 已經被清成 null。
     const bar = barRef.current?.getBoundingClientRect()
     const item = e.currentTarget.getBoundingClientRect()
     if (!bar) return
-    // 對齊那一項的中心，但整個框要留在說明列的範圍內 ——
-    // 靠最左邊的項目（緊鄰「操作說明」那一格）不夾住的話，提示框會有一半跑到框外面
     const centre = item.left + item.width / 2 - bar.left
     const x = Math.min(Math.max(8, centre - TIP_W / 2), Math.max(8, bar.width - TIP_W - 8))
     setTip({ label, text, x })
@@ -2000,68 +2206,110 @@ function LegendBar() {
           <div className="text-slate-200">{tip.text}</div>
         </div>
       )}
-      {/* 「操作說明」自成最左邊一格、跨兩排 —— 擠在「線」那一排的開頭會讀成
-          「線 說明」，看起來像在說明線的一種。
-          裡面只放「怎麼操作」，線與圖示各自的意思在右邊那兩排上滑過去就有。 */}
-      <div className="flex shrink-0 items-center border-r border-slate-200 px-3
+      {/* 開關與說明控制區：獨立於左側，上下 3 行對齊右側 3 行 */}
+      <div className="flex shrink-0 flex-col justify-around border-r border-slate-200 px-3 py-1
                       dark:border-slate-700">
-        <span
-          className="cursor-help rounded bg-slate-100 px-2 py-1 font-medium text-slate-600
-                     hover:bg-slate-200
-                     dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-          onMouseEnter={hover(G.legend.operationTitle, HELP.operation)}
-          onMouseLeave={unhover}>{G.legend.operation}</span>
+        {/* 第一行：對齊形狀與框點 */}
+        <div className="flex items-center">
+          <span
+            className="cursor-help rounded bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600
+                       hover:bg-slate-200
+                       dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+            onMouseEnter={hover(G.legend.operationTitle, HELP.operation)}
+            onMouseLeave={unhover}>{G.legend.operation}</span>
+        </div>
+
+        {/* 第二行：對齊排程與關聯連線 */}
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setShowEdgeLabels((v: boolean) => !v)}
+            onMouseEnter={hover("線條文字開關", "點擊切換是否在關聯連線上顯示文字標籤（如：完成後開始、相關）")}
+            onMouseLeave={unhover}
+            className={cx(
+              'flex cursor-pointer items-center justify-center rounded-full px-3 py-0.5 text-[11px] font-semibold transition-all shadow-sm',
+              showEdgeLabels
+                ? 'bg-blue-600 text-white shadow-blue-500/20 hover:bg-blue-700'
+                : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 hover:bg-slate-200'
+            )}
+          >
+            <span>線條文字</span>
+          </button>
+        </div>
+
+        {/* 第三行：對齊警示與圖示徽章 */}
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setShowBadges((v: boolean) => !v)}
+            onMouseEnter={hover("警示徽章開關", "點擊切換是否顯示任務卡片內部的卡住、問題旗子、並行及詢問圖示徽章")}
+            onMouseLeave={unhover}
+            className={cx(
+              'flex cursor-pointer items-center justify-center rounded-full px-3 py-0.5 text-[11px] font-semibold transition-all shadow-sm',
+              showBadges
+                ? 'bg-rose-600 text-white shadow-rose-500/20 hover:bg-rose-700'
+                : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 hover:bg-slate-200'
+            )}
+          >
+            <span>警示徽章</span>
+          </button>
+        </div>
       </div>
 
-      {/* 說明列加入四種排程依賴說明 (Ref: CR-046) */}
+      {/* 右側：獨立拆為 3 行的完整原版美觀圖示與連線說明 */}
       <div className="min-w-0 flex-1">
-      <LegendRowStrip label={G.legend.rowScheduling}>
-        {(['FS', 'SS', 'FF', 'SF'] as const).map(type => (
-          <LegendChip key={type}
-                      onMouseEnter={hover(G.linkChip[type], G.help.scheduling[type])}
-                      onMouseLeave={unhover}>
-            <span className="mr-1 inline-block h-0.5 w-3 rounded-full"
-                  style={{ backgroundColor: SCHEDULING_COLOR[type] }} />
-            {G.linkChip[type]}
-          </LegendChip>
-        ))}
-      </LegendRowStrip>
+        {/* 第一行：形狀說明 */}
+        <LegendRowStrip label={G.legend.rowShape}>
+          <button type="button"
+                  onMouseEnter={hover(G.legend.box, HELP.box)} onMouseLeave={unhover}
+                  className="flex shrink-0 cursor-help items-center gap-1.5
+                             hover:text-slate-800 dark:hover:text-slate-100">
+            <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50
+                             dark:bg-violet-500/20" />
+            {G.legend.box}
+          </button>
+          <LegendDot color={SCHEDULING_COLOR.SS} label={HELP.icon.sameStart.label}
+                     onMouseEnter={hover(HELP.icon.sameStart.label, HELP.icon.sameStart.text)}
+                     onMouseLeave={unhover} />
+          <LegendDot color={SCHEDULING_COLOR.FF} label={HELP.icon.sameFinish.label}
+                     onMouseEnter={hover(HELP.icon.sameFinish.label, HELP.icon.sameFinish.text)}
+                     onMouseLeave={unhover} />
+        </LegendRowStrip>
 
-      <LegendRowStrip label={G.legend.rowShape}>
-        {/* 階層沒有線可以說明 —— 大項目直接把底下的任務框起來 */}
-        <button type="button"
-                onMouseEnter={hover(G.legend.box, HELP.box)} onMouseLeave={unhover}
-                className="flex shrink-0 cursor-help items-center gap-1.5
-                           hover:text-slate-800 dark:hover:text-slate-100">
-          <span className="inline-block h-3 w-5 rounded-sm border border-violet-400 bg-violet-50
-                           dark:bg-violet-500/20" />
-          {G.legend.box}
-        </button>
-        {/* 同時開始／同時完成在圖上是圓點、在節點上是徽章，那是同一件事的兩個長相，
-            所以只在這裡出現一次，說明裡一次講完兩種 */}
-        <LegendDot color={SCHEDULING_COLOR.SS} label={HELP.icon.sameStart.label}
-                   onMouseEnter={hover(HELP.icon.sameStart.label, HELP.icon.sameStart.text)}
-                   onMouseLeave={unhover} />
-        <LegendDot color={SCHEDULING_COLOR.FF} label={HELP.icon.sameFinish.label}
-                   onMouseEnter={hover(HELP.icon.sameFinish.label, HELP.icon.sameFinish.text)}
-                   onMouseLeave={unhover} />
-      </LegendRowStrip>
-
-      <LegendRowStrip label={G.legend.rowIcon}>
-        {ICON_HELP.map(h => (
-          <LegendChip key={h.label} className={h.className}
-                      onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}>
-            {h.label}
-          </LegendChip>
-        ))}
-        {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
-          <LegendChip key={st}
-                      onMouseEnter={hover(INQUIRY_META[st].label, HELP.inquiry[st])}
+        {/* 第二行：連線圖例 */}
+        <LegendRowStrip label={G.legend.rowScheduling}>
+          {(['FS', 'SS', 'FF', 'SF'] as const).map(type => (
+            <LegendChip key={type}
+                        onMouseEnter={hover(G.linkChip[type], G.help.scheduling[type])}
+                        onMouseLeave={unhover}>
+              <span className="mr-1 inline-block h-0.5 w-3 rounded-full"
+                    style={{ backgroundColor: SCHEDULING_COLOR[type] }} />
+              {G.linkChip[type]}
+            </LegendChip>
+          ))}
+          <LegendChip onMouseEnter={hover(G.toolbar.showRelated, "任務相關/需要/阻擋的上下虛線")}
                       onMouseLeave={unhover}>
-            {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
+            <span className="mr-1 inline-block h-0.5 w-3 rounded-full border-t border-dashed border-slate-400" />
+            相關虛線
           </LegendChip>
-        ))}
-      </LegendRowStrip>
+        </LegendRowStrip>
+
+        {/* 第三行：狀態與徽章圖示說明 */}
+        <LegendRowStrip label={G.legend.rowIcon}>
+          {ICON_HELP.map(h => (
+            <LegendChip key={h.label} className={h.className}
+                        onMouseEnter={hover(h.label, h.text)} onMouseLeave={unhover}>
+              {h.label}
+            </LegendChip>
+          ))}
+          {(['AWAITING', 'OVERDUE', 'PARTIAL', 'REPLIED'] as const).map(st => (
+            <LegendChip key={st}
+                        onMouseEnter={hover(INQUIRY_META[st].label, HELP.inquiry[st])}
+                        onMouseLeave={unhover}>
+              {INQUIRY_META[st].icon} {INQUIRY_META[st].label}
+            </LegendChip>
+          ))}
+        </LegendRowStrip>
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { Api, type Project, type ProjectParam, type Task } from '../lib/api'
 import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
 import { rollup } from '../lib/rollup'
 import { T } from '../strings'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { Button, Input, cx } from './ui'
 
 /**
@@ -394,6 +395,9 @@ function TreeNode({
     ? selectedEpicId === task.id && !selectedTaskId
     : task.id === selectedTaskId
 
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = unreadTaskIds.has(task.id)
+
   /*
    * 收著的時候標整支子樹的量，展開之後只標「這一列自己」的 ——
    * 底下每一列都各自標著自己的數字了，上面再留一個總數，
@@ -443,7 +447,8 @@ function TreeNode({
   return (
     <div className={isRoot ? 'mb-0.5' : undefined}>
       <div className={cx('group/row flex items-start rounded-md',
-        active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800')}>
+        active ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800',
+        hasUnread && 'pmflow-flash')}>
 
         {/* 沒有子項的列一樣佔一格箭頭的寬度，不然同一層的文字會左右參差 */}
         <button
@@ -460,7 +465,11 @@ function TreeNode({
         </button>
 
         <button
-          onClick={() => (isRoot ? onSelectEpic(task.id) : onOpenTask(task.id))}
+          onClick={() => {
+            if (hasUnread) markTaskRead(task.id)
+            if (isRoot) onSelectEpic(task.id)
+            else onOpenTask(task.id)
+          }}
           title={isRoot && stat?.hasChildren
             ? T.nav.sidebar.epicSummary(task.title, stat.done, stat.total)
             : T.nav.sidebar.taskTitle(task.ref, task.title)}

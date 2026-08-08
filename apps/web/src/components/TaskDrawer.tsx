@@ -5,6 +5,7 @@ import { LINK_LABEL, LINK_CHIP, SCHEDULING, SEMANTIC, linkSentence } from '../li
 import { Button, Input, Select, Field, Spinner, ColorOption, cx } from './ui'
 import { InquiryTable } from './InquiryTable'
 import { useAuth } from '../lib/auth'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { useTheme } from '../lib/theme'
 import { T } from '../strings'
 import { typesAllowedFor } from '../lib/hierarchy'
@@ -232,13 +233,22 @@ export function TaskDrawer({
     if (!schedulingAllowed && SCHEDULING.includes(linkType)) setLinkType(SEMANTIC[0])
   }, [schedulingAllowed, linkType])
 
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = unreadTaskIds.has(taskId)
+  const shouldFlash = flash || hasUnread
+
+  const handleSeen = () => {
+    if (hasUnread) markTaskRead(taskId)
+    if (flash && onSeen) onSeen()
+  }
+
   /*
    * 紅框在他動一下之後收走。用 capture 掛在最外層：底下的控制項各自
    * 有自己的 handler，不 capture 的話點在按鈕上就傳不上來。
    * 沒在閃的時候不掛，省得每一次點擊都跑一趟沒有作用的 setState。
    */
-  const seen = flash && onSeen
-    ? { onPointerDownCapture: onSeen, onKeyDownCapture: onSeen }
+  const seen = shouldFlash
+    ? { onPointerDownCapture: handleSeen, onKeyDownCapture: handleSeen }
     : {}
 
   const Shell = ({ children }: { children: React.ReactNode }) =>
@@ -247,7 +257,7 @@ export function TaskDrawer({
            onClick={onClose}>
         {/* 覆蓋式抽屜是疊在卡片上的浮層，深色底要比卡片再亮一階才分得出層次 */}
         <div className={cx('flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl',
-                           'dark:bg-slate-800', flash && 'pmflow-flash')}
+                           'dark:bg-slate-800', shouldFlash && 'pmflow-flash')}
              {...seen}
              onClick={e => e.stopPropagation()}>
           {children}
@@ -255,7 +265,7 @@ export function TaskDrawer({
       </div>
     ) : (
       <div className={cx('flex h-full min-h-0 flex-col bg-white dark:bg-slate-900',
-                         flash && 'pmflow-flash')}
+                         shouldFlash && 'pmflow-flash')}
            {...seen}>
         {children}
       </div>

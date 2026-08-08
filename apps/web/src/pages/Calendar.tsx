@@ -12,6 +12,7 @@ import {
 import { Avatar } from '../components/Avatar'
 import { Button, Empty, Field, Input, Select, cx, textOnColor } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { T } from '../strings'
 import { useRemembered } from '../lib/remember'
 import {
@@ -660,6 +661,8 @@ function barStyle({ startCol, endCol, lane }: Segment): React.CSSProperties {
 // ── 跨日長條 / 期望回覆日標記 ───────────────────────────
 function SegmentBar({ seg, onOpen }: { seg: Segment; onOpen: (id: string) => void }) {
   const { piece, startCol } = seg
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = piece.kind !== 'leave' && unreadTaskIds.has(piece.taskId)
   const { setNodeRef, attributes, listeners, isDragging } = useDraggable({
     id: `${piece.key}:${startCol}`,
     data: { piece },
@@ -683,13 +686,17 @@ function SegmentBar({ seg, onOpen }: { seg: Segment; onOpen: (id: string) => voi
         ref={setNodeRef}
         {...listeners}
         {...attributes}
-        onClick={() => onOpen(piece.taskId)}
+        onClick={() => {
+          if (hasUnread) markTaskRead(piece.taskId)
+          onOpen(piece.taskId)
+        }}
         title={C.inquiryTooltip(piece.unit, piece.title, shortDate(piece.day))}
         style={style}
         className={cx(
           'pointer-events-auto absolute flex cursor-grab items-center gap-1 overflow-hidden',
           'rounded px-1.5 text-[11px] font-medium ring-1 ring-inset active:cursor-grabbing',
-          cls, isDragging && 'opacity-40'
+          cls, isDragging && 'opacity-40',
+          hasUnread && 'pmflow-flash'
         )}
       >
         <span aria-hidden>{piece.status === 'OVERDUE' ? '⚠️' : '✉'}</span>
@@ -703,7 +710,10 @@ function SegmentBar({ seg, onOpen }: { seg: Segment; onOpen: (id: string) => voi
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={() => onOpen(piece.taskId)}
+      onClick={() => {
+        if (hasUnread) markTaskRead(piece.taskId)
+        onOpen(piece.taskId)
+      }}
       title={C.taskTooltip(piece.ref, piece.title,
                            shortDate(piece.start), shortDate(piece.end), piece.days)}
       style={{ ...style, backgroundColor: piece.color }}
@@ -713,7 +723,8 @@ function SegmentBar({ seg, onOpen }: { seg: Segment; onOpen: (id: string) => voi
         // 長條的底色是狀態色（使用者自己挑的），淺色狀態配白字只有 2.5:1
         textOnColor(piece.color),
         piece.overdue && 'ring-2 ring-inset ring-red-500',
-        isDragging && 'opacity-40'
+        isDragging && 'opacity-40',
+        hasUnread && 'pmflow-flash'
       )}
     >
       {piece.inquiryState === 'OVERDUE' && <span aria-hidden>⚠️</span>}

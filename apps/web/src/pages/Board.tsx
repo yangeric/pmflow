@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, ApiError, type Task, type TaskStatus } from '../lib/api'
 import { InquiryBadge, ProblemBadge, cx } from '../components/ui'
 import { useAuth } from '../lib/auth'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { T } from '../strings'
 
 /**
@@ -232,15 +233,22 @@ function Card({
    */
   topPriority?: { key: string; name: string; color: string }
 }) {
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
+  const hasUnread = unreadTaskIds.has(task.id)
+
   return (
     <div
-      onClick={() => onOpen(task.id)}
+      onClick={() => {
+        if (hasUnread) markTaskRead(task.id)
+        onOpen(task.id)
+      }}
       title={draggable ? undefined : T.task.permission.cannotDragCard}
       className={cx(
         'rounded-lg bg-white p-2.5 ring-1 ring-slate-200',
         draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         'dark:bg-slate-900 dark:ring-slate-700',
-        overlay ? 'rotate-2 shadow-xl' : 'hover:ring-slate-300 dark:hover:ring-slate-600'
+        overlay ? 'rotate-2 shadow-xl' : 'hover:ring-slate-300 dark:hover:ring-slate-600',
+        hasUnread && 'pmflow-flash'
       )}
     >
       <div className="mb-1 flex items-center gap-1.5">

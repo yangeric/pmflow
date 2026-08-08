@@ -4,6 +4,7 @@ import { Api, type ProjectParam, type Task, type TaskStatus } from '../lib/api'
 import { Button, InquiryBadge, ProblemBadge, Empty, Input, Select, ColorOption, cx } from '../components/ui'
 import { Avatar } from '../components/Avatar'
 import { useAuth } from '../lib/auth'
+import { useUnreadNotifications } from '../lib/useUnreadNotifications'
 import { useTheme } from '../lib/theme'
 import { rollup, isTaskOverdue } from '../lib/rollup'
 import { typesAllowedUnder } from '../lib/hierarchy'
@@ -19,6 +20,7 @@ export default function ListView({
   parentForNew?: string | null
 }) {
   const qc = useQueryClient()
+  const { unreadTaskIds, markTaskRead } = useUnreadNotifications()
   const statusName = useMemo(
     () => Object.fromEntries(statuses.map(s => [s.key, s])), [statuses])
   /* 狀態、種類的下拉要照他挑的顏色上色，深淺看現在的底色（見 ui.tsx 的 readableColor） */
@@ -209,11 +211,17 @@ export default function ListView({
             const startDate = r?.startDate ?? t.startDate
             const dueDate = r?.dueDate ?? t.dueDate
             const overdue = isTaskOverdue(dueDate, progress)
+            const hasUnread = unreadTaskIds.has(t.id)
             return (
               <Fragment key={t.id}>
-              <tr onClick={() => onOpen(t.id)}
-                  className="group cursor-pointer border-t border-slate-100 hover:bg-slate-50
-                             dark:border-slate-800 dark:hover:bg-slate-800">
+              <tr onClick={() => {
+                    if (hasUnread) markTaskRead(t.id)
+                    onOpen(t.id)
+                  }}
+                  className={cx(
+                    'group cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800',
+                    hasUnread && 'pmflow-flash'
+                  )}>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2" style={{ paddingLeft: t.depth * 20 }}>
                     {t.depth > 0 && <span className="select-none text-slate-300 dark:text-slate-500">└</span>}
