@@ -1162,17 +1162,23 @@ function layout(
   const childCount = new Map<string, number>()
   for (const id of boxes) childCount.set(id, (kidsOf.get(id) ?? []).length)
 
-  // 框裡的起點：同一個框底下，沒有任何一條排程依賴指向它。
-  // 只算同框的上游 —— 從框外面指進來的線本來就是擋住整包，不影響誰是起點。
+  // 框裡的起點：同一個框底下有排程依賴時，指明「這一包從這幾張開始」。
+  // 若框內完全沒有任何關聯線，則不顯示「入口起點」警示徽章，避免無謂的畫面干擾。
   const entries = new Set<string>()
   for (const [parent, kids] of kidsOf) {
     if (!parent || kids.length < 2) continue
     const inBox = new Set(kids)
     const hasUpstream = new Set<string>()
+    let hasInBoxLinks = false
     for (const e of usable) {
-      if (inBox.has(e.sourceId) && inBox.has(e.targetId)) hasUpstream.add(e.targetId)
+      if (inBox.has(e.sourceId) && inBox.has(e.targetId)) {
+        hasUpstream.add(e.targetId)
+        hasInBoxLinks = true
+      }
     }
-    for (const k of kids) if (!hasUpstream.has(k)) entries.add(k)
+    if (hasInBoxLinks) {
+      for (const k of kids) if (!hasUpstream.has(k)) entries.add(k)
+    }
   }
 return { rel, size, abs, boxes, childCount, entries }
 }
