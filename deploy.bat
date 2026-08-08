@@ -1,17 +1,14 @@
 @echo off
 setlocal
 
-REM PMFlow One-Click Deploy Script
-REM Version: v0.2.3
-
-set VERSION=0.2.3
-set TAG=v0.2.3
+REM PMFlow Auto-Increment Release & Deploy Script (deploy.bat)
+REM Automatically calculates the next patch version (e.g. v0.2.3 -> v0.2.4)
 
 cd /d "%~dp0"
 
 echo.
 echo ====================================
-echo   PMFlow Auto Deploy %TAG%
+echo   PMFlow Auto Deploy & Release
 echo ====================================
 echo.
 
@@ -21,34 +18,35 @@ if errorlevel 1 goto :no_git
 for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD') do set BRANCH=%%i
 if not "%BRANCH%"=="main" goto :not_main
 
-echo [1/3] Checking working tree...
+echo [1/4] Calculating next version tag...
+for /f "usebackq tokens=*" %%V in (`powershell -Command "$tags = (git tag -l 'v*'); if (-not $tags) { 'v0.2.4' } else { $last = ($tags | Sort-Object { [version]($_ -replace 'v','') } | Select-Object -Last 1) -replace 'v',''; $p = $last.Split('.'); 'v' + $p[0] + '.' + $p[1] + '.' + ([int]$p[2] + 1) }"`) do set TAG=%%V
+
+if "%TAG%"=="" set TAG=v0.2.4
+set VERSION=%TAG:~1%
+
+echo Next version tag: %TAG% (%VERSION%)
+
+echo.
+echo [2/4] Checking working tree...
 git status --porcelain | findstr /R "." >nul
 if errorlevel 1 goto :clean_tree
 
 echo Found uncommitted changes. Committing...
 git add .
-git commit -m "fix: update graph layout handle alignment release v0.2.3"
+git commit -m "release: %TAG% - update graph layout and seed data"
 if errorlevel 1 goto :commit_failed
 
 :clean_tree
 echo.
-echo [2/3] Pushing main branch...
+echo [3/4] Pushing main branch to origin...
 git push origin main
 if errorlevel 1 goto :push_failed
 
 echo.
-echo [3/3] Checking tag %TAG%...
-git rev-parse -q --verify "refs/tags/%TAG%" >nul
-if not errorlevel 1 goto :tag_exists
-
-echo Creating and pushing tag %TAG%...
+echo [4/4] Creating and pushing tag %TAG%...
 git tag -a "%TAG%" -m "PMFlow %TAG%"
 git push origin "%TAG%"
 if errorlevel 1 goto :tag_failed
-goto :done
-
-:tag_exists
-echo Tag %TAG% already exists. Skipping tag creation.
 goto :done
 
 :no_git
@@ -74,13 +72,15 @@ goto :done
 :done
 echo.
 echo ====================================
-echo   Deployment triggered successfully!
+echo   Successfully deployed release %TAG%!
 echo ====================================
 echo.
 echo GitHub Actions build progress:
 echo   https://github.com/yangeric/pmflow/actions
 echo.
-echo Docker images will be published at:
+echo Published Docker image tags:
+echo   ghcr.io/yangeric/pmflow-web:%VERSION%
+echo   ghcr.io/yangeric/pmflow-api:%VERSION%
 echo   ghcr.io/yangeric/pmflow-web:latest
 echo   ghcr.io/yangeric/pmflow-api:latest
 echo.
