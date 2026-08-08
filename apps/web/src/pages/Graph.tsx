@@ -1957,26 +1957,32 @@ function GraphCanvas({
     const nId = node.id
     const currentParentId = parentOfMap.get(nId) ?? null
 
-    const nAbs = layoutAbs.get(nId)
-    if (!nAbs) return
+    const nPosAbs = (node as { positionAbsolute?: { x: number; y: number } }).positionAbsolute
+    const nodeAbsX = nPosAbs?.x ?? layoutAbs.get(nId)?.x ?? node.position.x
+    const nodeAbsY = nPosAbs?.y ?? layoutAbs.get(nId)?.y ?? node.position.y
+    const nodeW = measured[nId]?.width ?? layoutSize.get(nId)?.w ?? LEAF_W
+    const nodeH = measured[nId]?.height ?? layoutSize.get(nId)?.h ?? LEAF_H
 
-    const boxes = shownNodes.filter(n => n.id !== nId && (n.type === 'box' || (layoutSize.get(n.id)?.w ?? 0) > LEAF_W))
+    const nCenterX = nodeAbsX + nodeW / 2
+    const nCenterY = nodeAbsY + nodeH / 2
+
+    // 找出全圖所有可作為容器的框體 (包含大項目框與放大的任務框)
+    const boxes = allNodes.filter(n => n.id !== nId && (n.type === 'box' || (layoutSize.get(n.id)?.w ?? 0) > LEAF_W))
 
     let newParentId: string | null = null
 
     for (const bNode of boxes) {
-      const bAbs = layoutAbs.get(bNode.id)
-      const bSize = layoutSize.get(bNode.id)
-      if (!bAbs || !bSize) continue
-
-      const nCenterX = nAbs.x + LEAF_W / 2
-      const nCenterY = nAbs.y + LEAF_H / 2
+      const bPosAbs = (bNode as { positionAbsolute?: { x: number; y: number } }).positionAbsolute
+      const bAbsX = bPosAbs?.x ?? layoutAbs.get(bNode.id)?.x ?? bNode.position.x
+      const bAbsY = bPosAbs?.y ?? layoutAbs.get(bNode.id)?.y ?? bNode.position.y
+      const bW = layoutSize.get(bNode.id)?.w ?? 240
+      const bH = layoutSize.get(bNode.id)?.h ?? 160
 
       if (
-        nCenterX >= bAbs.x &&
-        nCenterX <= bAbs.x + bSize.w &&
-        nCenterY >= bAbs.y &&
-        nCenterY <= bAbs.y + bSize.h
+        nCenterX >= bAbsX &&
+        nCenterX <= bAbsX + bW &&
+        nCenterY >= bAbsY &&
+        nCenterY <= bAbsY + bH
       ) {
         newParentId = bNode.id
         break
@@ -1986,7 +1992,7 @@ function GraphCanvas({
     if (newParentId !== currentParentId) {
       updateTaskParent.mutate({ id: nId, parentId: newParentId })
     }
-  }, [layoutAbs, layoutSize, parentOfMap, shownNodes, updateTaskParent])
+  }, [allNodes, layoutAbs, layoutSize, measured, parentOfMap, updateTaskParent])
 
   const [deleteTargetEdge, setDeleteTargetEdge] = useState<{ id: string; label: string } | null>(null)
 
