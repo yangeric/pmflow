@@ -84,25 +84,10 @@ function checkPlacement(type: string, parentType: string | null): Violation | nu
   }
 
   /*
-   * 任務與里程碑一定要掛在大項目底下（2026-08-05 加）。
-   * 最上層只放得下大項目 —— 側欄的第一層就是「大項目」，
-   * 一張任務站在那裡會被讀成一個大項目，左邊看到的結構就跟實際的對不起來。
-   *
-   * 上層是自訂種類時放行：那一種完全不受這條規則管。
+   * 任務與里程碑允許放在最上層 (parentType === null)，也允許掛在其他任務或大項目底下。
    */
   if (type === TASK || type === MILESTONE) {
-    /*
-     * 規則是「不能站在最上層」，不是「上層一定要是大項目」——
-     * 任務掛在另一張任務底下就是**子任務**，畫面上到處都有「＋ 子任務」。
-     * 往上追一定會走到某個大項目，這樣就夠了。
-     */
-    if (parentType !== null) return null
-    return {
-      title: `${label(type)}不能放在最上層`,
-      detail: `最上層只放得下${label(EPIC)}。`
-        + `請先挑一個${label(EPIC)}或一張${label(TASK)}當它的上層，`
-        + `或是把它改成${label(EPIC)}。`,
-    }
+    return null
   }
 
   // 專案自己新增的種類：不受限制

@@ -34,8 +34,8 @@ export function canBeUnder(type: string, parentType: string | null): boolean {
     return parentType === 'TASK'
   }
   if (type === 'TASK' || type === 'MILESTONE') {
-    // 不能站在最上層。掛在另一張任務底下就是子任務，那是可以的
-    return parentType !== null
+    // 允許放在最上層 (parentType === null)，或掛在其他項目底下
+    return true
   }
   return true
 }
