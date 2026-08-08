@@ -57,7 +57,34 @@ interface Violation { title: string; detail: string }
  *
  * `parentType === null` 代表放在最上層。上層是自訂種類時一律放行。
  */
-function checkPlacement(_type: string, _parentType: string | null): Violation | null {
+function checkPlacement(type: string, parentType: string | null): Violation | null {
+  if (!isBuiltin(type)) return null
+  if (parentType !== null && !isBuiltin(parentType)) return null
+
+  if (type === EPIC) {
+    if (parentType !== null && parentType !== EPIC) {
+      return {
+        title: `大項目不能放在${label(parentType)}底下`,
+        detail: `大項目只能在最上層或放在另一個大項目底下。`,
+      }
+    }
+  }
+
+  if (type === BUG) {
+    if (parentType === null) {
+      return {
+        title: `問題不能在最上層`,
+        detail: `問題的上層必須是一張任務。`,
+      }
+    }
+    if (parentType !== TASK) {
+      return {
+        title: `問題只能掛在任務底下`,
+        detail: `問題的上層必須是一張任務。`,
+      }
+    }
+  }
+
   return null
 }
 

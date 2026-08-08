@@ -33,8 +33,13 @@ export default async function linkRoutes(app: FastifyInstance) {
     }
 
     const link = await sql.begin(async tx => {
-      // 排程類才需要擋環；語意類（RELATES / BLOCKS…）不影響日期，成環無妨
+      // 排程類才需要擋環與階層限制；語意類（RELATES / BLOCKS…）不影響日期，不受限制
       if (isScheduling(b.linkType)) {
+        const [st] = await tx<{ type: string }[]>`SELECT type FROM task WHERE id = ${sourceId}`
+        const [tt] = await tx<{ type: string }[]>`SELECT type FROM task WHERE id = ${targetId}`
+        if (st && tt && ((st.type === 'EPIC') !== (tt.type === 'EPIC'))) {
+          throw badRequest('大項目與任務之間不能建立排程依賴', '大項目只能與大項目建立排程依賴，任務只能與任務建立排程依賴')
+        }
 
         // 先驗祖先／後代關係。順序很重要：階層邊本身也算在環裡，
         // 若先跑 assertNoCycle，使用者只會看到「會造成循環依賴」這種

@@ -50,6 +50,16 @@ export function registerErrorHandler(app: FastifyInstance) {
       })
     }
 
+    // Fastify 內建錯誤 (如 Content-Length / JSON 解析 / 4xx 請求錯誤)
+    const fErr = err as FastifyError
+    if (fErr.statusCode && fErr.statusCode >= 400 && fErr.statusCode < 500) {
+      return reply.code(fErr.statusCode).type('application/problem+json').send({
+        type: `https://pmflow.dev/errors/${fErr.statusCode === 404 ? 'not-found' : 'bad-request'}`,
+        title: fErr.message,
+        status: fErr.statusCode,
+      })
+    }
+
     // PostgreSQL 錯誤轉成看得懂的訊息
     const pg = err as unknown as { code?: string; constraint_name?: string; detail?: string }
     if (pg.code === '23505') {

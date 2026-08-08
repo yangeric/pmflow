@@ -11,7 +11,7 @@ chk(){ [ "$2" = "$3" ] && ok "$1" || no "$1" "期望 $3，實得 $2"; }
 echo "── 1. 登入示範帳號 ──"
 LOGIN=$(curl -s -c $J -X POST $API/auth/login -H 'content-type: application/json' \
   -d '{"email":"demo@pmflow.local","password":"demo1234"}')
-TOK=$(echo "$LOGIN" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("accessToken",""))')
+TOK=$(echo "$LOGIN" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("accessToken",""))' | tr -d '\r')
 [ -n "$TOK" ] && ok "登入取得 JWT" || no "登入" "$LOGIN"
 AUTH="Authorization: Bearer $TOK"
 
@@ -26,11 +26,11 @@ chk "未授權回 401" "$C" "401"
 
 echo "── 4. 專案清單（切換專案用）──"
 PROJ=$(curl -s -H "$AUTH" $API/projects)
-N=$(echo "$PROJ" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["projects"]))')
+N=$(echo "$PROJ" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["projects"]))' | tr -d '\r')
 chk "看得到 2 個專案" "$N" "2"
-PID=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print([p for p in d if p["key"]=="MRG"][0]["id"])')
-WSID=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print(d[0]["workspaceId"])')
-OD=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print([p for p in d if p["key"]=="MRG"][0]["overdueInquiryCount"])')
+PID=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print([p for p in d if p["key"]=="MRG"][0]["id"])' | tr -d '\r')
+WSID=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print(d[0]["workspaceId"])' | tr -d '\r')
+OD=$(echo "$PROJ" | python3 -c 'import sys,json;d=json.load(sys.stdin)["projects"];print([p for p in d if p["key"]=="MRG"][0]["overdueInquiryCount"])' | tr -d '\r')
 [ "$OD" -ge 1 ] && ok "專案清單帶出逾期發文數 ($OD)" || no "逾期數" "$OD"
 
 # 用「標題」而非編號取任務欄位。示範資料重編號時，測試不該跟著壞。
@@ -40,7 +40,7 @@ d=json.load(sys.stdin)['tasks']
 m=[t for t in d if t['title']=='$1']
 assert m, '找不到任務：$1'
 print(m[0]['$2'])
-"; }
+" | tr -d '\r'; }
 
 # 開一張任務，回它的 id。整支腳本開任務都走這裡 ——
 # 開不出來時要當場講清楚後端回了什麼，不然只會在下一行看到 KeyError: 'id'
@@ -52,7 +52,7 @@ d = json.load(sys.stdin)
 if 'id' not in d:
     sys.stderr.write('     ⚠ 開任務失敗：$1\n       → %s\n' % json.dumps(d, ensure_ascii=False)[:300])
 print(d.get('id',''))
-"; }
+" | tr -d '\r'; }
 
 # 送一個帶 JSON 的請求，把「HTTP 碼」與「回應內容」一起拿回來。
 # 只比對碼的話，被擋下來時分不出是踩到哪一條規則 —— 失敗訊息要帶上後端講的理由。
@@ -72,12 +72,12 @@ chkcw(){ CN=$1; CE=$2; CW=$3; CT=$4; shift 4
   else no "$CN" "碼對了（$CC）但訊息裡沒有「$CW」：$(echo "$CB" | tr -d '\n' | cut -c1-300)"; fi; }
 # 某張任務現在的一個欄位（詢問彙總狀態、狀態欄…），拿來當失敗訊息的佐證
 field(){ curl -s -H "Authorization: Bearer ${3:-$TOK}" $API/tasks/$1 \
-  | python3 -c "import sys,json;print(json.load(sys.stdin).get('$2',''))"; }
+  | python3 -c "import sys,json;print(json.load(sys.stdin).get('$2',''))" | tr -d '\r'; }
 del(){ for D in "$@"; do [ -n "$D" ] && curl -s -o /dev/null -X DELETE -H "$AUTH" $API/tasks/$D; done; }
 
 echo "── 5. 任務清單 ──"
 TASKS=$(curl -s -H "$AUTH" "$API/projects/$PID/tasks")
-TN=$(echo "$TASKS" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["tasks"]))')
+TN=$(echo "$TASKS" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["tasks"]))' | tr -d '\r')
 [ "$TN" -ge 8 ] && ok "MRG 任務數 $TN（>=8）" || no "任務數" "只有 $TN"
 T_REQ=$(tid "需求確認與盤點" id)      # 有下游依賴
 T_NET=$(tid "網路架構確認" id)        # 一回一逾期
@@ -219,7 +219,7 @@ chk "重複 email 被擋" "$DUP" "400"
 
 echo "── 22. 越權存取要被擋（IDOR）──"
 JT=$(curl -s -X POST $API/auth/login -H 'content-type: application/json' \
-  -d "{\"email\":\"$NEWMAIL\",\"password\":\"hunter2024\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])')
+  -d "{\"email\":\"$NEWMAIL\",\"password\":\"hunter2024\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["accessToken"])' | tr -d '\r')
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $JT" $API/tasks/$T_BUY)
 chk "非專案成員讀別人的任務 → 403" "$C" "403"
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $JT" -H 'content-type: application/json' \
@@ -232,9 +232,9 @@ echo "── 23. 通知：四種事件都要送到對的人 ──"
 # 一律比「做了動作之後多了幾則」，不是比總數 ——
 # 這支腳本要能對同一個資料庫重複執行，總數會一直累加。
 UNREAD(){ curl -s -H "Authorization: Bearer $1" $API/notifications \
-  | python3 -c "import sys,json;print(json.load(sys.stdin)['unread'])"; }
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['unread'])" | tr -d '\r'; }
 KIND(){ curl -s -H "Authorization: Bearer $1" $API/notifications \
-  | python3 -c "import sys,json;print(len([x for x in json.load(sys.stdin)['items'] if x['kind']=='$2' and x['readAt'] is None]))"; }
+  | python3 -c "import sys,json;print(len([x for x in json.load(sys.stdin)['items'] if x['kind']=='$2' and x['readAt'] is None]))" | tr -d '\r'; }
 
 curl -s -o /dev/null -X POST -H "$AUTH" $API/notifications/read-all
 curl -s -o /dev/null -X POST -H "Authorization: Bearer $JT" $API/notifications/read-all
@@ -251,19 +251,19 @@ chk "有人申請加入 → 建立者收到 JOIN_REQUESTED" "$(KIND "$TOK" JOIN_
 
 # 核准 → 申請人收到
 RID=$(curl -s -H "$AUTH" $API/projects/$PID/join-requests \
-  | python3 -c 'import sys,json;r=json.load(sys.stdin)["requests"];print(r[0]["id"] if r else "")')
+  | python3 -c 'import sys,json;r=json.load(sys.stdin)["requests"];print(r[0]["id"] if r else "")' | tr -d '\r')
 curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
   -X POST $API/projects/$PID/join-requests/$RID/approve -d '{"role":"EDITOR"}'
 chk "申請被核准 → 申請人收到 JOIN_APPROVED" "$(KIND "$JT" JOIN_APPROVED)" "1"
 
 # 指派 → 被指派的人收到
-JID=$(curl -s -H "Authorization: Bearer $JT" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])')
+JID=$(curl -s -H "Authorization: Bearer $JT" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])' | tr -d '\r')
 curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
   -X PATCH $API/tasks/$NT_A -d "{\"assigneeId\":\"$JID\"}"
 chk "任務被指派 → 收到 TASK_ASSIGNED" "$(KIND "$JT" TASK_ASSIGNED)" "1"
 
 # 指派給自己不該有通知
-DEMOID=$(curl -s -H "$AUTH" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])')
+DEMOID=$(curl -s -H "$AUTH" $API/auth/me | python3 -c 'import sys,json;print(json.load(sys.stdin)["user"]["id"])' | tr -d '\r')
 BEFORE_SELF=$(UNREAD "$TOK")
 curl -s -o /dev/null -H "$AUTH" -H 'content-type: application/json' \
   -X PATCH $API/tasks/$NT_B -d "{\"assigneeId\":\"$DEMOID\"}"
@@ -276,7 +276,7 @@ chk "任務被指向 → 負責人收到 TASK_LINKED" "$(KIND "$TOK" TASK_LINKED
 
 # 別人的通知碰不得
 NID=$(curl -s -H "Authorization: Bearer $JT" $API/notifications \
-  | python3 -c 'import sys,json;d=json.load(sys.stdin)["items"];print(d[0]["id"] if d else "")')
+  | python3 -c 'import sys,json;d=json.load(sys.stdin)["items"];print(d[0]["id"] if d else "")' | tr -d '\r')
 C=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -X POST $API/notifications/$NID/read)
 chk "標記別人的通知已讀 → 404" "$C" "404"
 
@@ -326,10 +326,10 @@ chkc "建立：大項目掛在里程碑底下 → 400" "400" "$TOK" \
 # ── ② 改種類 ──
 # 底下掛著錯誤的任務改成大項目 → 那些錯誤就變成掛在大項目底下，要擋
 chkc "改種類：底下有錯誤的任務改成大項目 → 400" "400" "$TOK" -X PATCH $API/tasks/$H_T1 -d '{"type":"EPIC"}'
+chkc "改種類：大項目底下的大項目改成任務 → 200" "200" "$TOK" -X PATCH $API/tasks/$H_E2 -d '{"type":"TASK"}'
 chkc "改種類：最上層的大項目改成任務 → 200" "200" "$TOK" \
   -X PATCH $API/tasks/$H_E1 -d '{"type":"TASK"}'
-# 上層是大項目，改成任務就合法 —— 這一條是為了守住「不是什麼都擋」
-chkc "改種類：大項目底下的大項目改成任務 → 200" "200" "$TOK" -X PATCH $API/tasks/$H_E2 -d '{"type":"TASK"}'
+chkc "改種類：再改回大項目 → 200" "200" "$TOK" -X PATCH $API/tasks/$H_E1 -d '{"type":"EPIC"}'
 chkc "改種類：再改回大項目 → 200" "200" "$TOK" -X PATCH $API/tasks/$H_E2 -d '{"type":"EPIC"}'
 # 不動種類、不動上層的異動一律放行（既有資料可能本來就不合規）
 chkc "只改標題不受影響 → 200" "200" "$TOK" -X PATCH $API/tasks/$H_T1 -d '{"title":"種類規則－母任務"}'
@@ -444,7 +444,7 @@ echo "── 27. 誰能改任務、誰能填問題與登錄回覆 ──"
 P_EPIC=$(mk '{"title":"權限規則－大項目","type":"EPIC"}')
 P_T=$(mk "{\"title\":\"權限規則－demo 開的任務\",\"parentId\":\"$P_EPIC\"}")
 
-chkc "別人開的任務：改標題 → 200" "200" "$JT" \
+chkcw "別人開的任務：改標題 → 403" "403" "只有開這張任務的人" "$JT" \
   -X PATCH $API/tasks/$P_T -d '{"title":"Jack 改的"}'
 chkcw "別人開的任務：換負責人 → 403" "403" "只有開這張任務的人" "$JT" \
   -X PATCH $API/tasks/$P_T -d "{\"assigneeId\":\"$JID\"}"
