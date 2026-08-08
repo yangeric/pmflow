@@ -18,17 +18,39 @@ import { useTheme } from '../lib/theme'
  * 「側欄要不要收起來」是看螢幕決定的 —— 在筆電上為了甘特圖寬一點而收起來的人，
  * 換到大螢幕未必想收。存進帳號會讓兩台裝置互相蓋掉，跟深色模式同一個道理。
  */
-function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: string; targetId: string; linkType: string }> = []): Task[] {
-  if (taskList.length <= 1) return taskList
+function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: string; targetId: string }>, allTasks?: Task[]): Task[] {
+  if (!taskList.length) return []
   const itemMap = new Map(taskList.map(t => [t.id, t]))
+
+  // 建立所有任務的父子關係映射
+  const parentOfMap = new Map<string, string>()
+  if (allTasks) {
+    for (const t of allTasks) {
+      if (t.parentId) parentOfMap.set(t.id, t.parentId)
+    }
+  }
+
+  // 將子任務的連線向上映射至頂層大項目，確保跨子任務連線能正確影響大項目的先後排序
+  const epicEdges: Array<{ sourceId: string; targetId: string }> = []
+  for (const e of edges) {
+    let src = e.sourceId
+    let tgt = e.targetId
+    while (parentOfMap.has(src) && !itemMap.has(src)) {
+      src = parentOfMap.get(src)!
+    }
+    while (parentOfMap.has(tgt) && !itemMap.has(tgt)) {
+      tgt = parentOfMap.get(tgt)!
+    }
+    if (itemMap.has(src) && itemMap.has(tgt) && src !== tgt) {
+      epicEdges.push({ sourceId: src, targetId: tgt })
+    }
+  }
 
   // 找出有參與關聯的 ID
   const connectedIds = new Set<string>()
-  for (const e of edges) {
-    if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
-      connectedIds.add(e.sourceId)
-      connectedIds.add(e.targetId)
-    }
+  for (const e of epicEdges) {
+    connectedIds.add(e.sourceId)
+    connectedIds.add(e.targetId)
   }
 
   // 分離出「有關聯」與「無關聯」兩群
@@ -51,11 +73,9 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     childrenMap.set(t.id, [])
   }
   
-  for (const e of edges) {
-    if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
-      childrenMap.get(e.sourceId)?.push(e.targetId)
-      inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
-    }
+  for (const e of epicEdges) {
+    childrenMap.get(e.sourceId)?.push(e.targetId)
+    inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
   }
 
   // 根節點（沒有入度的事件），依據原 rank / ref 排序
@@ -102,7 +122,7 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
     }
   }
 
-  // 無關聯的事件統一掛在 Menu 最下方
+  // 無關聯的事件統一排在 Menu 最下方！
   return [...connectedResult, ...unconnectedTasks]
 }
 
@@ -172,7 +192,7 @@ export function EpicSidebar({
     const edges = graphData?.edges ?? []
     const ids = new Set(tasks.map(t => t.id))
     const rawEpics = tasks.filter(t => !t.parentId)
-    const epics = sortTasksTopologically(rawEpics, edges)
+    const epics = sortTasksTopologically(rawEpics, edges, tasks)
     const rolled = rollup(tasks)
 
     // 子樹裡有沒有「單位逾期未回」——要走完整棵子樹，不能只看直屬子任務
@@ -184,7 +204,7 @@ export function EpicSidebar({
 
     const kids = new Map<string, Task[]>()
     for (const [pId, list] of rawKids.entries()) {
-      kids.set(pId, sortTasksTopologically(list, edges))
+      kids.set(pId, sortTasksTopologically(list, edges, tasks))
     }
     const overdueIn = (rootId: string): number => {
       let n = 0
