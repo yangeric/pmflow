@@ -448,6 +448,8 @@ export interface ScheduleResult {
 export const Api = {
   login: (email: string, password: string) =>
     api<{ accessToken: string; user: User }>('/auth/login', { method: 'POST', json: { email, password } }),
+  impersonate: (targetUserId: string) =>
+    api<{ accessToken: string; user: User }>('/auth/impersonate', { method: 'POST', json: { targetUserId } }),
   register: (json: { email: string; password: string; displayName: string }) =>
     api<{ accessToken: string; user: User; isFirstUser: boolean }>('/auth/register', { method: 'POST', json }),
   logout: () => api('/auth/logout', { method: 'POST' }),

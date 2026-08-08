@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Api } from '../lib/api'
 import { useTheme, type ThemeChoice } from '../lib/theme'
 import { T } from '../strings'
+import { useAuth } from '../lib/auth'
 import { Avatar } from './Avatar'
-import { cx } from './ui'
+import { Button, cx } from './ui'
 
 /**
  * 右上角的頭像選單。
@@ -136,6 +137,15 @@ export function UserMenu({
 
           <MenuItem onClick={go(onAccount)}>{T.account.menu.account}</MenuItem>
           {isWorkspaceAdmin && <MenuItem onClick={go(onAdmin)}>{T.account.menu.admin}</MenuItem>}
+
+          {/* 擁有者/管理者專屬：測試代理切換身份 */}
+          {isWorkspaceAdmin && (
+            <MenuItem onClick={go(() => setShowSwitchModal(true))}>
+              <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                <span>🔀</span> 切換測試身份 (代理帳號)
+              </span>
+            </MenuItem>
+          )}
 
           <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
 

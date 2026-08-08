@@ -164,6 +164,37 @@ export default async function authRoutes(app: FastifyInstance) {
       ORDER BY w.created_at`
     return { user, workspaces }
   })
+
+  // ── 身份切換 / 測試代理 (Impersonation) ───────────────────
+  app.post('/auth/impersonate', async (req, reply) => {
+    const caller = await authenticate(req)
+    const { targetUserId } = z.object({ targetUserId: z.string().uuid() }).parse(req.body)
+
+    const [isOwnerOrAdmin] = await sql<{ role: string }[]>`
+      SELECT role FROM workspace_member WHERE user_id = ${caller.id} AND role IN ('OWNER', 'ADMINISTRATOR')`
+    const [isProjectManager] = await sql<{ role: string }[]>`
+      SELECT role FROM project_member WHERE user_id = ${caller.id} AND role = 'MANAGER'`
+
+    if (!isOwnerOrAdmin && !isProjectManager) {
+      throw forbidden('只有工作區擁有者/管理者或專案管理者可以使用身份切換代理功能')
+    }
+
+    const [targetUser] = await sql<{ id: string; email: string; display_name: string; status: string }[]>`
+      SELECT id, email, display_name, status FROM app_user WHERE id = ${targetUserId}`
+
+    if (!targetUser) throw badRequest('找不到目標帳號')
+    if (targetUser.status !== 'ACTIVE') throw forbidden('目標帳號已被停用')
+
+    const authUser = { id: targetUser.id, email: targetUser.email, displayName: targetUser.display_name }
+    const accessToken = await signAccessToken(authUser)
+    const { raw, hash } = newRefreshToken()
+    await sql`
+      INSERT INTO refresh_token (user_id, family_id, token_hash, expires_at)
+      VALUES (${authUser.id}, uuidv7(), ${hash}, now() + ${env.refreshTtlSec + ' seconds'}::interval)`
+
+    setRefreshCookie(reply, raw)
+    return reply.send({ accessToken, user: authUser })
+  })
 }
 
 function setRefreshCookie(reply: import('fastify').FastifyReply, raw: string) {

@@ -9,8 +9,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, displayName: string) => Promise<void>
   logout: () => Promise<void>
-  /** 自己改了名字或 email 之後，把側欄上的稱呼換掉，不必重新登入 */
   refreshUser: () => Promise<void>
+  switchUser: (targetUserId: string) => Promise<void>
 }
 
 const Ctx = createContext<AuthState | null>(null)
@@ -20,8 +20,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [ready, setReady] = useState(false)
 
-  // 開頁時用 httpOnly cookie 換一張 access token，做到「關掉分頁再回來還是登入狀態」。
-  // access token 只放在記憶體，不進 localStorage —— XSS 偷不走。
   useEffect(() => {
     (async () => {
       try {
@@ -37,15 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const qc = useQueryClient()
 
-  /**
-   * 換帳號時把整份查詢快取丟掉。
-   *
-   * 少了這一步，登出再用另一個帳號登入，畫面上還是前一個人的專案與任務 ——
-   * TanStack Query 的快取是跟著 queryKey 走的，不會因為換人就失效，而
-   * ['projects']、['tasks', id] 這些鍵裡沒有使用者。伺服器那邊擋得住
-   * （拿新 token 去要就是 403），但在重新抓到之前，畫面已經把上一個人的
-   * 東西顯示出來了。共用電腦上這是不能接受的。
-   */
   const resetCache = () => qc.clear()
 
   const afterAuth = async (accessToken: string, u: User) => {
@@ -66,6 +55,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const r = await Api.register({ email, password, displayName })
         await afterAuth(r.accessToken, r.user)
       },
+      switchUser: async (targetUserId: string) => {
+        const r = await Api.impersonate(targetUserId)
+        await afterAuth(r.accessToken, r.user)
+      },
       logout: async () => {
         await Api.logout().catch(() => {})
         setAccessToken(null)
@@ -74,7 +67,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         resetCache()
       },
       refreshUser: async () => {
-        // 不動快取 —— 還是同一個人，只是名字換了
         const me = await Api.me()
         setUser(me.user)
         setWorkspaces(me.workspaces)
