@@ -182,34 +182,9 @@ export default function CalendarView({
     [statuses]
   )
 
-  // ── 把任務與詢問單攤平成「有日期的片段」 ──────────────
-  const { pieces, undated } = useMemo(() => {
+  // ── 把詢問單與請假攤平成「有日期的片段」 ──────────────
+  const { pieces } = useMemo(() => {
     const out: Piece[] = []
-    const none: Task[] = []
-
-    for (const t of tasks) {
-      const s = toYmd(t.startDate)
-      const e = toYmd(t.dueDate)
-      if (!s && !e) { none.push(t); continue }
-      const start = s ?? e!
-      const end = e ?? s!
-      // 資料若反過來（結束早於開始）就當成單日，畫成負寬度會整列爆版
-      const lo = start <= end ? start : end
-      const hi = start <= end ? end : start
-      out.push({
-        kind: 'task',
-        key: `task:${t.id}`,
-        taskId: t.id,
-        title: t.title,
-        ref: t.ref,
-        start: lo,
-        end: hi,
-        days: diffDays(parseYmd(lo), parseYmd(hi)) + 1,
-        color: statusColor(t.statusKey),
-        overdue: !doneKeys.has(t.statusKey) && hi < today,
-        inquiryState: t.inquiryState,
-      })
-    }
 
     for (const i of inquiries) {
       const d = toYmd(i.dueDate)
@@ -236,15 +211,12 @@ export default function CalendarView({
         days: l.days,
       })
     }
-    return { pieces: out, undated: none }
-  }, [tasks, inquiries, leaves, statusColor, doneKeys, today])
+    return { pieces: out }
+  }, [inquiries, leaves])
 
   const visiblePieces = useMemo(
-    () => pieces.filter(p =>
-      p.kind === 'task' ? showTasks
-        : p.kind === 'inquiry' ? showInquiries
-          : showLeaves),
-    [pieces, showTasks, showInquiries, showLeaves]
+    () => pieces.filter(p => p.kind === 'inquiry' ? showInquiries : showLeaves),
+    [pieces, showInquiries, showLeaves]
   )
 
   // ── 每週各自做 lane packing ───────────────────────────
@@ -454,13 +426,6 @@ export default function CalendarView({
           <div className="ml-3 flex items-center gap-3 text-sm">
             <label className="flex cursor-pointer items-center gap-1.5 text-slate-600
                               dark:text-slate-300">
-              <input type="checkbox" checked={showTasks}
-                     onChange={e => setShowTasks(e.target.checked)}
-                     className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800" />
-              {C.filterTasks} <span className="text-xs text-slate-400 dark:text-slate-400">{taskCount}</span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-1.5 text-slate-600
-                              dark:text-slate-300">
               <input type="checkbox" checked={showInquiries}
                      onChange={e => setShowInquiries(e.target.checked)}
                      className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800" />
@@ -488,26 +453,6 @@ export default function CalendarView({
           <div className="border-b border-red-200 bg-red-50 px-4 py-1.5 text-xs text-red-700
                           dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300">
             {C.leave.loadFailed}
-          </div>
-        )}
-
-        {/* ── 未排期任務 ── */}
-        {undated.length > 0 && (
-          <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/60 px-4 py-2
-                          dark:border-amber-500/30 dark:bg-amber-500/10">
-            <span className="mt-0.5 shrink-0 text-xs font-medium text-amber-800 dark:text-amber-300">
-              {C.undated(undated.length)}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {undated.slice(0, 12).map(t => (
-                <UndatedChip key={t.id} task={t} />
-              ))}
-              {undated.length > 12 && (
-                <span className="self-center text-xs text-amber-700 dark:text-amber-400">
-                  {C.undatedMore(undated.length - 12)}
-                </span>
-              )}
-            </div>
           </div>
         )}
 
