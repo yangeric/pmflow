@@ -316,22 +316,22 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
             {G.badge.childCount(data.childCount)}
           </span>
-          {data.isEntry && (
+          {data.showBadges && data.isEntry && (
             <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
               {G.badge.entry}
             </span>
           )}
-          {data.kin && (
+          {data.showBadges && data.kin && (
             <span className={cx(BADGE, BADGE_VIOLET)}
                   title={data.kin === 'parent' ? G.badge.kinParentBoxTip : G.badge.kinChildTip}>
               {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
             </span>
           )}
-          {data.blockedBy.length > 0 && (
+          {data.showBadges && data.blockedBy.length > 0 && (
             <span className={cx(BADGE, BADGE_RED)}
                   title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
           )}
-          {data.problem && (
+          {data.showBadges && data.problem && (
             <span className={cx(BADGE, BADGE_FUCHSIA)}
                   title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
           )}
@@ -395,13 +395,13 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
             {data.ref}
           </span>
           {/* 先講「這張為什麼亮著」，再講它自己是什麼 */}
-          {data.kin && (
+          {data.showBadges && data.kin && (
             <span className={cx(BADGE, BADGE_VIOLET)}
                   title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
               {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
             </span>
           )}
-          {data.isEntry && (
+          {data.showBadges && data.isEntry && (
             <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryTaskTip}>
               {G.badge.entry}
             </span>
@@ -1240,10 +1240,10 @@ function GraphCanvas({
     const saved = localStorage.getItem('pmflow_graph_show_edge_labels')
     return saved !== null ? saved === 'true' : true
   })
-  /** 任務卡片內部的警示與圖示徽章要不要顯示 (持久化於 localStorage) */
+  /** 任務卡片與框內部的警示標籤要不要顯示 (預設隱藏，保留切換功能) */
   const [showBadges, setShowBadges] = useState(() => {
     const saved = localStorage.getItem('pmflow_graph_show_badges')
-    return saved !== null ? saved === 'true' : true
+    return saved !== null ? saved === 'true' : false
   })
 
   useEffect(() => {
@@ -2082,6 +2082,14 @@ function GraphCanvas({
             : undefined}
           title={boxSelect ? G.toolbar.boxSelectTipOn : G.toolbar.boxSelectTipOff}>
           {boxSelect ? G.toolbar.boxSelectOn : G.toolbar.boxSelect}
+        </Button>
+        <Button
+          onClick={() => setShowBadges(v => !v)}
+          className={showBadges
+            ? 'border-amber-500 bg-amber-50 text-amber-700 dark:border-amber-400 dark:bg-amber-500/15 dark:text-amber-300'
+            : undefined}
+          title={showBadges ? '點擊隱藏節點與框內的警示標籤' : '點擊顯示節點與框內的警示標籤'}>
+          {showBadges ? '🏷️ 警示標籤：顯示' : '🏷️ 警示標籤：預設隱藏'}
         </Button>
 
 
