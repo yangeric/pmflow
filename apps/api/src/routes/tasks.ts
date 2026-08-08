@@ -275,42 +275,35 @@ export default async function taskRoutes(app: FastifyInstance) {
     const b = patchBody.parse(req.body)
     // 只填「目前遇到的問題」的話，專案裡的任何人都可以 —— 那是「我卡在這裡」，
     // 不是在改別人的任務。其他欄位一律要編輯者，而且還要過 assertCanEditTask
-    const onlyProblem = Object.keys(b).length > 0 && Object.keys(b).every(k => k === 'problem')
+    // 任何人（專案成員）皆可修改「標題」與「目前遇到的問題」
+    const onlyTitleOrProblem = Object.keys(b).length > 0 && Object.keys(b).every(k => k === 'title' || k === 'problem')
     const { workspaceId, projectId, role } = await requireTaskAccess(
-      user.id, req.params.id, onlyProblem ? 'VIEWER' : 'EDITOR')
-    if (!onlyProblem) await assertCanEditTask(req.params.id, user.id, role)
+      user.id, req.params.id, onlyTitleOrProblem ? 'VIEWER' : 'EDITOR')
+    if (!onlyTitleOrProblem) await assertCanEditTask(req.params.id, user.id, role)
 
     if (b.type) await assertParamKey(sql, projectId, 'type', b.type)
     if (b.priority) await assertParamKey(sql, projectId, 'priority', b.priority)
     if (b.statusKey) await assertParamKey(sql, projectId, 'status', b.statusKey)
-    // 還有對外詢問沒回就不能結案（見 lib/inquiry.ts 的說明）
     if (b.statusKey) await assertNoOpenInquiries(sql, req.params.id, b.statusKey, projectId)
 
     await sql.begin(async tx => {
       if (b.parentId !== undefined) await assertNotDescendant(tx, req.params.id, b.parentId)
 
-      /*
-       * 種類與上層的搭配（見 lib/hierarchy.ts）。**只在真的動到這兩個欄位時檢查** ——
-       * 既有資料可能本來就不合規（規則是後來才定的），改標題、換負責人不該被它擋住。
-       * 改種類還要連帶看子任務：把一張任務改成大項目，底下掛著的問題就會變成
-       * 「掛在大項目底下」，那一關也在同一支裡。
-       */
       await assertTypeHierarchy(tx, {
         taskId: req.params.id,
         nextType: b.type,
         nextParent: b.parentId !== undefined ? { id: b.parentId } : undefined,
       })
 
-      // 舊的負責人要在 UPDATE 之前讀，不然就分不出「換人」和「本來就是他」——
-      // 每次存檔都通知一次，通知很快就會被當成雜訊而沒人看。
-      // 舊的問題內容同理，而且更嚴重：清空之後任務身上就沒有它了，
-      // 這裡不撈起來，活動紀錄只會留下「被清空」而查不到當初卡在哪。
-      // 舊狀態同理，而且是燃盡圖唯一的資料來源：時間軸上只有「換成什麼」
-      // 的話，重播的時候接不回前一段（見 lib/burndown.ts）
       const [before] = await tx<{
-        assignee_id: string | null; problem: string | null; status_key: string
+        title: string; description: string | null; problem: string | null; type: string; status_key: string; priority: string;
+        assignee_id: string | null; parent_id: string | null; start_date: string | null; due_date: string | null;
+        estimate_hours: number | null; schedule_mode: string; progress: number
       }[]>`
-        SELECT assignee_id, problem, status_key FROM task WHERE id = ${req.params.id}`
+        SELECT title, description, problem, type, status_key, priority,
+               assignee_id, parent_id, start_date::text, due_date::text,
+               estimate_hours, schedule_mode, progress
+        FROM task WHERE id = ${req.params.id}`
 
       const problem = cleanProblem(b.problem)
 
@@ -334,38 +327,61 @@ export default async function taskRoutes(app: FastifyInstance) {
 
       if (b.parentId !== undefined) await rebuildClosure(tx, req.params.id)
 
-      /*
-       * 活動紀錄沿用既有的 FIELD_CHANGE，不新增一種 kind ——
-       * 問題本來就是任務的一個欄位，時間軸也只有一條。
-       *
-       * 只有兩件事要特別處理：真的動到問題時，把清空前的內容一起收進 body
-       * （見上面 before 的說明）；沒真的動到就把它從 body 拿掉，
-       * 否則每次改別的欄位順手把同一段問題送回來，時間軸上就會多出一排
-       * 「記下了問題」，把真正發生變化的那幾筆淹掉。
-       */
-      const logged: Record<string, unknown> = { ...b }
-      // 狀態比照問題的作法：真的變了才留下來，而且要連「變之前是什麼」一起寫，
-      // 燃盡圖才接得回前一段。沒真的變就拿掉 —— 每次存檔都把同一個狀態
-      // 送回來的話，時間軸上會多出一排看起來像換過欄的紀錄
-      if (b.statusKey !== undefined) {
-        if (b.statusKey !== before?.status_key) {
-          logged.statusKeyBefore = before?.status_key ?? null
-        } else {
-          delete logged.statusKey
-        }
+      const logged: Record<string, unknown> = {}
+      if (b.title !== undefined && b.title !== before?.title) {
+        logged.title = b.title
+        logged.titleBefore = before?.title ?? null
       }
-      if (b.problem !== undefined) {
-        if (problem !== (before?.problem ?? null)) {
-          logged.problem = problem
-          logged.problemBefore = before?.problem ?? null
-        } else {
-          delete logged.problem
-        }
+      if (b.description !== undefined && b.description !== before?.description) {
+        logged.description = b.description
+        logged.descriptionBefore = before?.description ?? null
+      }
+      if (b.statusKey !== undefined && b.statusKey !== before?.status_key) {
+        logged.statusKey = b.statusKey
+        logged.statusKeyBefore = before?.status_key ?? null
+      }
+      if (b.problem !== undefined && problem !== (before?.problem ?? null)) {
+        logged.problem = problem
+        logged.problemBefore = before?.problem ?? null
+      }
+      if (b.type !== undefined && b.type !== before?.type) {
+        logged.type = b.type
+        logged.typeBefore = before?.type ?? null
+      }
+      if (b.priority !== undefined && b.priority !== before?.priority) {
+        logged.priority = b.priority
+        logged.priorityBefore = before?.priority ?? null
+      }
+      if (b.assigneeId !== undefined && b.assigneeId !== before?.assignee_id) {
+        logged.assigneeId = b.assigneeId
+        logged.assigneeIdBefore = before?.assignee_id ?? null
+      }
+      if (b.parentId !== undefined && b.parentId !== before?.parent_id) {
+        logged.parentId = b.parentId
+        logged.parentIdBefore = before?.parent_id ?? null
+      }
+      if (b.startDate !== undefined && b.startDate !== before?.start_date) {
+        logged.startDate = b.startDate
+        logged.startDateBefore = before?.start_date ?? null
+      }
+      if (b.dueDate !== undefined && b.dueDate !== before?.due_date) {
+        logged.dueDate = b.dueDate
+        logged.dueDateBefore = before?.due_date ?? null
+      }
+      if (b.estimateHours !== undefined && b.estimateHours !== before?.estimate_hours) {
+        logged.estimateHours = b.estimateHours
+        logged.estimateHoursBefore = before?.estimate_hours ?? null
+      }
+      if (b.progress !== undefined && b.progress !== before?.progress) {
+        logged.progress = b.progress
+        logged.progressBefore = before?.progress ?? null
       }
 
-      await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
-               VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
-                       ${user.id}, ${user.displayName}, ${sql.json(logged as Record<string, never>)})`
+      if (Object.keys(logged).length > 0) {
+        await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
+                 VALUES (${workspaceId}, ${req.params.id}, 'FIELD_CHANGE',
+                         ${user.id}, ${user.displayName}, ${sql.json(logged as Record<string, never>)})`
+      }
 
       if (b.assigneeId !== undefined && b.assigneeId !== before?.assignee_id) {
         await notify({

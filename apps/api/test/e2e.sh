@@ -444,9 +444,9 @@ echo "── 27. 誰能改任務、誰能填問題與登錄回覆 ──"
 P_EPIC=$(mk '{"title":"權限規則－大項目","type":"EPIC"}')
 P_T=$(mk "{\"title\":\"權限規則－demo 開的任務\",\"parentId\":\"$P_EPIC\"}")
 
-chkcw "別人開的任務：改標題 → 403" "403" "只有開這張任務的人" "$JT" \
+chkc "別人開的任務：改標題 → 200" "200" "$JT" \
   -X PATCH $API/tasks/$P_T -d '{"title":"Jack 改的"}'
-chkc "別人開的任務：換負責人 → 403" "403" "$JT" \
+chkcw "別人開的任務：換負責人 → 403" "403" "只有開這張任務的人" "$JT" \
   -X PATCH $API/tasks/$P_T -d "{\"assigneeId\":\"$JID\"}"
 chkc "別人開的任務：拖曳換欄 → 403" "403" "$JT" -X POST $API/tasks/$P_T/move -d '{"statusKey":"doing"}'
 # DELETE 沒有內容，所以不能沿用 chkc（它一律宣告 content-type: application/json，
