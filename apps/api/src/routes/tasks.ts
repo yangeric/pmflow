@@ -57,7 +57,7 @@ async function assertCanEditTask(
     (row.projectCreator && principals.includes(row.projectCreator))
   )) return
 
-  throw forbidden('只有開單人、負責人、專案管理者及其代理人可以修改任務')
+  throw forbidden('只有開這張任務的人、負責人、專案管理者及其代理人可以修改任務')
 }
 
 const TASK_COLUMNS = sql`
