@@ -151,7 +151,7 @@ export function UserMenu({
           {isWorkspaceAdmin && (
             <MenuItem onClick={go(() => setShowSwitchModal(true))}>
               <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
-                <span>🔀</span> 切換測試身份 (代理帳號)
+                <span>🔀</span> 測試身份與代理切換
               </span>
             </MenuItem>
           )}
@@ -191,7 +191,7 @@ export function UserMenu({
           <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <span>🔀</span> 切換測試身份 (代理帳號)
+                <span>🔀</span> 測試身份與代理切換
               </h3>
               <button
                 onClick={() => setShowSwitchModal(false)}
@@ -200,7 +200,7 @@ export function UserMenu({
               </button>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              做為擁有者/管理者，您可以免密碼直接代理切換為以下任一帳號進行權限與功能測試：
+              做為管理者，您可以免密碼直接選擇並切換為以下任一成員帳號，進行權限、功能測試與代理驗證：
             </p>
             <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
               {(adminUsersData?.users ?? []).map(u => (
@@ -210,8 +210,14 @@ export function UserMenu({
                   <div className="flex items-center gap-3 min-w-0">
                     <Avatar userId={u.id} name={u.displayName} size="md" />
                     <div className="min-w-0">
-                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">
-                        {u.displayName} {u.id === me?.id && <span className="text-xs text-blue-500 font-normal">(目前帳號)</span>}
+                      <div className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
+                        <span>{u.displayName}</span>
+                        {u.role && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-normal bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300">
+                            {u.role}
+                          </span>
+                        )}
+                        {u.id === me?.id && <span className="text-xs text-blue-500 font-normal">(目前)</span>}
                       </div>
                       <div className="text-xs text-slate-400 truncate">{u.email}</div>
                     </div>
@@ -219,12 +225,12 @@ export function UserMenu({
                   {u.id !== me?.id && (
                     <Button
                       variant="primary"
-                      className="px-3 py-1 text-xs"
+                      className="px-3 py-1 text-xs shrink-0"
                       onClick={async () => {
                         setShowSwitchModal(false)
                         await switchUser(u.id)
                       }}>
-                      切換
+                      代理 / 切換
                     </Button>
                   )}
                 </div>
