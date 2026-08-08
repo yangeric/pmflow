@@ -1936,6 +1936,58 @@ function GraphCanvas({
     addLink.mutate({ source: c.source, target: c.target, linkType })
   }, [addLink])
 
+  const parentOfMap = useMemo(() => new Map(shownNodes.map(n => [n.id, n.parentId ?? null])), [shownNodes])
+
+  const updateTaskParent = useMutation({
+    mutationFn: (v: { id: string; parentId: string | null }) =>
+      Api.patchTask(v.id, { parentId: v.parentId }),
+    onSuccess: () => { setError(null); invalidate() },
+    onError: (e: unknown) => setError(
+      e instanceof ApiError ? [e.title, e.detail].filter(Boolean).join('：') : G.link.addFailed
+    ),
+  })
+
+  /**
+   * 空間拖曳動態階層管理 (Spatial Drag-and-Drop Hierarchy Engine)：
+   * 1. 當任務拖移出大項目框外 -> 自動解除隸屬關係 (parentId = null)，同步左側 Menu！
+   * 2. 當任務拖移進母任務/大項目框內 -> 自動建立父子隸屬關係 (parentId = box.id)，同步左側 Menu！
+   */
+  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
+    if (node.type !== 'task' && node.type !== 'box') return
+    const nId = node.id
+    const currentParentId = parentOfMap.get(nId) ?? null
+
+    const nAbs = layoutAbs.get(nId)
+    if (!nAbs) return
+
+    const boxes = shownNodes.filter(n => n.id !== nId && (n.type === 'box' || (layoutSize.get(n.id)?.w ?? 0) > LEAF_W))
+
+    let newParentId: string | null = null
+
+    for (const bNode of boxes) {
+      const bAbs = layoutAbs.get(bNode.id)
+      const bSize = layoutSize.get(bNode.id)
+      if (!bAbs || !bSize) continue
+
+      const nCenterX = nAbs.x + LEAF_W / 2
+      const nCenterY = nAbs.y + LEAF_H / 2
+
+      if (
+        nCenterX >= bAbs.x &&
+        nCenterX <= bAbs.x + bSize.w &&
+        nCenterY >= bAbs.y &&
+        nCenterY <= bAbs.y + bSize.h
+      ) {
+        newParentId = bNode.id
+        break
+      }
+    }
+
+    if (newParentId !== currentParentId) {
+      updateTaskParent.mutate({ id: nId, parentId: newParentId })
+    }
+  }, [layoutAbs, layoutSize, parentOfMap, shownNodes, updateTaskParent])
+
   const [deleteTargetEdge, setDeleteTargetEdge] = useState<{ id: string; label: string } | null>(null)
 
   const onEdgeClick = useCallback((_: unknown, edge: Edge) => {
@@ -2015,6 +2067,7 @@ function GraphCanvas({
           onConnect={onConnect}
           isValidConnection={isValidConnection}
           onEdgeClick={onEdgeClick}
+          onNodeDragStop={onNodeDragStop}
           // 匯合點不是任務，點它不該聚焦、雙擊也開不出東西
           onNodeClick={(_, n) => {
             if (n.type !== 'task' && n.type !== 'box') return
