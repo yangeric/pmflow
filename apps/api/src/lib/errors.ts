@@ -36,7 +36,10 @@ export const conflict = (t: string, d?: string, e?: Record<string, unknown>) =>
 
 export function registerErrorHandler(app: FastifyInstance) {
   app.setErrorHandler((err: FastifyError | HttpProblem, _req, reply) => {
-    if (err instanceof HttpProblem) return err.send(reply)
+    const prob = err as unknown as HttpProblem
+    if (err instanceof HttpProblem || (prob && typeof prob.send === 'function')) {
+      return prob.send(reply)
+    }
 
     if (err instanceof ZodError) {
       return reply.code(400).type('application/problem+json').send({

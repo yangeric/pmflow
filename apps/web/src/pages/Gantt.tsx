@@ -152,7 +152,26 @@ export default function GanttView({
       return false
     }, {})
 
-    return () => { g.destructor(); ganttRef.current = null }
+    const hostEl = hostRef.current
+    const handleWheel = (e: WheelEvent) => {
+      if (!ganttRef.current) return
+      const delta = e.deltaY || e.deltaX
+      if (delta && Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+        e.preventDefault()
+        const pos = ganttRef.current.getScrollState()
+        ganttRef.current.scrollTo(Math.max(0, pos.x + delta), pos.y)
+      }
+    }
+
+    if (hostEl) {
+      hostEl.addEventListener('wheel', handleWheel, { passive: false })
+    }
+
+    return () => {
+      if (hostEl) hostEl.removeEventListener('wheel', handleWheel)
+      g.destructor()
+      ganttRef.current = null
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 

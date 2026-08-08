@@ -802,6 +802,11 @@ function TreeNode({
           onOpenTask={onOpenTask}
         />
       ))}
+
+      {/* 含有多個子事件的事件框/大項目，在其最後一個子事件後面加上分隔線 */}
+      {isRoot && kids.length > 0 && (
+        <div className="my-2 border-b border-slate-200 dark:border-slate-700/60" />
+      )}
     </div>
   )
 }
