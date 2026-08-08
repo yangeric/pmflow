@@ -1204,11 +1204,8 @@ function GraphCanvas({
     const saved = localStorage.getItem('pmflow_graph_show_edge_labels')
     return saved !== null ? saved === 'true' : true
   })
-  /** 任務卡片與框內部的警示標籤要不要顯示 (預設隱藏，保留切換功能) */
-  const [showBadges, setShowBadges] = useState(() => {
-    const saved = localStorage.getItem('pmflow_graph_show_badges')
-    return saved !== null ? saved === 'true' : false
-  })
+  /** 任務卡片與框內部的警示標籤要不要顯示 (預設強制隱藏) */
+  const [showBadges, setShowBadges] = useState(false)
 
   useEffect(() => {
     localStorage.setItem('pmflow_graph_show_edge_labels', String(showEdgeLabels))
