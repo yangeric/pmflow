@@ -121,12 +121,30 @@ export default function GanttView({
       return true
     }, {})
 
-    // ── 從端點拉線 → 建立依賴，後端會擋循環 ──
+    // ── 從端點拉線 → 建立依賴，點擊／雙擊連線可刪除依賴 ──
     g.attachEvent('onAfterLinkDelete', (id: string | number) => {
       Api.deleteLink(String(id))
-        .then(() => qc.invalidateQueries({ queryKey: ['graph', projectId] }))
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ['tasks', projectId] })
+          qc.invalidateQueries({ queryKey: ['schedule', projectId] })
+          qc.invalidateQueries({ queryKey: ['graph', projectId] })
+        })
         .catch(() => qc.invalidateQueries({ queryKey: ['graph', projectId] }))
       return true
+    }, {})
+
+    g.attachEvent('onLinkDblClick', (id: string | number) => {
+      if (window.confirm('確定要刪除這條依賴關聯連線嗎？')) {
+        g.deleteLink(id)
+      }
+      return false
+    }, {})
+
+    g.attachEvent('onLinkClick', (id: string | number) => {
+      if (window.confirm('確定要刪除這條依賴關聯連線嗎？')) {
+        g.deleteLink(id)
+      }
+      return false
     }, {})
 
     g.attachEvent('onAfterLinkAdd', (_id: string | number, link: { source: string | number; target: string | number; type: string }) => {

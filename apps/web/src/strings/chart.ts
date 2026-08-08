@@ -333,8 +333,8 @@ export const chart = {
     conflicts: (count: number) => `⚠️ ${count} 個排程衝突：`,
     conflictItem: (label: string, reason: string) => `${label}（${reason}）`,
     criticalPath: (count: number) =>
-      `關鍵路徑 ${count} 個節點（後端以前向／後向遍歷求 total float = 0）`,
-    dragHint: '拖曳長條可改期並連動下游，從長條端點拉線可建立依賴',
+      `關鍵路徑共 ${count} 個節點`,
+    dragHint: '拖曳長條可改期並連動下游，雙擊連線可刪除依賴，從長條端點拉線可建立依賴',
     addLinkFailed: '建立關聯失敗',
   },
 } as const
