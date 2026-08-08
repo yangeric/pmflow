@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Api, type Project, type ProjectParam, type Task } from '../lib/api'
 import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
@@ -168,6 +168,18 @@ export function EpicSidebar({
     }
     return cur?.id ?? null
   }, [selectedTaskId, tasks])
+
+  // 當選擇新任務時，將其大項目自動寫入 expanded 集合，但不強制覆蓋使用者的手動折疊
+  useEffect(() => {
+    if (autoOpen) {
+      setExpanded(prev => {
+        if (prev.has(autoOpen)) return prev
+        const next = new Set(prev)
+        next.add(autoOpen)
+        return next
+      })
+    }
+  }, [autoOpen])
 
   function toggle(id: string) {
     setExpanded(prev => {
@@ -386,7 +398,7 @@ function TreeNode({
   const [addingChild, setAddingChild] = useState(false)
   const [childTitle, setChildTitle] = useState('')
   const kids = childrenOf.get(task.id) ?? []
-  const open = expanded.has(task.id) || autoOpen === task.id
+  const open = expanded.has(task.id)
   const kind = types.find(t => t.key === task.type)
   const kindName = kind?.name ?? task.type
   const kindColor = kind?.color ?? '#94a3b8'
