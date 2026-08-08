@@ -8,7 +8,7 @@ cd /d "%~dp0"
 
 echo.
 echo ====================================
-echo   PMFlow Auto Deploy & Release
+echo   PMFlow Auto Deploy ^& Release
 echo ====================================
 echo.
 
