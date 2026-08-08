@@ -1939,29 +1939,23 @@ function GraphCanvas({
    * 建立關聯規則：大項目（EPIC）只能與大項目連結，不能與一般任務連結。
    */
   const isValidConnection = useCallback((c: Connection | Edge) => {
-    if (!c.source || !c.target || c.source === c.target) return false
-    const sourceType = taskTypeMap.get(c.source)
-    const targetType = taskTypeMap.get(c.target)
-    if (sourceType === 'EPIC' || targetType === 'EPIC') {
-      return sourceType === 'EPIC' && targetType === 'EPIC'
-    }
-    return true
-  }, [taskTypeMap])
+    return !!c.source && !!c.target && c.source !== c.target
+  }, [])
 
   const onConnect = useCallback((c: Connection) => {
     if (!c.source || !c.target || c.source === c.target) return
     const sourceType = taskTypeMap.get(c.source)
     const targetType = taskTypeMap.get(c.target)
-
-    if (sourceType === 'EPIC' || targetType === 'EPIC') {
+    const viaRelation = c.sourceHandle === H_REL_OUT || c.targetHandle === H_REL_IN
+    
+    // 大項目與一般任務之間不能建「排程依賴 (FS)」，但可自動以「相關 (RELATES)」建立連結，體驗極致順暢
+    let linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
+    if (linkType === 'FS' && (sourceType === 'EPIC' || targetType === 'EPIC')) {
       if (sourceType !== 'EPIC' || targetType !== 'EPIC') {
-        setError('大項目只能與大項目建立關聯線！')
-        return
+        linkType = 'RELATES'
       }
     }
 
-    const viaRelation = c.sourceHandle === H_REL_OUT || c.targetHandle === H_REL_IN
-    const linkType: LinkType = viaRelation ? 'RELATES' : 'FS'
     addLink.mutate({ source: c.source, target: c.target, linkType })
   }, [addLink, taskTypeMap])
 
