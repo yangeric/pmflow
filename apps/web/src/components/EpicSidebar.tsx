@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Api, type Project, type ProjectParam, type Task } from '../lib/api'
 import { canBeUnder, typesAllowedUnder } from '../lib/hierarchy'
 import { rollup } from '../lib/rollup'
@@ -18,6 +18,53 @@ import { useTheme } from '../lib/theme'
  * 「側欄要不要收起來」是看螢幕決定的 —— 在筆電上為了甘特圖寬一點而收起來的人，
  * 換到大螢幕未必想收。存進帳號會讓兩台裝置互相蓋掉，跟深色模式同一個道理。
  */
+function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: string; targetId: string; linkType: string }> = []): Task[] {
+  if (taskList.length <= 1) return taskList
+  const itemMap = new Map(taskList.map(t => [t.id, t]))
+  const inDegree = new Map<string, number>()
+  const graphMap = new Map<string, string[]>()
+  
+  for (const t of taskList) {
+    inDegree.set(t.id, 0)
+    graphMap.set(t.id, [])
+  }
+  
+  for (const e of edges) {
+    if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
+      graphMap.get(e.sourceId)!.push(e.targetId)
+      inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
+    }
+  }
+
+  const levelMap = new Map<string, number>()
+  const queue = taskList.filter(t => (inDegree.get(t.id) ?? 0) === 0).map(t => t.id)
+  for (const id of queue) levelMap.set(id, 0)
+
+  for (let i = 0; i < queue.length; i++) {
+    const cur = queue[i]
+    const curLevel = levelMap.get(cur) ?? 0
+    for (const next of graphMap.get(cur) ?? []) {
+      levelMap.set(next, Math.max(levelMap.get(next) ?? 0, curLevel + 1))
+      inDegree.set(next, (inDegree.get(next) ?? 0) - 1)
+      if (inDegree.get(next) === 0) queue.push(next)
+    }
+  }
+
+  for (const t of taskList) {
+    if (!levelMap.has(t.id)) levelMap.set(t.id, 0)
+  }
+
+  return [...taskList].sort((a, b) => {
+    const la = levelMap.get(a.id) ?? 0
+    const lb = levelMap.get(b.id) ?? 0
+    if (la !== lb) return la - lb
+    const ra = Number(a.rank) || 0
+    const rb = Number(b.rank) || 0
+    if (ra !== rb) return ra - rb
+    return a.ref.localeCompare(b.ref, undefined, { numeric: true })
+  })
+}
+
 const COLLAPSE_KEY = 'pmflow.sidebar'
 
 function storedCollapsed(): boolean {
@@ -74,16 +121,29 @@ export function EpicSidebar({
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed] = useState<boolean>(() => storedCollapsed())
 
+  const { data: graphData } = useQuery({
+    queryKey: ['graph', project?.id],
+    queryFn: () => Api.graph(project!.id),
+    enabled: !!project?.id,
+  })
+
   const { epics, stat, looseCount, childrenOf, bugsUnder, overdueIn, inquiriesIn } = useMemo(() => {
+    const edges = graphData?.edges ?? []
     const ids = new Set(tasks.map(t => t.id))
-    const epics = tasks.filter(t => !t.parentId)
+    const rawEpics = tasks.filter(t => !t.parentId)
+    const epics = sortTasksTopologically(rawEpics, edges)
     const rolled = rollup(tasks)
 
     // 子樹裡有沒有「單位逾期未回」——要走完整棵子樹，不能只看直屬子任務
-    const kids = new Map<string, Task[]>()
+    const rawKids = new Map<string, Task[]>()
     for (const t of tasks) {
       if (!t.parentId || !ids.has(t.parentId)) continue
-      const a = kids.get(t.parentId) ?? []; a.push(t); kids.set(t.parentId, a)
+      const a = rawKids.get(t.parentId) ?? []; a.push(t); rawKids.set(t.parentId, a)
+    }
+
+    const kids = new Map<string, Task[]>()
+    for (const [pId, list] of rawKids.entries()) {
+      kids.set(pId, sortTasksTopologically(list, edges))
     }
     const overdueIn = (rootId: string): number => {
       let n = 0
