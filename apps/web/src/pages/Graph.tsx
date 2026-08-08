@@ -322,8 +322,10 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
         <NodeHandles />
         <div className="h-1 rounded-t-lg" style={{ backgroundColor: data.color }} />
         
-        {/* 左上角容器模式開關 ＆ 右上角手動調整大小按鈕 */}
-        <div className="flex items-center justify-between border-b border-violet-100 dark:border-violet-900/40 bg-violet-100/50 dark:bg-violet-900/20 px-2 py-1">
+        <div className="flex items-center gap-1.5 px-3 py-1.5">
+          <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+            {data.ref}
+          </span>
           <button
             type="button"
             onClick={(e) => {
@@ -331,49 +333,42 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
               data.onToggleContainer?.()
             }}
             className={cx(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
+              'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
               data.isContainerMode
-                ? 'bg-violet-600 text-white ring-1 ring-violet-400 dark:bg-violet-500'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                ? 'bg-violet-600 text-white border-violet-500 shadow-2xs'
+                : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
             )}
-            title={data.isContainerMode ? '點擊關閉容器模式' : '點擊開啟容器模式 (允許其它事件放進內部)'}
+            title={data.isContainerMode ? '【收納模式開】允許其它事件卡片拖放進入內部' : '點擊開啟【收納模式】：允許其它事件卡片拖放進入內部'}
           >
-            <span>{data.isContainerMode ? '📦 容器開' : '📄 容器關'}</span>
+            {data.isContainerMode ? '📦 可收納' : '📦 獨立'}
           </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setResizable(r => !r)
-            }}
-            className={cx(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
-              resizable
-                ? 'bg-amber-600 text-white ring-1 ring-amber-400 dark:bg-amber-500'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-            )}
-            title={resizable ? '點擊關閉右上角調整大小' : '點擊於右上角手動拖曳調整框大小'}
-          >
-            <span>📐 {resizable ? '縮放中' : '改大小'}</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5 px-3 py-2">
-          <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
-            {data.ref}
-          </span>
           <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
             {data.title}
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            <span className="h-1 w-14 overflow-hidden rounded bg-white dark:bg-slate-700">
+            <span className="h-1 w-12 overflow-hidden rounded bg-white dark:bg-slate-700">
               <span className="block h-1 rounded"
                     style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
             </span>
             <span className="text-[10px] tabular-nums text-slate-500 dark:text-slate-400">
               {data.progress}%
             </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setResizable(r => !r)
+              }}
+              className={cx(
+                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border ml-1',
+                resizable
+                  ? 'bg-amber-600 text-white border-amber-500 shadow-2xs'
+                  : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+              )}
+              title={resizable ? '點擊關閉尺寸調整' : '點擊開啟【調整尺寸】：可手動拖曳卡片邊角改大小'}
+            >
+              {resizable ? '📐 縮放中' : '📐 尺寸'}
+            </button>
           </span>
         </div>
       </div>
@@ -399,51 +394,49 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
         <NodeHandles />
         <div className="h-1 rounded-t-lg" style={{ backgroundColor: accentColor }} />
 
-        {/* 左上角容器模式開關 ＆ 右上角手動調整大小按鈕 */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 px-2 py-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              data.onToggleContainer?.()
-            }}
-            className={cx(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
-              data.isContainerMode
-                ? 'bg-violet-600 text-white ring-1 ring-violet-400 dark:bg-violet-500'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-            )}
-            title={data.isContainerMode ? '容器模式已開啟：其它事件可放進內部 (點擊切換為普通卡片)' : '點擊開啟容器模式：允許其它事件拖放進內部'}
-          >
-            <span>{data.isContainerMode ? '📦 容器開' : '📄 容器關'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setResizable(r => !r)
-            }}
-            className={cx(
-              'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-all shadow-2xs cursor-pointer',
-              resizable
-                ? 'bg-amber-600 text-white ring-1 ring-amber-400 dark:bg-amber-500'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
-            )}
-            title={resizable ? '點擊關閉右上角調整大小' : '點擊於右上角手動拖曳調整框大小'}
-          >
-            <span>📐 {resizable ? '縮放中' : '改大小'}</span>
-          </button>
-        </div>
-
-        <div className="px-2.5 py-2">
-          {/* 不換行：徽章折到第二行會把節點撐高，同一排任務高低不齊，圖就散了。
-              寧可字少一點也要留在同一行，完整說法在 title 上 */}
+        <div className="px-2.5 py-1.5">
+          {/* 微型頂列：事件編號 ＋ 允許收納開關 ＋ 尺寸調整 ＋ 狀態徽章 */}
           <div className="flex flex-nowrap items-center gap-1 overflow-hidden">
-            <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
+            <span className="shrink-0 font-mono text-[10px] font-semibold text-slate-500 dark:text-slate-400">
               {data.ref}
             </span>
-            {/* 先講「這張為什麼亮著」，再講它自己是什麼 */}
+
+            {/* 功能 1：允許收納子事件開關 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                data.onToggleContainer?.()
+              }}
+              className={cx(
+                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
+                data.isContainerMode
+                  ? 'bg-violet-600 text-white border-violet-500 shadow-2xs'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+              )}
+              title={data.isContainerMode ? '【收納模式開】允許其它事件卡片拖放進入內部' : '點擊開啟【收納模式】：允許其它事件卡片拖放進入內部'}
+            >
+              {data.isContainerMode ? '📦 可收納' : '📦 獨立'}
+            </button>
+
+            {/* 功能 2：手動調整卡片尺寸 */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                setResizable(r => !r)
+              }}
+              className={cx(
+                'shrink-0 rounded px-1 py-0.2 text-[9px] font-medium transition-all cursor-pointer border',
+                resizable
+                  ? 'bg-amber-600 text-white border-amber-500 shadow-2xs'
+                  : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+              )}
+              title={resizable ? '點擊關閉尺寸調整' : '點擊開啟【調整尺寸】：可手動拖曳卡片邊角改大小'}
+            >
+              {resizable ? '📐 縮放中' : '📐 尺寸'}
+            </button>
+
             {data.showBadges && data.kin && (
               <span className={cx(BADGE, BADGE_VIOLET)}
                     title={data.kin === 'parent' ? G.badge.kinParentTaskTip : G.badge.kinChildTip}>
@@ -473,10 +466,6 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
                 {data.taskType === 'TASK' ? '任務' : data.taskType}
               </span>
             )}
-            {/*
-             * 卡住與並行都寫成一句看得懂的話掛在 title 上。徽章本身只留兩三個字，
-             * 一張任務可能同時掛好幾個，寫長了會把標題擠掉 —— 細節留給滑過去看。
-             */}
             {data.showBadges && data.blockedBy.length > 0 && (
               <span className={cx(BADGE, BADGE_RED)}
                     title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
@@ -514,7 +503,7 @@ function TaskNodeView({ data }: NodeProps<TaskNode>) {
                           dark:text-slate-100">
             {data.title}
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5">
+          <div className="mt-1 flex items-center gap-1.5">
             <div className="h-1 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
               <div className={cx("h-1 rounded transition-all duration-300", data.progress === 0 && "opacity-40")}
                    style={{
