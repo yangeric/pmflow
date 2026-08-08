@@ -1957,14 +1957,25 @@ function GraphCanvas({
     const nId = node.id
     const currentParentId = parentOfMap.get(nId) ?? null
 
-    const nPosAbs = (node as { positionAbsolute?: { x: number; y: number } }).positionAbsolute
-    const nodeAbsX = nPosAbs?.x ?? layoutAbs.get(nId)?.x ?? node.position.x
-    const nodeAbsY = nPosAbs?.y ?? layoutAbs.get(nId)?.y ?? node.position.y
+    // 換算正確的即時全畫布絕對座標（含拖曳位移 dragged）
+    const getAbs = (id: string, nObj?: Node) => {
+      const baseAbs = layoutAbs.get(id) ?? { x: 0, y: 0 }
+      const pId = parentOfMap.get(id)
+      const d = dragged[id] ?? nObj?.position
+      if (!d) return baseAbs
+      if (pId && parentOfMap.has(pId)) {
+        const pAbs = layoutAbs.get(pId) ?? { x: 0, y: 0 }
+        return { x: pAbs.x + d.x, y: pAbs.y + d.y }
+      }
+      return d
+    }
+
+    const nAbs = getAbs(nId, node)
     const nodeW = measured[nId]?.width ?? layoutSize.get(nId)?.w ?? LEAF_W
     const nodeH = measured[nId]?.height ?? layoutSize.get(nId)?.h ?? LEAF_H
 
-    const nCenterX = nodeAbsX + nodeW / 2
-    const nCenterY = nodeAbsY + nodeH / 2
+    const nCenterX = nAbs.x + nodeW / 2
+    const nCenterY = nAbs.y + nodeH / 2
 
     // 找出全圖所有可作為容器的框體 (包含大項目框與放大的任務框)
     const boxes = allNodes.filter(n => n.id !== nId && (n.type === 'box' || (layoutSize.get(n.id)?.w ?? 0) > LEAF_W))
@@ -1972,17 +1983,15 @@ function GraphCanvas({
     let newParentId: string | null = null
 
     for (const bNode of boxes) {
-      const bPosAbs = (bNode as { positionAbsolute?: { x: number; y: number } }).positionAbsolute
-      const bAbsX = bPosAbs?.x ?? layoutAbs.get(bNode.id)?.x ?? bNode.position.x
-      const bAbsY = bPosAbs?.y ?? layoutAbs.get(bNode.id)?.y ?? bNode.position.y
+      const bAbs = getAbs(bNode.id, bNode)
       const bW = layoutSize.get(bNode.id)?.w ?? 240
       const bH = layoutSize.get(bNode.id)?.h ?? 160
 
       if (
-        nCenterX >= bAbsX &&
-        nCenterX <= bAbsX + bW &&
-        nCenterY >= bAbsY &&
-        nCenterY <= bAbsY + bH
+        nCenterX >= bAbs.x &&
+        nCenterX <= bAbs.x + bW &&
+        nCenterY >= bAbs.y &&
+        nCenterY <= bAbs.y + bH
       ) {
         newParentId = bNode.id
         break
@@ -1990,9 +1999,15 @@ function GraphCanvas({
     }
 
     if (newParentId !== currentParentId) {
+      // 換層級時清掉該節點的手動拖曳 offset，交給系統自動重新佈局
+      setDragged(prev => {
+        const next = { ...prev }
+        delete next[nId]
+        return next
+      })
       updateTaskParent.mutate({ id: nId, parentId: newParentId })
     }
-  }, [allNodes, layoutAbs, layoutSize, measured, parentOfMap, updateTaskParent])
+  }, [allNodes, dragged, layoutAbs, layoutSize, measured, parentOfMap, updateTaskParent])
 
   const [deleteTargetEdge, setDeleteTargetEdge] = useState<{ id: string; label: string } | null>(null)
 
