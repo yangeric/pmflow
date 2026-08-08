@@ -22,47 +22,65 @@ function sortTasksTopologically(taskList: Task[], edges: Array<{ sourceId: strin
   if (taskList.length <= 1) return taskList
   const itemMap = new Map(taskList.map(t => [t.id, t]))
   const inDegree = new Map<string, number>()
-  const graphMap = new Map<string, string[]>()
+  const childrenMap = new Map<string, string[]>()
   
   for (const t of taskList) {
     inDegree.set(t.id, 0)
-    graphMap.set(t.id, [])
+    childrenMap.set(t.id, [])
   }
   
   for (const e of edges) {
     if (itemMap.has(e.sourceId) && itemMap.has(e.targetId) && e.sourceId !== e.targetId) {
-      graphMap.get(e.sourceId)!.push(e.targetId)
+      childrenMap.get(e.sourceId)!.push(e.targetId)
       inDegree.set(e.targetId, (inDegree.get(e.targetId) ?? 0) + 1)
     }
   }
 
-  const levelMap = new Map<string, number>()
-  const queue = taskList.filter(t => (inDegree.get(t.id) ?? 0) === 0).map(t => t.id)
-  for (const id of queue) levelMap.set(id, 0)
-
-  for (let i = 0; i < queue.length; i++) {
-    const cur = queue[i]
-    const curLevel = levelMap.get(cur) ?? 0
-    for (const next of graphMap.get(cur) ?? []) {
-      levelMap.set(next, Math.max(levelMap.get(next) ?? 0, curLevel + 1))
-      inDegree.set(next, (inDegree.get(next) ?? 0) - 1)
-      if (inDegree.get(next) === 0) queue.push(next)
-    }
-  }
-
-  for (const t of taskList) {
-    if (!levelMap.has(t.id)) levelMap.set(t.id, 0)
-  }
-
-  return [...taskList].sort((a, b) => {
-    const la = levelMap.get(a.id) ?? 0
-    const lb = levelMap.get(b.id) ?? 0
-    if (la !== lb) return la - lb
+  // 根節點（沒有入度的事件），依據原 rank / ref 排序
+  const roots = taskList.filter(t => (inDegree.get(t.id) ?? 0) === 0).sort((a, b) => {
     const ra = Number(a.rank) || 0
     const rb = Number(b.rank) || 0
     if (ra !== rb) return ra - rb
     return a.ref.localeCompare(b.ref, undefined, { numeric: true })
   })
+
+  const result: Task[] = []
+  const visited = new Set<string>()
+
+  // 深度優先走訪 (DFS)，當上游連線到下游時，下游緊貼在預設上游正後方，中間不插入無關事件
+  function dfs(id: string) {
+    if (visited.has(id)) return
+    visited.add(id)
+    const task = itemMap.get(id)
+    if (task) result.push(task)
+
+    const nextTasks = (childrenMap.get(id) ?? [])
+      .map(nid => itemMap.get(nid))
+      .filter((t): t is Task => !!t && !visited.has(t.id))
+      .sort((a, b) => {
+        const ra = Number(a.rank) || 0
+        const rb = Number(b.rank) || 0
+        if (ra !== rb) return ra - rb
+        return a.ref.localeCompare(b.ref, undefined, { numeric: true })
+      })
+
+    for (const next of nextTasks) {
+      dfs(next.id)
+    }
+  }
+
+  for (const root of roots) {
+    dfs(root.id)
+  }
+
+  // 預防環形依賴或遺漏節點
+  for (const t of taskList) {
+    if (!visited.has(t.id)) {
+      result.push(t)
+    }
+  }
+
+  return result
 }
 
 const COLLAPSE_KEY = 'pmflow.sidebar'

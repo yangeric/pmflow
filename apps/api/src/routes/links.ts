@@ -54,11 +54,10 @@ export default async function linkRoutes(app: FastifyInstance) {
                 ${b.lagDays ?? 0}, ${user.id})
         RETURNING id`
 
-      // 當建立關聯時，若左側 (source) 順序大於等於右側 (target) 順序，自動更新 target.rank 使左側在 Menu 上方
+      // 當建立關聯時，將 target 的 rank 設為 source.rank + 1 (緊跟在 source 正下方/正後方)，確保 Menu 順序緊密相連
       const [srcT] = await tx<{ rank: number }[]>`SELECT rank FROM task WHERE id = ${sourceId}`
-      const [tgtT] = await tx<{ rank: number }[]>`SELECT rank FROM task WHERE id = ${targetId}`
-      if (srcT && tgtT && srcT.rank >= tgtT.rank) {
-        await tx`UPDATE task SET rank = ${srcT.rank + 10} WHERE id = ${targetId}`
+      if (srcT) {
+        await tx`UPDATE task SET rank = ${srcT.rank + 1} WHERE id = ${targetId}`
       }
 
       await tx`INSERT INTO activity (workspace_id, task_id, kind, actor_id, actor_name, body)
