@@ -311,41 +311,10 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
           <span className="shrink-0 font-mono text-[10px] text-slate-500 dark:text-slate-400">
             {data.ref}
           </span>
-          {/* 「大項目」三個字沒有告訴使用者任何事 —— 框已經把「底下還有東西」畫出來了，
-              這裡改成講數量，一眼知道這一包有多大 */}
-          {data.showBadges && (
-            <span className={cx(BADGE, BADGE_VIOLET)} title={G.badge.childCountTip}>
-              {G.badge.childCount(data.childCount)}
-            </span>
-          )}
-          {data.showBadges && data.isEntry && (
-            <span className={cx(BADGE, BADGE_EMERALD)} title={G.badge.entryBoxTip}>
-              {G.badge.entry}
-            </span>
-          )}
-          {data.showBadges && data.kin && (
-            <span className={cx(BADGE, BADGE_VIOLET)}
-                  title={data.kin === 'parent' ? G.badge.kinParentBoxTip : G.badge.kinChildTip}>
-              {data.kin === 'parent' ? G.badge.kinParent : G.badge.kinChild}
-            </span>
-          )}
-          {data.showBadges && data.blockedBy.length > 0 && (
-            <span className={cx(BADGE, BADGE_RED)}
-                  title={G.badge.blockedTip(data.blockedBy.join('、'))}>{G.badge.blocked}</span>
-          )}
-          {data.showBadges && data.problem && (
-            <span className={cx(BADGE, BADGE_FUCHSIA)}
-                  title={G.badge.problemTip(data.problem)}>{G.badge.problem}</span>
-          )}
           <span className="min-w-0 truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
             {data.title}
           </span>
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
-            {data.showBadges && data.inquiryState !== 'NONE' && (
-              <span className="text-[11px]" title={meta.label} aria-label={meta.label}>
-                {meta.icon}
-              </span>
-            )}
             <span className="h-1 w-14 overflow-hidden rounded bg-white dark:bg-slate-700">
               <span className="block h-1 rounded"
                     style={{ width: `${data.progress}%`, backgroundColor: data.color }} />
@@ -367,13 +336,6 @@ function BoxNodeView({ data }: NodeProps<TaskNode>) {
               )}
               title={resizable ? '關閉手動調整 (切換回預設連接點)' : '開啟右上角手動調整框大小'}
             >
-              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                {resizable ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                )}
-              </svg>
               <span>{resizable ? '縮放中' : '調整大小'}</span>
             </button>
           </span>
